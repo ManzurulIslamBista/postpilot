@@ -1,0 +1,439 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../../core/shared_features/prompt_dialog.dart';
+import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../documentation/domain/entities/entity_kind.dart';
+import '../../../documentation/presentation/widgets/collection_docs_dialog.dart';
+import '../../../documentation/presentation/widgets/entity_description_dialog.dart';
+import '../../../documentation/presentation/widgets/tag_filter_bar.dart';
+import '../../../git_sync/presentation/widgets/git_clone_dialog.dart';
+import '../../../git_sync/presentation/widgets/git_link_badge.dart';
+import '../../../git_sync/presentation/widgets/git_sync_dialog.dart';
+import '../../../import_export/presentation/export_collection_dialog.dart';
+import '../../../import_export/presentation/export_postman_dialog.dart';
+import '../../../import_export/presentation/import_any_dialog.dart';
+import '../../../request_builder/domain/entities/api_request_entity.dart';
+import '../../../shell/presentation/shell_view_model.dart';
+import '../../domain/entities/collection_entity.dart';
+import '../view_models/collections_view_model.dart';
+import 'collection_auth_dialog.dart';
+import 'collection_runner_dialog.dart';
+import 'collection_variables_dialog.dart';
+
+class CollectionsSidebar extends StatelessWidget {
+  const CollectionsSidebar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<CollectionsViewModel>();
+    final visibleCollections = [
+      for (final collection in vm.collections)
+        if (vm.isCollectionVisible(collection)) collection,
+    ];
+    // A Material rather than a coloured Container: the ListTiles below paint
+    // their selection and ink on the nearest Material, which a ColoredBox in
+    // between would cover.
+    return Material(
+      color: context.colors.sidebarBackground,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(child: Text('Collections', style: context.textStyles.heading)),
+                IconButton(
+                  icon: const Icon(Icons.file_download_outlined, size: 18),
+                  tooltip: 'Import…',
+                  onPressed: () => ImportAnyDialog.show(context),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                  tooltip: 'Clone from Git',
+                  onPressed: () => _cloneFromGit(context, vm),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 18),
+                  tooltip: 'New collection',
+                  onPressed: () => _createCollection(context, vm),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: TextField(
+              focusNode: context.read<ShellViewModel>().searchFocusNode,
+              decoration: const InputDecoration(
+                hintText: 'Search',
+                prefixIcon: Icon(Icons.search, size: 18),
+                isDense: true,
+              ),
+              onChanged: vm.setSearchQuery,
+            ),
+          ),
+          const TagFilterBar(),
+          Expanded(
+            child: vm.collections.isEmpty
+                ? Center(
+                    child: Text('No collections yet — tap + to create one', style: _emptyStyle(context)),
+                  )
+                : vm.isFiltering && visibleCollections.isEmpty
+                    ? Center(child: Text('Nothing matches', style: _emptyStyle(context)))
+                    : ListView(
+                        children: [
+                          for (final collection in visibleCollections) _CollectionTile(collection: collection),
+                        ],
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createCollection(BuildContext context, CollectionsViewModel vm) async {
+    final name = await showPromptDialog(context, title: 'New collection');
+    if (name == null) return;
+    await vm.createCollection(name);
+    if (context.mounted) _showSnack(context, 'Collection created');
+  }
+
+  Future<void> _cloneFromGit(BuildContext context, CollectionsViewModel vm) async {
+    final id = await GitCloneDialog.show(context);
+    if (id == null || !context.mounted) return;
+    if (!vm.isExpanded(id)) vm.toggleExpand(id);
+    _showSnack(context, 'Collection cloned');
+  }
+}
+
+TextStyle _emptyStyle(BuildContext context) =>
+    context.textStyles.caption.copyWith(color: context.colors.secondaryText);
+
+void _showSnack(BuildContext context, String message) =>
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+
+/// In the narrow layout the sidebar lives in a Drawer that would otherwise
+/// keep covering the tab it just opened.
+void _openRequest(BuildContext context, int id) {
+  context.read<ShellViewModel>().selectRequest(id);
+  Scaffold.maybeOf(context)?.closeDrawer();
+}
+
+class _CollectionTile extends StatelessWidget {
+  final CollectionEntity collection;
+  const _CollectionTile({required this.collection});
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<CollectionsViewModel>();
+    final expanded = vm.isCollectionExpanded(collection);
+    final folders = vm.foldersByCollection[collection.id] ?? const [];
+    final requests = vm.requestsByCollection[collection.id] ?? const [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          dense: true,
+          leading: Icon(expanded ? Icons.expand_more : Icons.chevron_right),
+          title: Row(
+            children: [
+              Expanded(child: Text(collection.name, overflow: TextOverflow.ellipsis)),
+              GitLinkBadge(collection.id),
+            ],
+          ),
+          onTap: () => vm.toggleExpand(collection.id),
+          trailing: PopupMenuButton<String>(
+            onSelected: (action) => _handleAction(context, vm, action),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'add_request', child: Text('Add request')),
+              PopupMenuItem(value: 'add_folder', child: Text('Add folder')),
+              PopupMenuItem(value: 'import_curl', child: Text('Import cURL')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'run', child: Text('Run collection')),
+              PopupMenuItem(value: 'variables', child: Text('Variables')),
+              PopupMenuItem(value: 'auth', child: Text('Collection auth')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'describe', child: Text('Description & tags…')),
+              PopupMenuItem(value: 'docs', child: Text('Documentation…')),
+              PopupMenuItem(value: 'git_sync', child: Text('Git sync…')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'export', child: Text('Export as Postman JSON')),
+              PopupMenuItem(value: 'export_openapi', child: Text('Export as OpenAPI')),
+              PopupMenuItem(value: 'export_curl', child: Text('Export cURL script')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+              PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
+        ),
+        if (expanded)
+          _FolderChildren(
+            collectionId: collection.id,
+            parentFolderId: null,
+            allFolders: folders,
+            allRequests: requests,
+            depth: 1,
+          ),
+      ],
+    );
+  }
+
+  Future<void> _handleAction(BuildContext context, CollectionsViewModel vm, String action) async {
+    switch (action) {
+      case 'add_request':
+        final id = await vm.createRequest(collection.id);
+        if (context.mounted) _openRequest(context, id);
+        if (context.mounted) _showSnack(context, 'Request created');
+      case 'add_folder':
+        final name = await showPromptDialog(context, title: 'New folder');
+        if (name != null) {
+          await vm.createFolder(collection.id, name);
+          if (context.mounted) _showSnack(context, 'Folder created');
+        }
+      case 'import_curl':
+        await ImportAnyDialog.show(context, collectionId: collection.id);
+      case 'run':
+        await CollectionRunnerDialog.show(context, collectionId: collection.id);
+      case 'variables':
+        await CollectionVariablesDialog.show(context, collectionId: collection.id, collectionName: collection.name);
+      case 'auth':
+        await CollectionAuthDialog.show(context, collectionId: collection.id);
+      case 'describe':
+        await EntityDescriptionDialog.show(context, EntityKind.collection, collection.id, collection.name);
+      case 'docs':
+        await CollectionDocsDialog.show(context, collectionId: collection.id, collectionName: collection.name);
+      case 'git_sync':
+        await GitSyncDialog.show(context, collectionId: collection.id, collectionName: collection.name);
+      case 'export':
+        await ExportPostmanDialog.show(context, collectionId: collection.id);
+      case 'export_openapi':
+        await ExportCollectionDialog.showOpenApi(context, collectionId: collection.id);
+      case 'export_curl':
+        await ExportCollectionDialog.showCurlScript(context, collectionId: collection.id);
+      case 'rename':
+        final name = await showPromptDialog(context, title: 'Rename collection', initialValue: collection.name);
+        if (name != null) {
+          await vm.renameCollection(collection.id, name);
+          if (context.mounted) _showSnack(context, 'Collection renamed');
+        }
+      case 'duplicate':
+        await vm.duplicateCollection(collection.id);
+        if (context.mounted) _showSnack(context, 'Collection duplicated');
+      case 'delete':
+        final confirmed = await showConfirmDialog(context,
+            title: 'Delete collection', message: 'Delete "${collection.name}" and everything inside it?');
+        if (confirmed) {
+          await vm.deleteCollection(collection.id);
+          if (context.mounted) _showSnack(context, 'Collection deleted');
+        }
+    }
+  }
+}
+
+/// Renders the folders and requests that live directly under [parentFolderId]
+/// (null = the collection's top level), recursing into `_FolderTile` for
+/// each sub-folder so folders can nest arbitrarily deep.
+class _FolderChildren extends StatelessWidget {
+  final int collectionId;
+  final int? parentFolderId;
+  final List<FolderEntity> allFolders;
+  final List<RequestSummaryEntity> allRequests;
+  final double depth;
+
+  const _FolderChildren({
+    required this.collectionId,
+    required this.parentFolderId,
+    required this.allFolders,
+    required this.allRequests,
+    required this.depth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<CollectionsViewModel>();
+    final childFolders =
+        allFolders.where((f) => f.parentFolderId == parentFolderId && vm.isFolderVisible(collectionId, f));
+    final childRequests = allRequests.where((r) => r.folderId == parentFolderId && vm.isRequestVisible(r));
+
+    if (childFolders.isEmpty && childRequests.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.only(left: 16.0 * depth + 8, top: 4, bottom: 4),
+        child: Text('No requests here yet', style: _emptyStyle(context)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final folder in childFolders)
+          _FolderTile(
+            key: ValueKey('folder-${folder.id}'),
+            collectionId: collectionId,
+            folder: folder,
+            allFolders: allFolders,
+            allRequests: allRequests,
+            depth: depth,
+          ),
+        for (final request in childRequests)
+          _RequestTile(key: ValueKey('request-${request.id}'), request: request, indent: 16.0 * depth + 8),
+      ],
+    );
+  }
+}
+
+class _FolderTile extends StatefulWidget {
+  final int collectionId;
+  final FolderEntity folder;
+  final List<FolderEntity> allFolders;
+  final List<RequestSummaryEntity> allRequests;
+  final double depth;
+
+  const _FolderTile({
+    super.key,
+    required this.collectionId,
+    required this.folder,
+    required this.allFolders,
+    required this.allRequests,
+    required this.depth,
+  });
+
+  @override
+  State<_FolderTile> createState() => _FolderTileState();
+}
+
+class _FolderTileState extends State<_FolderTile> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.read<CollectionsViewModel>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: 16.0 * widget.depth),
+          child: ListTile(
+            dense: true,
+            leading: Icon(_expanded ? Icons.folder_open : Icons.folder, size: 18),
+            title: Text(widget.folder.name, overflow: TextOverflow.ellipsis),
+            onTap: () => setState(() => _expanded = !_expanded),
+            trailing: PopupMenuButton<String>(
+              onSelected: (action) => _handleAction(context, vm, action),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'add_request', child: Text('Add request')),
+                PopupMenuItem(value: 'add_folder', child: Text('Add sub-folder')),
+                PopupMenuItem(value: 'describe', child: Text('Description & tags…')),
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          _FolderChildren(
+            collectionId: widget.collectionId,
+            parentFolderId: widget.folder.id,
+            allFolders: widget.allFolders,
+            allRequests: widget.allRequests,
+            depth: widget.depth + 1,
+          ),
+      ],
+    );
+  }
+
+  Future<void> _handleAction(BuildContext context, CollectionsViewModel vm, String action) async {
+    switch (action) {
+      case 'add_request':
+        final id = await vm.createRequest(widget.collectionId, folderId: widget.folder.id);
+        if (context.mounted) _openRequest(context, id);
+        if (context.mounted) _showSnack(context, 'Request created');
+      case 'add_folder':
+        final name = await showPromptDialog(context, title: 'New sub-folder');
+        if (name != null) {
+          await vm.createFolder(widget.collectionId, name, parentFolderId: widget.folder.id);
+          if (context.mounted) _showSnack(context, 'Folder created');
+        }
+      case 'describe':
+        await EntityDescriptionDialog.show(context, EntityKind.folder, widget.folder.id, widget.folder.name);
+      case 'rename':
+        final name = await showPromptDialog(context, title: 'Rename folder', initialValue: widget.folder.name);
+        if (name != null) {
+          await vm.renameFolder(widget.folder.id, name);
+          if (context.mounted) _showSnack(context, 'Folder renamed');
+        }
+      case 'duplicate':
+        await vm.duplicateFolder(widget.folder.id);
+        if (context.mounted) _showSnack(context, 'Folder duplicated');
+      case 'delete':
+        final confirmed = await showConfirmDialog(context,
+            title: 'Delete folder', message: 'Delete "${widget.folder.name}" and everything inside it?');
+        if (confirmed) {
+          await vm.deleteFolder(widget.folder.id);
+          if (context.mounted) _showSnack(context, 'Folder deleted');
+        }
+    }
+  }
+}
+
+class _RequestTile extends StatelessWidget {
+  final RequestSummaryEntity request;
+  final double indent;
+  const _RequestTile({super.key, required this.request, required this.indent});
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.read<CollectionsViewModel>();
+    final isSelected = context.watch<ShellViewModel>().selectedRequestId == request.id;
+    return Padding(
+      padding: EdgeInsets.only(left: indent),
+      child: ListTile(
+        dense: true,
+        selected: isSelected,
+        leading: SizedBox(
+          width: 52,
+          child: Text(request.method.label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: context.colors.forMethod(request.method.label), fontWeight: FontWeight.bold, fontSize: 11)),
+        ),
+        title: Text(request.name, overflow: TextOverflow.ellipsis),
+        onTap: () => _openRequest(context, request.id),
+        trailing: PopupMenuButton<String>(
+          onSelected: (action) => _handleAction(context, vm, action),
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: 'rename', child: Text('Rename')),
+            PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+            PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleAction(BuildContext context, CollectionsViewModel vm, String action) async {
+    switch (action) {
+      case 'rename':
+        final name = await showPromptDialog(context, title: 'Rename request', initialValue: request.name);
+        if (name != null) {
+          await vm.renameRequest(request.id, name);
+          if (context.mounted) _showSnack(context, 'Request renamed');
+        }
+      case 'duplicate':
+        await vm.duplicateRequest(request.id);
+        if (context.mounted) _showSnack(context, 'Request duplicated');
+      case 'delete':
+        final confirmed =
+            await showConfirmDialog(context, title: 'Delete request', message: 'Delete "${request.name}"?');
+        if (confirmed) {
+          await vm.deleteRequest(request.id);
+          if (context.mounted && context.read<ShellViewModel>().selectedRequestId == request.id) {
+            context.read<ShellViewModel>().closeRequest();
+          }
+          if (context.mounted) _showSnack(context, 'Request deleted');
+        }
+    }
+  }
+}

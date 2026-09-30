@@ -1,0 +1,171 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../core/di/injector.dart';
+import '../../../core/theme/context_theme_extensions.dart';
+import '../domain/entities/import_format.dart';
+import '../domain/entities/import_summary.dart';
+import 'view_models/import_any_view_model.dart';
+
+/// One paste-and-import dialog for every supported format (Postman, Insomnia,
+/// HAR, OpenAPI/Swagger, cURL, PostPilot backup). The format is detected as
+/// you paste and can be overridden by hand. Returns what was imported, or null
+/// if the user cancelled or the import failed.
+///
+/// [collectionId]/[folderId] only affect cURL commands: given, they are added
+/// there; otherwise they go into a new collection.
+class ImportAnyDialog extends StatefulWidget {
+  final int? collectionId;
+  final int? folderId;
+
+  const ImportAnyDialog({super.key, this.collectionId, this.folderId});
+
+  static Future<ImportSummary?> show(BuildContext context, {int? collectionId, int? folderId}) => showDialog<ImportSummary>(
+        context: context,
+        builder: (_) => ImportAnyDialog(collectionId: collectionId, folderId: folderId),
+      );
+
+  @override
+  State<ImportAnyDialog> createState() => _ImportAnyDialogState();
+}
+
+class _ImportAnyDialogState extends State<ImportAnyDialog> {
+  final _controller = TextEditingController();
+  late final ImportAnyViewModel _viewModel;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel = locator<ImportAnyViewModel>();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _viewModel.dispose();
+    super.dispose();
+  }
+
+  Future<void> _import() async {
+    final summary = await _viewModel.import(collectionId: widget.collectionId, folderId: widget.folderId);
+    if (summary == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(summary.description)));
+    Navigator.pop(context, summary);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider<ImportAnyViewModel>.value(
+      value: _viewModel,
+      child: Consumer<ImportAnyViewModel>(
+        // Esc and a barrier tap dismiss the dialog (and dispose the ViewModel)
+        // even though Cancel is disabled, so block them while importing.
+        builder: (context, vm, _) => PopScope(
+          canPop: !vm.isImporting,
+          child: AlertDialog(
+            title: const Text('Import'),
+            scrollable: true,
+            content: SizedBox(
+              width: 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Paste a Postman collection, Insomnia export, HAR file, OpenAPI/Swagger document, cURL command or '
+                    'PostPilot backup. The format is detected for you.',
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _controller,
+                    maxLines: 12,
+                    style: context.textStyles.mono.copyWith(fontSize: 12),
+                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Paste here'),
+                    onChanged: vm.setText,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: _DetectedFormat(vm: vm, importsIntoNewCollection: widget.collectionId == null)),
+                      const SizedBox(width: 8),
+                      _FormatPicker(vm: vm),
+                    ],
+                  ),
+                  if (vm.error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(vm.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: vm.isImporting ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: vm.canImport ? _import : null,
+                child: vm.isImporting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Import'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetectedFormat extends StatelessWidget {
+  final ImportAnyViewModel vm;
+  final bool importsIntoNewCollection;
+  const _DetectedFormat({required this.vm, required this.importsIntoNewCollection});
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = context.textStyles.caption;
+    if (!vm.hasText) return Text('Nothing pasted yet', style: caption.copyWith(color: context.colors.secondaryText));
+    final format = vm.format;
+    if (format == ImportFormat.unknown) {
+      return Row(
+        children: [
+          Icon(Icons.help_outline, size: 16, color: context.colors.secondaryText),
+          const SizedBox(width: 6),
+          Expanded(child: Text("Couldn't recognise this format. Pick one on the right to try anyway.", style: caption)),
+        ],
+      );
+    }
+    final intoNew = format == ImportFormat.curl && importsIntoNewCollection ? ' (into a new collection)' : '';
+    return Row(
+      children: [
+        Icon(Icons.check_circle_outline, size: 16, color: context.colors.statusSuccess),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '${vm.selected == null ? 'Detected' : 'Importing as'}: ${format.label}$intoNew',
+            style: caption,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// `unknown` doubles as the "Auto-detect" entry: a null dropdown value would
+/// show the hint instead of a selected item.
+class _FormatPicker extends StatelessWidget {
+  final ImportAnyViewModel vm;
+  const _FormatPicker({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButton<ImportFormat>(
+      value: vm.selected ?? ImportFormat.unknown,
+      isDense: true,
+      items: [
+        const DropdownMenuItem(value: ImportFormat.unknown, child: Text('Auto-detect')),
+        for (final format in ImportFormat.values)
+          if (format != ImportFormat.unknown) DropdownMenuItem(value: format, child: Text(format.label)),
+      ],
+      onChanged: vm.isImporting ? null : (format) => vm.selectFormat(format == ImportFormat.unknown ? null : format),
+    );
+  }
+}

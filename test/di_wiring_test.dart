@@ -99,6 +99,8 @@ import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
 import 'package:postpilot/features/team/domain/repositories/team_repository.dart';
 import 'package:postpilot/features/team/domain/usecases/copy_cloud_collection_usecase.dart';
 import 'package:postpilot/features/team/presentation/view_models/team_view_model.dart';
+import 'package:postpilot/features/workplace/domain/repositories/workplace_repository.dart';
+import 'package:postpilot/features/workplace/presentation/view_models/workplace_view_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final class _Wiring {
@@ -211,6 +213,9 @@ final _wirings = <_Wiring>[
   _wire<CopyCloudCollectionUseCase>(),
   _wire<AuthViewModel>(),
   _wire<TeamViewModel>(),
+  // workplace
+  _wire<WorkplaceRepository>(),
+  _wire<WorkplaceViewModel>(),
 ];
 
 final _registration = RegExp(r'\bregister(?:Lazy)?(?:Singleton|Factory|FactoryParam)<(\w+)');

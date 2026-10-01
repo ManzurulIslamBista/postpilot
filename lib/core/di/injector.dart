@@ -115,6 +115,9 @@ import '../../features/team/data/repositories/team_repository_impl.dart';
 import '../../features/team/domain/repositories/team_repository.dart';
 import '../../features/team/domain/usecases/copy_cloud_collection_usecase.dart';
 import '../../features/team/presentation/view_models/team_view_model.dart';
+import '../../features/workplace/data/repositories/workplace_repository_impl.dart';
+import '../../features/workplace/domain/repositories/workplace_repository.dart';
+import '../../features/workplace/presentation/view_models/workplace_view_model.dart';
 
 final locator = GetIt.instance;
 
@@ -140,6 +143,21 @@ void setupDependencies({AppDatabase? database}) {
   _registerImportExport();
   _registerGitSync();
   _registerAuthAndTeam();
+  _registerWorkplace();
+}
+
+void _registerWorkplace() {
+  locator.registerLazySingleton<WorkplaceRepository>(
+    () => WorkplaceRepositoryImpl(),
+  );
+  locator.registerLazySingleton<WorkplaceViewModel>(
+    () => WorkplaceViewModel(
+      repository: locator<WorkplaceRepository>(),
+      backupService: locator<BackupService>(),
+      database: locator<AppDatabase>(),
+      shellViewModel: locator<ShellViewModel>(),
+    ),
+  );
 }
 
 void _registerCore(AppDatabase database) {

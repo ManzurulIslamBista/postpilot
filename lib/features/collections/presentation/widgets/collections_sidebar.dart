@@ -14,6 +14,8 @@ import '../../../import_export/presentation/export_postman_dialog.dart';
 import '../../../import_export/presentation/import_any_dialog.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../shell/presentation/shell_view_model.dart';
+import '../../../workplace/presentation/view_models/workplace_view_model.dart';
+import '../../../workplace/presentation/widgets/workplace_sidebar_header.dart';
 import '../../domain/entities/collection_entity.dart';
 import '../view_models/collections_view_model.dart';
 import 'collection_auth_dialog.dart';
@@ -38,24 +40,38 @@ class CollectionsSidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const WorkplaceSidebarHeader(),
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
             child: Row(
               children: [
-                Expanded(child: Text('Collections', style: context.textStyles.heading)),
+                Expanded(
+                  child: Text(
+                    'COLLECTIONS',
+                    style: context.textStyles.caption.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                      fontSize: 11,
+                      color: context.colors.secondaryText,
+                    ),
+                  ),
+                ),
                 IconButton(
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
+                  icon: const Icon(Icons.file_download_outlined, size: 17),
                   tooltip: 'Import…',
+                  visualDensity: VisualDensity.compact,
                   onPressed: () => ImportAnyDialog.show(context),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                  icon: const Icon(Icons.cloud_download_outlined, size: 17),
                   tooltip: 'Clone from Git',
+                  visualDensity: VisualDensity.compact,
                   onPressed: () => _cloneFromGit(context, vm),
                 ),
                 IconButton(
                   icon: const Icon(Icons.add, size: 18),
                   tooltip: 'New collection',
+                  visualDensity: VisualDensity.compact,
                   onPressed: () => _createCollection(context, vm),
                 ),
               ],
@@ -230,6 +246,10 @@ class _CollectionTile extends StatelessWidget {
           if (context.mounted) _showSnack(context, 'Collection deleted');
         }
     }
+    final mutatingActions = {'add_request', 'add_folder', 'rename', 'duplicate', 'delete'};
+    if (mutatingActions.contains(action) && context.mounted) {
+      context.read<WorkplaceViewModel>().saveCurrentWorkplace();
+    }
   }
 }
 
@@ -376,6 +396,7 @@ class _FolderTileState extends State<_FolderTile> {
           if (context.mounted) _showSnack(context, 'Folder deleted');
         }
     }
+    if (context.mounted) context.read<WorkplaceViewModel>().saveCurrentWorkplace();
   }
 }
 
@@ -435,5 +456,6 @@ class _RequestTile extends StatelessWidget {
           if (context.mounted) _showSnack(context, 'Request deleted');
         }
     }
+    if (context.mounted) context.read<WorkplaceViewModel>().saveCurrentWorkplace();
   }
 }

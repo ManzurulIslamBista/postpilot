@@ -76,6 +76,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
 
+  Future<void> clearWorkplaceData() async {
+    await transaction(() async {
+      await delete(responseExamples).go();
+      await delete(requestScripts).go();
+      await delete(requests).go();
+      await delete(folders).go();
+      await delete(collectionVariables).go();
+      await delete(collectionAuth).go();
+      await delete(collections).go();
+      await delete(environmentVariables).go();
+      await delete(environments).go();
+      await delete(globalVariables).go();
+    });
+  }
+
   @override
   int get schemaVersion => 4;
 

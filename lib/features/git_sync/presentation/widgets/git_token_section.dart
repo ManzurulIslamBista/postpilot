@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import 'git_widgets.dart';
 
-const gitTokenCreationUrl = 'https://github.com/settings/personal-access-tokens/new';
+const gitTokenCreationUrl = 'https://github.com/settings/tokens/new?scopes=repo,read:user,user:email&description=PostPilot';
 
 class GitTokenSection extends StatefulWidget {
   final bool hasToken;
@@ -58,7 +58,7 @@ class _GitTokenSectionState extends State<GitTokenSection> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Use a fine-grained token: choose the repository and set the permission Contents: Read and write.',
+          'Use Tokens (classic) with repo scope, or set the permission Contents: Read and write.',
           style: textStyles.caption.copyWith(color: context.colors.secondaryText),
         ),
         const SizedBox(height: 8),

@@ -12,6 +12,7 @@ import 'features/history/presentation/view_models/history_view_model.dart';
 import 'features/settings/presentation/view_models/settings_view_model.dart';
 import 'features/shell/presentation/shell_page.dart';
 import 'features/shell/presentation/shell_view_model.dart';
+import 'features/workplace/presentation/view_models/workplace_view_model.dart';
 
 class PostPilotApp extends StatelessWidget {
   const PostPilotApp({super.key});
@@ -23,6 +24,7 @@ class PostPilotApp extends StatelessWidget {
       // dialogs — pushed as sibling routes, not descendants of the page that
       // opened them — can still read this state. See injector.dart.
       providers: [
+        ChangeNotifierProvider.value(value: locator<WorkplaceViewModel>()),
         ChangeNotifierProvider.value(value: locator<ShellViewModel>()),
         ChangeNotifierProvider.value(value: locator<CollectionsViewModel>()),
         ChangeNotifierProvider.value(value: locator<EnvironmentsViewModel>()),

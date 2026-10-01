@@ -13,6 +13,7 @@ import '../../import_export/presentation/backup_dialog.dart';
 import '../../request_builder/presentation/request_builder_page.dart';
 import '../../settings/presentation/widgets/settings_dialog.dart';
 import '../../team/presentation/widgets/team_dialog.dart';
+import '../../workplace/presentation/view_models/workplace_view_model.dart';
 import 'shell_view_model.dart';
 import 'widgets/request_tab_bar.dart';
 
@@ -136,8 +137,50 @@ class _TopBarActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final workplaceVm = context.watch<WorkplaceViewModel>();
+    final activeWp = workplaceVm.activeWorkplace;
+
     return Row(
       children: [
+        if (activeWp != null) ...[
+          if (activeWp.isGitConnected) ...[
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                backgroundColor: context.colors.sidebarBackground.withValues(alpha: 0.5),
+              ),
+              onPressed: workplaceVm.isBusy
+                  ? null
+                  : () async {
+                      await workplaceVm.syncWithGit();
+                      if (context.mounted) {
+                        final error = workplaceVm.errorMessage;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(error ?? 'Synced successfully with Git repository!'),
+                            backgroundColor: error != null ? context.colors.statusError : null,
+                          ),
+                        );
+                      }
+                    },
+              icon: workplaceVm.isBusy
+                  ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.sync, size: 14),
+              label: Text(
+                'Git: ${activeWp.gitBranch}',
+                style: context.textStyles.caption.copyWith(fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          IconButton(
+            icon: const Icon(Icons.folder_open_outlined, size: 19),
+            tooltip: 'Reveal workplace in Finder (${activeWp.name})',
+            onPressed: () => workplaceVm.revealInFinder(),
+          ),
+        ],
         const _MoreMenu(),
         IconButton(
           icon: const Icon(Icons.history, size: 20),

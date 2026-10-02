@@ -27,7 +27,10 @@ final class GitSwitchBranchUseCase implements UseCase<ApplyOutcome, GitBranchPar
     if (_engine.diff(_engine.baseSnapshot(baseEntries), local).isNotEmpty) throw const GitUncommittedChangesException();
 
     final head = await _host.getBranchHead(link.repo, target);
-    if (head == null) throw GitBranchMissingException(target);
+    if (head == null) {
+      await _host.getRepo(link.repo); // a repository that cannot be seen is not a missing branch
+      throw GitBranchMissingException(target);
+    }
     final fetched = await _engine.fetchRemoteSnapshot(link, commitSha: head, base: baseEntries);
     if (fetched.root == null) throw GitNothingToCloneException(RepoLayout.describe(link.basePath));
     final localRoot = local.root;

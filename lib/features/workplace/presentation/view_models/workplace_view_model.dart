@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../import_export/domain/services/backup_codec.dart';
 import '../../../import_export/domain/services/backup_service.dart';
@@ -21,7 +21,7 @@ import '../../domain/repositories/workplace_repository.dart';
 ///    reloading the file at startup never brings back stale data;
 ///  * the mirror is paused while the database is being swapped, otherwise the
 ///    half-emptied database would be written over the file being loaded.
-final class WorkplaceViewModel with ChangeNotifier {
+final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
   final WorkplaceRepository repository;
   final BackupService backupService;
   final AppDatabase database;
@@ -55,6 +55,7 @@ final class WorkplaceViewModel with ChangeNotifier {
   bool _swapping = false;
   bool _autosavePaused = false;
   bool _disposed = false;
+  bool _observingLifecycle = false;
 
   List<WorkplaceEntity> get workplaces => _workplaces;
   WorkplaceEntity? get activeWorkplace => _activeWorkplace;
@@ -192,7 +193,7 @@ final class WorkplaceViewModel with ChangeNotifier {
   }
 
   Future<void> syncWithGit({String? commitMessage}) async {
-    if (_activeWorkplace == null) return;
+    if (_activeWorkplace == null || _isBusy) return;
     _begin('Syncing with Git repository…');
     try {
       await _persistActive();
@@ -211,7 +212,7 @@ final class WorkplaceViewModel with ChangeNotifier {
 
   Future<void> pullFromGit() async {
     final active = _activeWorkplace;
-    if (active == null) return;
+    if (active == null || _isBusy) return;
     _begin('Pulling from Git repository…');
     _swapping = true;
     _autosaveTimer?.cancel();
@@ -253,6 +254,7 @@ final class WorkplaceViewModel with ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (_observingLifecycle) WidgetsBinding.instance.removeObserver(this);
     _autosaveTimer?.cancel();
     _changesSubscription?.cancel();
     super.dispose();
@@ -295,7 +297,7 @@ final class WorkplaceViewModel with ChangeNotifier {
 
   Future<void> _replaceDatabase(WorkplaceContent content) async {
     await database.clearWorkplaceData();
-    if (!_isEmpty(content)) await backupService.restore(content.toJsonString());
+    if (!_isEmpty(content)) await backupService.restore(content.toJsonString(), restoreGit: true);
     shellViewModel.closeRequest();
   }
 
@@ -304,12 +306,14 @@ final class WorkplaceViewModel with ChangeNotifier {
   /// the format uses) must be equal, which it is only if the file was written from
   /// this very database.
   Future<bool> _databaseMatches(WorkplaceContent content) async {
-    String fingerprint(BackupSnapshot snapshot) => BackupCodec.encode(BackupSnapshot(
-          exportedAt: DateTime.utc(2000),
-          collections: snapshot.collections,
-          environments: snapshot.environments,
-          globals: snapshot.globals,
-        ));
+    String fingerprint(BackupSnapshot snapshot) => BackupCodec.encode(
+      BackupSnapshot(
+        exportedAt: DateTime.utc(2000),
+        collections: snapshot.collections,
+        environments: snapshot.environments,
+        globals: snapshot.globals,
+      ),
+    );
     try {
       return fingerprint(await backupService.snapshot()) == fingerprint(content.snapshot);
     } catch (_) {
@@ -371,6 +375,21 @@ final class WorkplaceViewModel with ChangeNotifier {
 
   void _startAutosave() {
     _changesSubscription ??= database.workplaceDataChanges().listen((_) => _scheduleAutosave());
+    if (!_observingLifecycle) {
+      _observingLifecycle = true;
+      WidgetsBinding.instance.addObserver(this);
+    }
+  }
+
+  /// Autosave waits for the data to sit still; a window about to be closed (or a
+  /// browser tab hidden) may never give it the time. Save what is pending now.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final leaving =
+        state == AppLifecycleState.paused || state == AppLifecycleState.hidden || state == AppLifecycleState.detached;
+    if (!leaving || _disposed || _swapping || _autosavePaused || _activeWorkplace == null) return;
+    _autosaveTimer?.cancel();
+    unawaited(saveCurrentWorkplace());
   }
 
   void _scheduleAutosave() {
@@ -393,7 +412,7 @@ final class WorkplaceViewModel with ChangeNotifier {
   Future<void> _writeActive() async {
     final workplace = _activeWorkplace;
     if (workplace == null || _autosavePaused) return;
-    final snapshot = await backupService.snapshot();
+    final snapshot = await backupService.snapshot(includeGit: true);
     await repository.saveWorkplaceContent(workplace, WorkplaceContent(workplace: workplace, snapshot: snapshot));
   }
 

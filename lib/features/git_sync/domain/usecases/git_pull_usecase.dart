@@ -29,11 +29,23 @@ final class GitPullUseCase implements UseCase<PullResult, GitPullParams> {
   Future<PullResult> call(GitPullParams params) async {
     final link = await _links.requireLink(params.collectionId);
     final head = await _host.getBranchHead(link.repo, link.branch);
-    if (head == null) throw GitBranchMissingException(link.branch);
+    if (head == null) {
+      // A repository the token cannot see answers like a missing branch; ask for the reason.
+      await _host.getRepo(link.repo);
+      throw GitBranchMissingException(link.branch);
+    }
     if (head == link.lastSyncedSha) return const PullUpToDate();
 
     final baseEntries = await _links.readBase(link.id);
+    // Read before any further network call, so an edit made while waiting is caught by requireLocalUnchanged.
     final local = await _engine.readLocal(link);
+    if (await _engine.remoteUnchanged(link, commitSha: head, base: baseEntries)) {
+      // The branch moved, but not in this collection's folder (an unrelated commit, a sibling
+      // collection): nothing to merge, nothing to download. Only the link moves forward.
+      await _engine.requireLocalUnchanged(link, local, operation: 'pulling');
+      await _links.save(link.copyWith(lastSyncedSha: head, lastSyncedAt: DateTime.now()));
+      return const PullApplied(added: 0, updated: 0, deleted: 0, changedRequestIds: [], deletedRequestIds: []);
+    }
     final fetched = await _engine.fetchRemoteSnapshot(link, commitSha: head, base: baseEntries);
     // A remote without the collection would merge as "everything was deleted".
     if (fetched.root == null && baseEntries.isNotEmpty) {

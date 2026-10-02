@@ -24,9 +24,15 @@ final class GitCreateBranchUseCase implements UseCase<GitLink, GitBranchParams> 
     if (!_isValidBranchName(name)) throw GitSyncException('"$name" is not a valid branch name.');
     if (await _host.getBranchHead(link.repo, name) != null) throw GitSyncException('The branch "$name" already exists.');
 
-    final fromSha = link.lastSyncedSha ??
-        await _host.getBranchHead(link.repo, link.branch) ??
-        (throw GitBranchMissingException(link.branch));
+    // The branch starts from what this collection last shared. Starting from the live head of a
+    // collection that never synced would pair the remote's files with an empty base, and the next
+    // push would overwrite them.
+    final fromSha = link.lastSyncedSha;
+    if (fromSha == null) {
+      if (await _host.getBranchHead(link.repo, link.branch) == null) throw GitBranchMissingException(link.branch);
+      throw const GitSyncException(
+          'Nothing has been pulled or pushed for this collection yet - pull first, then create the branch.');
+    }
     await _host.createBranch(link.repo, name, fromSha: fromSha);
     return _links.save(link.copyWith(branch: name, lastSyncedSha: fromSha));
   }

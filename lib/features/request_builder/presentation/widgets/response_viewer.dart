@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../../core/widgets/status_chip.dart';
 import '../../../../core/utils/file_download.dart';
 import '../../domain/entities/api_response_entity.dart';
 import '../../domain/entities/response_example_entity.dart';
@@ -12,6 +13,9 @@ import '../view_models/response_examples_view_model.dart';
 import 'response_body_formatter.dart';
 import 'response_body_view.dart';
 import 'response_examples_tab.dart';
+
+/// Narrower than this, the body toolbar wraps its search box onto a second row.
+const _toolbarOneLineMinWidth = 460.0;
 
 class ResponseViewer extends StatefulWidget {
   /// The latest response, or null before the first send and after a failed
@@ -91,8 +95,9 @@ class _ResponseViewerState extends State<ResponseViewer> {
     super.dispose();
   }
 
-  ResponseBodyFormatter? _formatterFor(ApiResponseEntity? response) =>
-      response == null ? null : ResponseBodyFormatter(response.headers, response.bodyBytes, truncated: response.truncated);
+  ResponseBodyFormatter? _formatterFor(ApiResponseEntity? response) => response == null
+      ? null
+      : ResponseBodyFormatter(response.headers, response.bodyBytes, truncated: response.truncated);
 
   @override
   Widget build(BuildContext context) {
@@ -108,15 +113,16 @@ class _ResponseViewerState extends State<ResponseViewer> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: _buildSummary(example),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: _buildSummary(example)),
+                TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  tabs: [
+                    const Tab(text: 'Body'),
+                    const Tab(text: 'Headers'),
+                    Tab(text: 'Examples (${vm.examples.length})'),
+                  ],
                 ),
-                TabBar(tabs: [
-                  const Tab(text: 'Body'),
-                  const Tab(text: 'Headers'),
-                  Tab(text: 'Examples (${vm.examples.length})'),
-                ]),
                 Expanded(
                   child: TabBarView(
                     children: [
@@ -140,7 +146,11 @@ class _ResponseViewerState extends State<ResponseViewer> {
     return response == null ? const _NoResponseSummary() : _LiveSummary(response: response);
   }
 
-  Widget _buildBodyTab(BuildContext context, ResponseBodyFormatter? formatter, {required ResponseExampleEntity? example}) {
+  Widget _buildBodyTab(
+    BuildContext context,
+    ResponseBodyFormatter? formatter, {
+    required ResponseExampleEntity? example,
+  }) {
     if (formatter == null) return const _EmptyState();
     final viewingExample = example != null;
     final isImage = formatter.kind == ResponseContentKind.image;
@@ -152,37 +162,61 @@ class _ResponseViewerState extends State<ResponseViewer> {
     // Whether what is shown is only the first part of the body.
     final cutOff = example?.truncated ?? response?.truncated ?? false;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: Row(
-            children: [
-              if (isImage)
-                const Spacer()
-              else ...[
-                _ModeSelector(mode: _mode, onChanged: _setMode),
-                const SizedBox(width: 8),
-                Expanded(child: _buildSearchField(context, matches.length, current)),
-              ],
-              IconButton(
-                icon: const Icon(Icons.copy, size: 18),
-                tooltip: 'Copy body',
-                onPressed: formatter.isTextual ? () => _copy(context, formatter.textFor(_mode), 'Body copied') : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.download, size: 18),
-                tooltip: 'Download body',
-                onPressed: () => _download(context, formatter, cutOff: cutOff),
-              ),
-              if (widget.canSaveExamples)
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final actions = [
                 IconButton(
-                  icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                  tooltip: formatter.isTextual ? 'Save as example' : "Binary responses can't be saved as examples",
-                  onPressed: !viewingExample && response != null && body != null && formatter.isTextual
-                      ? () => _saveAsExample(context, response, body)
-                      : null,
+                  icon: const Icon(Icons.copy, size: 18),
+                  tooltip: 'Copy body',
+                  onPressed: formatter.isTextual ? () => _copy(context, formatter.textFor(_mode), 'Body copied') : null,
                 ),
-            ],
+                IconButton(
+                  icon: const Icon(Icons.download, size: 18),
+                  tooltip: 'Download body',
+                  onPressed: () => _download(context, formatter, cutOff: cutOff),
+                ),
+                if (widget.canSaveExamples)
+                  IconButton(
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    tooltip: formatter.isTextual ? 'Save as example' : "Binary responses can't be saved as examples",
+                    onPressed: !viewingExample && response != null && body != null && formatter.isTextual
+                        ? () => _saveAsExample(context, response, body)
+                        : null,
+                  ),
+              ];
+              if (isImage) return Row(children: [const Spacer(), ...actions]);
+              final search = _buildSearchField(context, matches.length, current);
+              // A narrow response pane (dragged thin, or a phone) cannot fit the
+              // mode switch, a usable search box and the actions on one line:
+              // search drops to its own row instead of being squeezed to nothing.
+              if (constraints.maxWidth < _toolbarOneLineMinWidth) {
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        _ModeSelector(mode: _mode, onChanged: _setMode),
+                        const Spacer(),
+                        ...actions,
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    search,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  _ModeSelector(mode: _mode, onChanged: _setMode),
+                  const SizedBox(width: 8),
+                  Expanded(child: search),
+                  ...actions,
+                ],
+              );
+            },
           ),
         ),
         if (cutOff) _SizeLimitNotice(forExample: viewingExample),
@@ -276,9 +310,9 @@ class _ResponseViewerState extends State<ResponseViewer> {
   }
 
   void _setMode(ResponseBodyMode mode) => setState(() {
-        _mode = mode;
-        _currentMatch = 0;
-      });
+    _mode = mode;
+    _currentMatch = 0;
+  });
 
   void _onSearchChanged(String value) {
     _searchTimer?.cancel();
@@ -349,7 +383,8 @@ class _ResponseViewerState extends State<ResponseViewer> {
       final proceed = await showConfirmDialog(
         context,
         title: 'Incomplete body',
-        message: 'This body was cut off at the response size limit, so the file will be incomplete — '
+        message:
+            'This body was cut off at the response size limit, so the file will be incomplete — '
             'an archive, PDF or image made from it may not open. Raise the limit in Settings to get the whole body.',
         confirmLabel: 'Download anyway',
       );
@@ -372,7 +407,8 @@ class _ResponseViewerState extends State<ResponseViewer> {
       final proceed = await showConfirmDialog(
         context,
         title: 'Save a partial body?',
-        message: 'This response was cut off at the size limit, so the example will hold only the first part of it. '
+        message:
+            'This response was cut off at the size limit, so the example will hold only the first part of it. '
             'Raise the limit in Settings to keep the whole body.',
         confirmLabel: 'Save anyway',
       );
@@ -396,15 +432,18 @@ class _LiveSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = response.isSuccess ? context.colors.statusSuccess : context.colors.statusError;
     return Wrap(
-      spacing: 16,
+      spacing: 8,
+      runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text('${response.statusCode} ${response.statusMessage}',
-            style: context.textStyles.body.copyWith(color: statusColor, fontWeight: FontWeight.bold)),
-        Text('${response.duration.inMilliseconds} ms', style: context.textStyles.caption),
-        Text(_formatSize(response.sizeBytes), style: context.textStyles.caption),
+        StatusChip(
+          label: '${response.statusCode} ${response.statusMessage}'.trim(),
+          icon: response.isSuccess ? Icons.check_circle_outline : Icons.error_outline,
+          color: context.colors.forStatus(response.statusCode),
+        ),
+        StatusChip(label: '${response.duration.inMilliseconds} ms', icon: Icons.schedule),
+        StatusChip(label: _formatSize(response.sizeBytes), icon: Icons.data_usage),
       ],
     );
   }
@@ -504,7 +543,9 @@ class _MatchNavigator extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.textStyles.caption)),
+        Flexible(
+          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.textStyles.caption),
+        ),
         _button(Icons.keyboard_arrow_up, 'Previous match (Shift+Enter)', hasMatches ? onPrevious : null),
         _button(Icons.keyboard_arrow_down, 'Next match (Enter)', hasMatches ? onNext : null),
         _button(Icons.close, 'Clear search', onClear),
@@ -513,12 +554,12 @@ class _MatchNavigator extends StatelessWidget {
   }
 
   Widget _button(IconData icon, String tooltip, VoidCallback? onPressed) => IconButton(
-        icon: Icon(icon, size: 16),
-        tooltip: tooltip,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-        onPressed: onPressed,
-      );
+    icon: Icon(icon, size: 16),
+    tooltip: tooltip,
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+    onPressed: onPressed,
+  );
 }
 
 class _ModeSelector extends StatelessWidget {

@@ -1,3 +1,4 @@
+import '../../../../core/widgets/busy_label.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
@@ -24,7 +25,8 @@ class GitChangesTab extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: GitBanner(
               kind: GitBannerKind.warning,
-              message: 'No GitHub token is saved on this device. Save one under Settings to push your changes; '
+              message:
+                  'No GitHub token is saved on this device. Save one under Settings to push your changes; '
                   'without it you can only pull.',
             ),
           )
@@ -48,14 +50,11 @@ class GitChangesTab extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              switch (changes.length) {
-                0 => 'No changes since the last sync',
-                1 => '1 local change',
-                final count => '$count local changes',
-              },
-              style: textStyles.caption.copyWith(color: secondary, fontWeight: FontWeight.bold),
-            ),
+            child: Text(switch (changes.length) {
+              0 => 'No changes since the last sync',
+              1 => '1 local change',
+              final count => '$count local changes',
+            }, style: textStyles.caption.copyWith(color: secondary, fontWeight: FontWeight.bold)),
           ),
         ),
         Expanded(
@@ -76,7 +75,10 @@ class GitChangesTab extends StatelessWidget {
                 ),
         ),
         const Divider(height: 1),
-        Padding(padding: const EdgeInsets.all(12), child: _CommitArea(vm: vm)),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: _CommitArea(vm: vm),
+        ),
       ],
     );
   }
@@ -127,21 +129,29 @@ class _CommitArea extends StatelessWidget {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            FilledButton.icon(
+            FilledButton(
               onPressed: vm.canCommit ? vm.commitPush : null,
-              icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-              label: const Text('Commit & push'),
+              child: BusyLabel(
+                busy: vm.isBusy && (vm.busyLabel?.startsWith('Committing') ?? false),
+                icon: Icons.cloud_upload_outlined,
+                label: 'Commit & push',
+                busyLabel: 'Pushing…',
+              ),
             ),
             OutlinedButton.icon(
               onPressed: vm.isBusy ? null : () => pullAndResolve(context, vm),
               icon: const Icon(Icons.cloud_download_outlined, size: 18),
               label: const Text('Pull'),
             ),
-            TextButton.icon(
+            TextButton(
               onPressed: vm.isBusy || !vm.hasLocalChanges ? null : () => _discard(context, vm),
               style: TextButton.styleFrom(foregroundColor: context.colors.statusError),
-              icon: const Icon(Icons.undo, size: 18),
-              label: const Text('Discard changes'),
+              child: BusyLabel(
+                busy: vm.isBusy && (vm.busyLabel?.startsWith('Discarding') ?? false),
+                icon: Icons.undo,
+                label: 'Discard changes',
+                busyLabel: 'Discarding…',
+              ),
             ),
           ],
         ),
@@ -175,7 +185,8 @@ class _CommitArea extends StatelessWidget {
     final confirmed = await showConfirmDialog(
       context,
       title: 'Discard local changes',
-      message: 'Throw away ${count == 1 ? 'the 1 local change' : 'all $count local changes'} and restore the last '
+      message:
+          'Throw away ${count == 1 ? 'the 1 local change' : 'all $count local changes'} and restore the last '
           'synced version of this collection? This cannot be undone.',
       confirmLabel: 'Discard',
     );
@@ -200,7 +211,10 @@ class _CommitMessageFieldState extends State<_CommitMessageField> {
     super.didUpdateWidget(oldWidget);
     final message = widget.vm.commitMessage;
     if (_controller.text != message) {
-      _controller.value = TextEditingValue(text: message, selection: TextSelection.collapsed(offset: message.length));
+      _controller.value = TextEditingValue(
+        text: message,
+        selection: TextSelection.collapsed(offset: message.length),
+      );
     }
   }
 

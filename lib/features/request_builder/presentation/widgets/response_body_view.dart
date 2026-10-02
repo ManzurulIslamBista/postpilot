@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import 'json_syntax.dart';
 import 'response_body_formatter.dart';
 
 // Context kept around the current match when it is scrolled into view.
@@ -29,6 +30,20 @@ class ResponseBodyView extends StatefulWidget {
 }
 
 class _ResponseBodyViewState extends State<ResponseBodyView> {
+  // Tokenising is linear in the body size, so it is redone only when the shown
+  // text changes, not on every search keystroke or rebuild.
+  String? _tokenizedText;
+  List<SyntaxRange> _tokens = const [];
+
+  List<SyntaxRange> _syntaxFor(String text) {
+    if (widget.formatter.kind != ResponseContentKind.json || text.length > maxHighlightedChars) return const [];
+    if (!identical(text, _tokenizedText)) {
+      _tokenizedText = text;
+      _tokens = tokenizeJson(text);
+    }
+    return _tokens;
+  }
+
   @override
   void didUpdateWidget(covariant ResponseBodyView oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -55,36 +70,39 @@ class _ResponseBodyViewState extends State<ResponseBodyView> {
         ),
       );
     }
-    final accent = context.colors.mainAccent;
+    final colors = context.colors;
+    final accent = colors.mainAccent;
+    final text = formatter.displayTextFor(widget.mode);
+    TextStyle syntaxStyle(SyntaxKind kind) => TextStyle(
+      color: switch (kind) {
+        SyntaxKind.key => colors.syntaxKey,
+        SyntaxKind.string => colors.syntaxString,
+        SyntaxKind.number => colors.syntaxNumber,
+        SyntaxKind.keyword => colors.syntaxKeyword,
+        SyntaxKind.punctuation => colors.secondaryText,
+      },
+    );
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(8),
-      child: SelectableText.rich(
-        TextSpan(
-          style: context.textStyles.mono,
-          children: _spans(
-            formatter.displayTextFor(widget.mode),
-            TextStyle(backgroundColor: accent.withValues(alpha: 0.35)),
-            TextStyle(backgroundColor: accent.withValues(alpha: 0.85)),
+      padding: const EdgeInsets.all(12),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: SelectableText.rich(
+          TextSpan(
+            style: context.textStyles.mono,
+            children: buildBodySpans(
+              text: text,
+              syntax: _syntaxFor(text),
+              syntaxStyle: syntaxStyle,
+              matches: widget.matchIndices,
+              queryLength: widget.query.length,
+              currentMatch: widget.currentMatch,
+              highlight: TextStyle(backgroundColor: accent.withValues(alpha: 0.35)),
+              current: TextStyle(backgroundColor: accent.withValues(alpha: 0.85)),
+            ),
           ),
         ),
       ),
     );
-  }
-
-  List<InlineSpan> _spans(String text, TextStyle highlight, TextStyle current) {
-    final matches = widget.matchIndices;
-    if (matches.isEmpty) return [TextSpan(text: text)];
-    final spans = <InlineSpan>[];
-    var cursor = 0;
-    for (var i = 0; i < matches.length; i++) {
-      final start = matches[i];
-      final end = start + widget.query.length;
-      if (start > cursor) spans.add(TextSpan(text: text.substring(cursor, start)));
-      spans.add(TextSpan(text: text.substring(start, end), style: i == widget.currentMatch ? current : highlight));
-      cursor = end;
-    }
-    if (cursor < text.length) spans.add(TextSpan(text: text.substring(cursor)));
-    return spans;
   }
 
   // The text is one paragraph inside a scroll view, so the current match is

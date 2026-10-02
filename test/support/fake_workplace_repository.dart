@@ -17,7 +17,14 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
   /// Thrown by the next [createWorkplace], to see how the UI reports a failure.
   Object? createError;
 
-  FakeWorkplaceRepository({this._usesRealFolders = true, this._canPickFolder = false});
+  /// How many times the open workplace was pushed to / pulled from Git.
+  int syncCalls = 0;
+  int pullCalls = 0;
+
+  /// When set, the workplace the repository starts with is connected to this repository.
+  final String? _initialGitRepoUrl;
+
+  FakeWorkplaceRepository({this._usesRealFolders = true, this._canPickFolder = false, String? gitRepoUrl}) : _initialGitRepoUrl = gitRepoUrl;
 
   @override
   bool get usesRealFolders => _usesRealFolders;
@@ -34,7 +41,7 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
   @override
   Future<List<WorkplaceEntity>> getWorkplaces() async {
     if (_workplaces.isEmpty) {
-      final first = _entity('My Workplace', '/fake/My_Workplace');
+      final first = _entity('My Workplace', '/fake/My_Workplace').copyWith(gitRepoUrl: _initialGitRepoUrl, gitToken: _initialGitRepoUrl == null ? null : 'token');
       _workplaces.add(first);
       _activeId = first.id;
     }
@@ -61,7 +68,10 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
     await getWorkplaces();
     final error = createError;
     if (error != null) throw error;
-    final workplace = _entity(name, folderPath);
+    final workplace = _entity(
+      name,
+      folderPath,
+    ).copyWith(gitRepoUrl: gitRepoUrl, gitBranch: gitBranch ?? 'main', gitToken: gitToken);
     _workplaces.add(workplace);
     _activeId = workplace.id;
     return workplace;
@@ -88,13 +98,17 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
       _contents[workplace.id] = content;
 
   @override
-  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage}) async {}
+  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage}) async => syncCalls++;
 
   @override
-  Future<WorkplaceContent> pullFromGit(WorkplaceEntity workplace) async => loadWorkplaceContent(workplace);
+  Future<WorkplaceContent> pullFromGit(WorkplaceEntity workplace) async {
+    pullCalls++;
+    return loadWorkplaceContent(workplace);
+  }
 
   @override
-  Future<String> getDefaultWorkplacesDirectory({String? workplaceName}) async => '/fake/${workplaceName ?? 'Workplaces'}';
+  Future<String> getDefaultWorkplacesDirectory({String? workplaceName}) async =>
+      '/fake/${workplaceName ?? 'Workplaces'}';
 
   @override
   Future<String?> pickFolder({String? initialPath}) async => _canPickFolder ? '/picked/folder' : null;
@@ -105,10 +119,10 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
   int _sequence = 0;
 
   WorkplaceEntity _entity(String name, String folder) => WorkplaceEntity(
-        id: 'fake-${_sequence++}',
-        name: name,
-        folderPath: folder,
-        createdAt: DateTime.utc(2026, 1, 1),
-        updatedAt: DateTime.utc(2026, 1, 1),
-      );
+    id: 'fake-${_sequence++}',
+    name: name,
+    folderPath: folder,
+    createdAt: DateTime.utc(2026, 1, 1),
+    updatedAt: DateTime.utc(2026, 1, 1),
+  );
 }

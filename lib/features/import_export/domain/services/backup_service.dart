@@ -22,6 +22,7 @@ import '../../../settings/domain/repositories/request_settings_repository.dart';
 import '../entities/backup_export.dart';
 import '../entities/import_format.dart';
 import '../entities/import_summary.dart';
+import '../repositories/git_state_store.dart';
 import 'backup_codec.dart';
 import 'collection_loader.dart';
 import 'import_names.dart';
@@ -52,6 +53,10 @@ final class BackupService {
   final DocumentationRepository _documentationRepository;
   final TagRepository _tagRepository;
 
+  /// What links a collection to its Git repository. Optional: without it
+  /// [snapshot] and [restore] simply never carry Git state.
+  final GitStateStore? _gitState;
+
   const BackupService(
     this._loader,
     this._collectionRepository,
@@ -64,11 +69,14 @@ final class BackupService {
     this._globalVariableRepository,
     this._requestSettingsRepository,
     this._documentationRepository,
-    this._tagRepository,
-  );
+    this._tagRepository, [
+    this._gitState,
+  ]);
 
   /// The workspace as data rather than text, for callers that persist it themselves.
-  Future<BackupSnapshot> snapshot() => _readSnapshot();
+  /// [includeGit] adds the Git link and sync state of linked collections, which
+  /// a mirror of the database needs and a backup the user exports does not.
+  Future<BackupSnapshot> snapshot({bool includeGit = false}) => _readSnapshot(includeGit: includeGit);
 
   Future<BackupExport> export() async {
     final snapshot = await _readSnapshot();
@@ -82,7 +90,7 @@ final class BackupService {
     );
   }
 
-  Future<BackupSnapshot> _readSnapshot() async {
+  Future<BackupSnapshot> _readSnapshot({bool includeGit = false}) async {
     final notes = {
       for (final kind in EntityKind.values)
         kind: (
@@ -95,37 +103,54 @@ final class BackupService {
 
     final collections = <BackupCollection>[];
     for (final loaded in await _loader.loadAll()) {
+      final gitState = includeGit
+          ? await _gitState?.read(
+              loaded.collection.id,
+              folderIds: [for (final folder in loaded.folders) folder.id],
+              requestIds: [for (final request in loaded.requests) request.id],
+            )
+          : null;
       final requests = <BackupRequest>[];
       for (final request in loaded.requests) {
         final scripts = await _scriptsRepository.get(request.id);
         final settings = await _requestSettingsRepository.get(request.id);
-        requests.add(BackupRequest(
-          request: request,
-          scripts: scripts != null && _hasScripts(scripts) ? scripts : null,
-          examples: await _exampleRepository.watchByRequest(request.id).first,
-          settings: settings.isEmpty ? null : settings,
-          notes: notesOf(EntityKind.request, request.id),
-        ));
+        requests.add(
+          BackupRequest(
+            request: request,
+            scripts: scripts != null && _hasScripts(scripts) ? scripts : null,
+            examples: await _exampleRepository.watchByRequest(request.id).first,
+            settings: settings.isEmpty ? null : settings,
+            notes: notesOf(EntityKind.request, request.id),
+            uid: gitState?.requestUids[request.id],
+          ),
+        );
       }
-      collections.add(BackupCollection(
-        name: loaded.collection.name,
-        auth: loaded.auth,
-        variables: loaded.variables,
-        folders: loaded.folders,
-        requests: requests,
-        notes: notesOf(EntityKind.collection, loaded.collection.id),
-        folderNotes: {
-          for (final folder in loaded.folders)
-            if (!notesOf(EntityKind.folder, folder.id).isEmpty) folder.id: notesOf(EntityKind.folder, folder.id),
-        },
-      ));
+      collections.add(
+        BackupCollection(
+          name: loaded.collection.name,
+          auth: loaded.auth,
+          variables: loaded.variables,
+          folders: loaded.folders,
+          requests: requests,
+          notes: notesOf(EntityKind.collection, loaded.collection.id),
+          folderNotes: {
+            for (final folder in loaded.folders)
+              if (!notesOf(EntityKind.folder, folder.id).isEmpty) folder.id: notesOf(EntityKind.folder, folder.id),
+          },
+          git: gitState?.git,
+          uid: gitState?.collectionUid,
+          folderUids: gitState?.folderUids ?? const {},
+        ),
+      );
     }
     final environments = <BackupEnvironment>[];
     for (final environment in await _environmentRepository.watchAll().first) {
-      environments.add(BackupEnvironment(
-        name: environment.name,
-        variables: await _environmentRepository.watchVariables(environment.id).first,
-      ));
+      environments.add(
+        BackupEnvironment(
+          name: environment.name,
+          variables: await _environmentRepository.watchVariables(environment.id).first,
+        ),
+      );
     }
     return BackupSnapshot(
       exportedAt: DateTime.now(),
@@ -138,7 +163,11 @@ final class BackupService {
   bool _hasScripts(RequestScriptsEntity scripts) =>
       scripts.assertionsJson.trim() != '[]' || scripts.extractorsJson.trim() != '[]';
 
-  Future<ImportSummary> restore(String text) async {
+  /// [restoreGit] re-links the collections the file says were linked to a Git
+  /// repository, with their sync state. It is for a workspace being rebuilt from
+  /// its own file; a backup the user imports into existing data never uses it,
+  /// since two collections must not claim the same repository files.
+  Future<ImportSummary> restore(String text, {bool restoreGit = false}) async {
     // Off the UI isolate: a large backup would otherwise freeze the window.
     final snapshot = await compute(BackupCodec.decode, text);
     if (snapshot.collections.isEmpty && snapshot.environments.isEmpty && snapshot.globals.isEmpty) {
@@ -159,7 +188,7 @@ final class BackupService {
       for (final collection in snapshot.collections) {
         final name = _uniqueName(collection.name, collectionNames);
         singleName = name;
-        final counts = await _restoreCollection(collection, name, collectionIds);
+        final counts = await _restoreCollection(collection, name, collectionIds, restoreGit);
         folders += counts.folders;
         requests += counts.requests;
       }
@@ -169,14 +198,16 @@ final class BackupService {
         final environmentId = await _environmentRepository.create(_uniqueName(environment.name, environmentNames));
         environmentIds.add(environmentId);
         for (final variable in environment.variables) {
-          await _environmentRepository.upsertVariable(EnvironmentVariableEntity(
-            id: 0,
-            environmentId: environmentId,
-            key: variable.key,
-            value: variable.value,
-            isSecret: variable.isSecret,
-            enabled: variable.enabled,
-          ));
+          await _environmentRepository.upsertVariable(
+            EnvironmentVariableEntity(
+              id: 0,
+              environmentId: environmentId,
+              key: variable.key,
+              value: variable.value,
+              isSecret: variable.isSecret,
+              enabled: variable.enabled,
+            ),
+          );
         }
       }
 
@@ -186,13 +217,15 @@ final class BackupService {
           skippedGlobals++;
           continue;
         }
-        await _globalVariableRepository.upsert(GlobalVariableEntity(
-          id: 0,
-          key: global.key,
-          value: global.value,
-          isSecret: global.isSecret,
-          enabled: global.enabled,
-        ));
+        await _globalVariableRepository.upsert(
+          GlobalVariableEntity(
+            id: 0,
+            key: global.key,
+            value: global.value,
+            isSecret: global.isSecret,
+            enabled: global.enabled,
+          ),
+        );
         addedGlobals++;
       }
     } catch (_) {
@@ -215,19 +248,22 @@ final class BackupService {
     BackupCollection collection,
     String name,
     List<int> createdIds,
+    bool restoreGit,
   ) async {
     final collectionId = await _collectionRepository.createCollection(name);
     createdIds.add(collectionId);
     final auth = collection.auth;
     if (auth != null) await _collectionAuthRepository.setAuthJson(collectionId, auth.toJsonString());
     for (final variable in collection.variables) {
-      await _collectionVariableRepository.upsert(CollectionVariableEntity(
-        id: 0,
-        collectionId: collectionId,
-        key: variable.key,
-        value: variable.value,
-        enabled: variable.enabled,
-      ));
+      await _collectionVariableRepository.upsert(
+        CollectionVariableEntity(
+          id: 0,
+          collectionId: collectionId,
+          key: variable.key,
+          value: variable.value,
+          enabled: variable.enabled,
+        ),
+      );
     }
     await _restoreNotes(EntityKind.collection, collectionId, collection.notes);
 
@@ -236,6 +272,7 @@ final class BackupService {
       final folderId = folderIds[entry.key];
       if (folderId != null) await _restoreNotes(EntityKind.folder, folderId, entry.value);
     }
+    final requestUids = <int, String>{};
     for (final item in collection.requests) {
       final source = item.request;
       final folderId = source.folderId == null ? null : folderIds[source.folderId];
@@ -244,40 +281,63 @@ final class BackupService {
         folderId: folderId,
         name: source.name,
       );
-      await _requestRepository.saveRequest(ApiRequestEntity(
-        id: requestId,
-        collectionId: collectionId,
-        folderId: folderId,
-        name: source.name,
-        method: source.method,
-        url: source.url,
-        headers: source.headers,
-        queryParams: source.queryParams,
-        body: source.body,
-        auth: source.auth,
-      ));
+      await _requestRepository.saveRequest(
+        ApiRequestEntity(
+          id: requestId,
+          collectionId: collectionId,
+          folderId: folderId,
+          name: source.name,
+          method: source.method,
+          url: source.url,
+          headers: source.headers,
+          queryParams: source.queryParams,
+          body: source.body,
+          auth: source.auth,
+        ),
+      );
       final scripts = item.scripts;
       if (scripts != null) {
-        await _scriptsRepository.save(RequestScriptsEntity(
-          requestId: requestId,
-          assertionsJson: scripts.assertionsJson,
-          extractorsJson: scripts.extractorsJson,
-        ));
+        await _scriptsRepository.save(
+          RequestScriptsEntity(
+            requestId: requestId,
+            assertionsJson: scripts.assertionsJson,
+            extractorsJson: scripts.extractorsJson,
+          ),
+        );
       }
       final settings = item.settings;
       if (settings != null) await _requestSettingsRepository.save(requestId, settings);
       await _restoreNotes(EntityKind.request, requestId, item.notes);
+      if (item.uid != null) requestUids[requestId] = item.uid!;
       for (final example in item.examples) {
-        await _exampleRepository.add(ResponseExampleEntity(
-          id: 0,
-          requestId: requestId,
-          name: example.name,
-          statusCode: example.statusCode,
-          headers: example.headers,
-          body: example.body,
-          savedAt: example.savedAt,
-        ));
+        await _exampleRepository.add(
+          ResponseExampleEntity(
+            id: 0,
+            requestId: requestId,
+            name: example.name,
+            statusCode: example.statusCode,
+            headers: example.headers,
+            body: example.body,
+            savedAt: example.savedAt,
+          ),
+        );
       }
+    }
+    final git = collection.git;
+    final gitState = _gitState;
+    if (restoreGit && git != null && gitState != null) {
+      await gitState.restore(
+        collectionId,
+        BackupGitState(
+          git: git,
+          collectionUid: collection.uid,
+          folderUids: {
+            for (final entry in collection.folderUids.entries)
+              if (folderIds[entry.key] != null) folderIds[entry.key]!: entry.value,
+          },
+          requestUids: requestUids,
+        ),
+      );
     }
     return (folders: folderIds.length, requests: collection.requests.length);
   }
@@ -316,8 +376,11 @@ final class BackupService {
     return created;
   }
 
-  Future<int> _createFolder(int collectionId, int? parentFolderId, String name) =>
-      _collectionRepository.createFolder(collectionId: collectionId, parentFolderId: parentFolderId, name: ImportNames.folder(name));
+  Future<int> _createFolder(int collectionId, int? parentFolderId, String name) => _collectionRepository.createFolder(
+    collectionId: collectionId,
+    parentFolderId: parentFolderId,
+    name: ImportNames.folder(name),
+  );
 
   /// [name] itself when free, else "name (restored)", "name (restored 2)", ...;
   /// the chosen name is added to [taken].

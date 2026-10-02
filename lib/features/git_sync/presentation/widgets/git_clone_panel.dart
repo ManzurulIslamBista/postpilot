@@ -1,3 +1,4 @@
+import '../../../../core/widgets/busy_label.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
@@ -91,10 +92,14 @@ class _GitClonePanelState extends State<GitClonePanel> {
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
+                child: OutlinedButton(
                   onPressed: canSearch ? () => vm.discover(repository: _repository.text, branch: _branch.text) : null,
-                  icon: const Icon(Icons.search, size: 18),
-                  label: const Text('Find collections'),
+                  child: BusyLabel(
+                    busy: vm.isBusy && (vm.busyLabel?.startsWith('Searching') ?? false),
+                    icon: Icons.search,
+                    label: 'Find collections',
+                    busyLabel: 'Searching…',
+                  ),
                 ),
               ),
               if (vm.hasSearched) ...[const SizedBox(height: 16), _Results(vm: vm)],
@@ -109,10 +114,14 @@ class _GitClonePanelState extends State<GitClonePanel> {
             children: [
               TextButton(onPressed: vm.canClose ? () => Navigator.pop(context) : null, child: const Text('Cancel')),
               const SizedBox(width: 8),
-              FilledButton.icon(
+              FilledButton(
                 onPressed: vm.canClone ? () => _clone(vm) : null,
-                icon: const Icon(Icons.download, size: 18),
-                label: const Text('Clone'),
+                child: BusyLabel(
+                  busy: vm.isBusy && (vm.busyLabel?.startsWith('Cloning') ?? false),
+                  icon: Icons.download,
+                  label: 'Clone',
+                  busyLabel: 'Cloning…',
+                ),
               ),
             ],
           ),
@@ -131,7 +140,8 @@ class _Results extends StatelessWidget {
     if (vm.found.isEmpty) {
       return const GitBanner(
         kind: GitBannerKind.warning,
-        message: 'No PostPilot collections were found on this branch. Check the repository and branch, or push a '
+        message:
+            'No PostPilot collections were found on this branch. Check the repository and branch, or push a '
             'collection to it first with "Git sync…".',
       );
     }

@@ -11,6 +11,7 @@ import 'package:postpilot/features/environments/domain/entities/environment_enti
 import 'package:postpilot/features/environments/domain/entities/global_variable_entity.dart';
 import 'package:postpilot/features/environments/domain/repositories/environment_repository.dart';
 import 'package:postpilot/features/environments/domain/repositories/global_variable_repository.dart';
+import 'package:postpilot/features/import_export/domain/repositories/git_state_store.dart';
 import 'package:postpilot/features/import_export/domain/services/backup_service.dart';
 import 'package:postpilot/features/import_export/domain/services/collection_loader.dart';
 import 'package:postpilot/features/import_export/domain/services/imported_collection_writer.dart';
@@ -44,26 +45,34 @@ abstract interface class RepositoryBundle {
 /// The services and use cases built on a [RepositoryBundle], wired the way the
 /// injector wires them.
 extension ImportExportServices on RepositoryBundle {
-  ImportedCollectionWriter get writer =>
-      ImportedCollectionWriter(collectionRepository, requestRepository, collectionVariableRepository, collectionAuthRepository);
+  ImportedCollectionWriter get writer => ImportedCollectionWriter(
+    collectionRepository,
+    requestRepository,
+    collectionVariableRepository,
+    collectionAuthRepository,
+  );
 
   CollectionLoader get loader =>
       CollectionLoader(collectionRepository, requestRepository, collectionVariableRepository, collectionAuthRepository);
 
-  BackupService get backupService => BackupService(
-        loader,
-        collectionRepository,
-        requestRepository,
-        collectionVariableRepository,
-        collectionAuthRepository,
-        scriptsRepository,
-        exampleRepository,
-        environmentRepository,
-        globalVariableRepository,
-        requestSettingsRepository,
-        documentationRepository,
-        tagRepository,
-      );
+  BackupService get backupService => backupServiceWith(null);
+
+  /// The same service, able to carry Git links through [gitState].
+  BackupService backupServiceWith(GitStateStore? gitState) => BackupService(
+    loader,
+    collectionRepository,
+    requestRepository,
+    collectionVariableRepository,
+    collectionAuthRepository,
+    scriptsRepository,
+    exampleRepository,
+    environmentRepository,
+    globalVariableRepository,
+    requestSettingsRepository,
+    documentationRepository,
+    tagRepository,
+    gitState,
+  );
 }
 
 /// All the tables the import/export code touches, in memory, behind the same
@@ -184,9 +193,10 @@ final class InMemoryRequestRepository implements RequestRepository {
 
   @override
   Stream<List<RequestSummaryEntity>> watchByCollection(int collectionId) => Stream.value([
-        for (final r in db.requests)
-          if (r.collectionId == collectionId) RequestSummaryEntity(id: r.id, folderId: r.folderId, name: r.name, method: r.method),
-      ]);
+    for (final r in db.requests)
+      if (r.collectionId == collectionId)
+        RequestSummaryEntity(id: r.id, folderId: r.folderId, name: r.name, method: r.method),
+  ]);
 
   @override
   Future<ApiRequestEntity?> findById(int id) async {
@@ -199,18 +209,20 @@ final class InMemoryRequestRepository implements RequestRepository {
   @override
   Future<int> createRequest({required int collectionId, int? folderId, required String name}) async {
     final id = db.nextId();
-    db.requests.add(ApiRequestEntity(
-      id: id,
-      collectionId: collectionId,
-      folderId: folderId,
-      name: name,
-      method: HttpMethod.get,
-      url: '',
-      headers: const [],
-      queryParams: const [],
-      body: RequestBody.empty,
-      auth: const RequestAuth(),
-    ));
+    db.requests.add(
+      ApiRequestEntity(
+        id: id,
+        collectionId: collectionId,
+        folderId: folderId,
+        name: name,
+        method: HttpMethod.get,
+        url: '',
+        headers: const [],
+        queryParams: const [],
+        body: RequestBody.empty,
+        auth: const RequestAuth(),
+      ),
+    );
     return id;
   }
 
@@ -235,20 +247,22 @@ final class InMemoryCollectionVariableRepository implements CollectionVariableRe
 
   @override
   Future<void> upsert(CollectionVariableEntity variable) async {
-    db.variables.add(CollectionVariableEntity(
-      id: db.nextId(),
-      collectionId: variable.collectionId,
-      key: variable.key,
-      value: variable.value,
-      enabled: variable.enabled,
-    ));
+    db.variables.add(
+      CollectionVariableEntity(
+        id: db.nextId(),
+        collectionId: variable.collectionId,
+        key: variable.key,
+        value: variable.value,
+        enabled: variable.enabled,
+      ),
+    );
   }
 
   @override
   Future<Map<String, String>> getEnabledMap(int collectionId) async => {
-        for (final v in db.variables)
-          if (v.collectionId == collectionId && v.enabled) v.key: v.value,
-      };
+    for (final v in db.variables)
+      if (v.collectionId == collectionId && v.enabled) v.key: v.value,
+  };
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
@@ -293,15 +307,17 @@ final class InMemoryResponseExampleRepository implements ResponseExampleReposito
   @override
   Future<int> add(ResponseExampleEntity example) async {
     final id = db.nextId();
-    db.examples.add(ResponseExampleEntity(
-      id: id,
-      requestId: example.requestId,
-      name: example.name,
-      statusCode: example.statusCode,
-      headers: example.headers,
-      body: example.body,
-      savedAt: example.savedAt,
-    ));
+    db.examples.add(
+      ResponseExampleEntity(
+        id: id,
+        requestId: example.requestId,
+        name: example.name,
+        statusCode: example.statusCode,
+        headers: example.headers,
+        body: example.body,
+        savedAt: example.savedAt,
+      ),
+    );
     return id;
   }
 
@@ -333,14 +349,16 @@ final class InMemoryEnvironmentRepository implements EnvironmentRepository {
 
   @override
   Future<void> upsertVariable(EnvironmentVariableEntity variable) async {
-    db.environmentVariables.add(EnvironmentVariableEntity(
-      id: db.nextId(),
-      environmentId: variable.environmentId,
-      key: variable.key,
-      value: variable.value,
-      isSecret: variable.isSecret,
-      enabled: variable.enabled,
-    ));
+    db.environmentVariables.add(
+      EnvironmentVariableEntity(
+        id: db.nextId(),
+        environmentId: variable.environmentId,
+        key: variable.key,
+        value: variable.value,
+        isSecret: variable.isSecret,
+        enabled: variable.enabled,
+      ),
+    );
   }
 
   @override
@@ -366,13 +384,15 @@ final class InMemoryGlobalVariableRepository implements GlobalVariableRepository
   @override
   Future<void> upsert(GlobalVariableEntity variable) async {
     if (db.shouldFailUpsertGlobal) throw StateError('disk full');
-    db.globals.add(GlobalVariableEntity(
-      id: db.nextId(),
-      key: variable.key,
-      value: variable.value,
-      isSecret: variable.isSecret,
-      enabled: variable.enabled,
-    ));
+    db.globals.add(
+      GlobalVariableEntity(
+        id: db.nextId(),
+        key: variable.key,
+        value: variable.value,
+        isSecret: variable.isSecret,
+        enabled: variable.enabled,
+      ),
+    );
   }
 
   @override
@@ -380,9 +400,9 @@ final class InMemoryGlobalVariableRepository implements GlobalVariableRepository
 
   @override
   Future<Map<String, String>> getEnabledMap() async => {
-        for (final g in db.globals)
-          if (g.enabled) g.key: g.value,
-      };
+    for (final g in db.globals)
+      if (g.enabled) g.key: g.value,
+  };
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
@@ -426,9 +446,9 @@ final class InMemoryDocumentationRepository implements DocumentationRepository {
 
   @override
   Future<Map<int, String>> markdownByLocalId(EntityKind kind) async => {
-        for (final entry in db.descriptions.entries)
-          if (entry.key.startsWith('${kind.dbValue}:')) int.parse(entry.key.split(':').last): entry.value,
-      };
+    for (final entry in db.descriptions.entries)
+      if (entry.key.startsWith('${kind.dbValue}:')) int.parse(entry.key.split(':').last): entry.value,
+  };
 }
 
 final class InMemoryTagRepository implements TagRepository {
@@ -450,9 +470,9 @@ final class InMemoryTagRepository implements TagRepository {
 
   @override
   Future<Map<int, List<String>>> tagsByLocalId(EntityKind kind) async => {
-        for (final entry in db.tags.entries)
-          if (entry.key.startsWith('${kind.dbValue}:')) int.parse(entry.key.split(':').last): [...entry.value],
-      };
+    for (final entry in db.tags.entries)
+      if (entry.key.startsWith('${kind.dbValue}:')) int.parse(entry.key.split(':').last): [...entry.value],
+  };
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');

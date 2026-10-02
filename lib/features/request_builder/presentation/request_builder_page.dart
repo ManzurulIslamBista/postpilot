@@ -75,6 +75,10 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
 /// preference says: two columns that narrow squeeze both editors unusably.
 const _sideBySideMinWidth = 920.0;
 
+/// Below this width request and response get one screen each (a segmented
+/// switch) instead of two stacked panes that would each be a sliver.
+const _phoneMaxWidth = 600.0;
+
 class _RequestBuilderBody extends StatelessWidget {
   final RequestBuilderViewModel vm;
   const _RequestBuilderBody({required this.vm});
@@ -86,11 +90,14 @@ class _RequestBuilderBody extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final canSplitSideways = constraints.maxWidth >= _sideBySideMinWidth;
+          final phone = constraints.maxWidth < _phoneMaxWidth;
           return Column(
             children: [
-              _UrlBar(vm: vm, canChooseLayout: canSplitSideways),
+              _UrlBar(vm: vm, canChooseLayout: canSplitSideways, compact: phone),
               const SizedBox(height: 12),
-              Expanded(child: _SplitArea(vm: vm, canSplitSideways: canSplitSideways)),
+              Expanded(
+                child: phone ? _PhoneSplit(vm: vm) : _SplitArea(vm: vm, canSplitSideways: canSplitSideways),
+              ),
             ],
           );
         },
@@ -124,6 +131,75 @@ class _SplitArea extends StatelessWidget {
   }
 }
 
+/// Phone layout: a Request/Response switch over one full-height panel. Both
+/// panes stay mounted so the open editor tab and scroll positions survive a
+/// switch, and a fresh response (or error) brings the Response pane forward.
+class _PhoneSplit extends StatefulWidget {
+  final RequestBuilderViewModel vm;
+  const _PhoneSplit({required this.vm});
+
+  @override
+  State<_PhoneSplit> createState() => _PhoneSplitState();
+}
+
+class _PhoneSplitState extends State<_PhoneSplit> {
+  bool _showResponse = false;
+  Object? _lastResponse;
+  String? _lastError;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastResponse = widget.vm.response;
+    _lastError = widget.vm.errorMessage;
+    widget.vm.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.vm.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    final vm = widget.vm;
+    if (identical(vm.response, _lastResponse) && vm.errorMessage == _lastError) return;
+    _lastResponse = vm.response;
+    _lastError = vm.errorMessage;
+    if ((vm.response != null || vm.errorMessage != null) && mounted) setState(() => _showResponse = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: false, label: Text('Request'), icon: Icon(Icons.edit_outlined, size: 16)),
+              ButtonSegment(value: true, label: Text('Response'), icon: Icon(Icons.data_object, size: 16)),
+            ],
+            selected: {_showResponse},
+            onSelectionChanged: (selection) => setState(() => _showResponse = selection.first),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: IndexedStack(
+            index: _showResponse ? 1 : 0,
+            children: [
+              _Panel(child: _RequestPane(vm: widget.vm)),
+              _Panel(child: _ResponsePane(vm: widget.vm)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// A rounded, bordered surface that lifts a pane off the backdrop.
 class _Panel extends StatelessWidget {
   final Widget child;
@@ -148,7 +224,10 @@ class _Panel extends StatelessWidget {
 class _UrlBar extends StatefulWidget {
   final RequestBuilderViewModel vm;
   final bool canChooseLayout;
-  const _UrlBar({required this.vm, required this.canChooseLayout});
+
+  /// Phone width: Send drops its icon so the URL keeps usable room.
+  final bool compact;
+  const _UrlBar({required this.vm, required this.canChooseLayout, this.compact = false});
 
   @override
   State<_UrlBar> createState() => _UrlBarState();
@@ -204,7 +283,10 @@ class _UrlBarState extends State<_UrlBar> {
           ),
           if (widget.canChooseLayout)
             IconButton(
-              icon: Icon(layout == ResponseLayout.right ? Icons.view_agenda_outlined : Icons.vertical_split_outlined, size: 18),
+              icon: Icon(
+                layout == ResponseLayout.right ? Icons.view_agenda_outlined : Icons.vertical_split_outlined,
+                size: 18,
+              ),
               tooltip: layout == ResponseLayout.right ? 'Show response below' : 'Show response on the right',
               onPressed: context.read<LayoutPrefs>().toggleResponseLayout,
             ),
@@ -221,7 +303,12 @@ class _UrlBarState extends State<_UrlBar> {
               label: const Text('Cancel'),
             )
           else
-            GradientButton(label: 'Send', icon: Icons.send_rounded, onPressed: vm.send),
+            GradientButton(
+              label: 'Send',
+              icon: widget.compact ? null : Icons.send_rounded,
+              padding: EdgeInsets.symmetric(horizontal: widget.compact ? 14 : 20, vertical: 11),
+              onPressed: vm.send,
+            ),
         ],
       ),
     );
@@ -261,7 +348,9 @@ class _RequestPane extends StatelessWidget {
                 _scrollable(KeyValueEditor(items: request.queryParams, onChanged: vm.updateQueryParams)),
                 _scrollable(KeyValueEditor(items: request.headers, onChanged: vm.updateHeaders)),
                 _padded(BodyEditor(body: request.body, onChanged: vm.updateBody)),
-                _scrollable(AuthEditor(auth: request.auth, collectionId: request.collectionId, onChanged: vm.updateAuth)),
+                _scrollable(
+                  AuthEditor(auth: request.auth, collectionId: request.collectionId, onChanged: vm.updateAuth),
+                ),
                 _scrollable(RequestTestsTab(requestId: request.id)),
                 _scrollable(RequestSettingsTab(requestId: request.id)),
                 _scrollable(RequestDocsTab(requestId: request.id)),
@@ -289,6 +378,12 @@ class _ResponsePane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // A thin bar while the request is in flight; the panel keeps its height
+        // either way so the content below does not jump when it appears.
+        SizedBox(
+          height: 2,
+          child: vm.isSending ? LinearProgressIndicator(minHeight: 2, backgroundColor: colors.borderSubtle) : null,
+        ),
         if (vm.errorMessage != null)
           Container(
             color: colors.statusError.withValues(alpha: 0.1),

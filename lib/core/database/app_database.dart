@@ -105,22 +105,27 @@ class AppDatabase extends _$AppDatabase {
   /// Emits whenever a table [clearWorkplaceData] empties changes, which is
   /// exactly when the workplace's `workspace.json` is out of date.
   Stream<void> workplaceDataChanges() => tableUpdates(
-        TableUpdateQuery.onAllTables([
-          collections,
-          folders,
-          requests,
-          environments,
-          environmentVariables,
-          globalVariables,
-          collectionVariables,
-          collectionAuth,
-          requestScripts,
-          responseExamples,
-          requestSettingEntries,
-          entityDocs,
-          entityTags,
-        ]),
-      );
+    TableUpdateQuery.onAllTables([
+      collections,
+      folders,
+      requests,
+      environments,
+      environmentVariables,
+      globalVariables,
+      collectionVariables,
+      collectionAuth,
+      requestScripts,
+      responseExamples,
+      requestSettingEntries,
+      entityDocs,
+      entityTags,
+      // A Git link, its last-synced base and the uids move on every connect,
+      // pull and push, and the workspace file carries them.
+      gitLinks,
+      gitBaseEntries,
+      entityUids,
+    ]),
+  );
 
   @override
   int get schemaVersion => 4;
@@ -136,35 +141,35 @@ class AppDatabase extends _$AppDatabase {
   // a drift issue to file) instead of a drop-and-recreate.
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onUpgrade: (m, from, to) async {
-          if (from < 2) {
-            await m.deleteTable(requests.actualTableName);
-            await m.createTable(requests);
-          }
-          if (from < 3) {
-            await m.createTable(globalVariables);
-            await m.createTable(collectionVariables);
-            await m.createIndex(collectionVariablesCollectionId);
-            await m.createTable(collectionAuth);
-            await m.createTable(requestScripts);
-            await m.createTable(responseExamples);
-            await m.createIndex(responseExamplesRequestId);
-          }
-          if (from < 4) {
-            await m.createTable(entityUids);
-            await m.createIndex(entityUidsUid);
-            await m.createTable(gitLinks);
-            await m.createTable(gitBaseEntries);
-            await m.createTable(settingEntries);
-            await m.createTable(requestSettingEntries);
-            await m.createTable(entityDocs);
-            await m.createTable(entityTags);
-            await m.createIndex(entityTagsTag);
-          }
-        },
-        // SQLite skips every ON DELETE CASCADE / SET NULL unless this is set on each connection.
-        beforeOpen: (details) => customStatement('PRAGMA foreign_keys = ON'),
-      );
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.deleteTable(requests.actualTableName);
+        await m.createTable(requests);
+      }
+      if (from < 3) {
+        await m.createTable(globalVariables);
+        await m.createTable(collectionVariables);
+        await m.createIndex(collectionVariablesCollectionId);
+        await m.createTable(collectionAuth);
+        await m.createTable(requestScripts);
+        await m.createTable(responseExamples);
+        await m.createIndex(responseExamplesRequestId);
+      }
+      if (from < 4) {
+        await m.createTable(entityUids);
+        await m.createIndex(entityUidsUid);
+        await m.createTable(gitLinks);
+        await m.createTable(gitBaseEntries);
+        await m.createTable(settingEntries);
+        await m.createTable(requestSettingEntries);
+        await m.createTable(entityDocs);
+        await m.createTable(entityTags);
+        await m.createIndex(entityTagsTag);
+      }
+    },
+    // SQLite skips every ON DELETE CASCADE / SET NULL unless this is set on each connection.
+    beforeOpen: (details) => customStatement('PRAGMA foreign_keys = ON'),
+  );
 
   // The platform's connection lives in connection/: a SQLite file natively, and on
   // the web SQLite-in-WebAssembly (sqlite3.wasm and drift_worker.js live in web/).

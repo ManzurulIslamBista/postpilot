@@ -14,7 +14,8 @@ Future<bool> pushWorkplaceToGit(BuildContext context, WorkplaceViewModel vm) asy
     if (!context.mounted) return false;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => _SecretsWarningDialog(secrets: secrets, repository: vm.activeWorkplace?.gitRepoUrl ?? 'the repository'),
+      builder: (_) =>
+          _SecretsWarningDialog(secrets: secrets, repository: vm.activeWorkplace?.gitRepoUrl ?? 'the repository'),
     );
     if (confirmed != true) return false;
   }
@@ -25,6 +26,48 @@ Future<bool> pushWorkplaceToGit(BuildContext context, WorkplaceViewModel vm) asy
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(error ?? 'Synced successfully with Git repository!'),
+        backgroundColor: error != null ? context.colors.statusError : null,
+      ),
+    );
+  }
+  return true;
+}
+
+/// Pulls the open workplace from its Git repository and reports the outcome. A
+/// pull replaces everything in the workplace with the repository's copy, so
+/// changes not yet pushed would be lost: the user is asked first.
+/// Returns whether the pull was attempted.
+Future<bool> pullWorkplaceFromGit(BuildContext context, WorkplaceViewModel vm) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Replace this workplace with the repository copy?'),
+      content: Text(
+        'Pulling replaces the collections, environments and variables in "${vm.activeWorkplace?.name ?? 'this workplace'}" '
+        'with what is in the repository. Changes you have not pushed yet will be lost.',
+      ),
+      actions: [
+        TextButton(
+          autofocus: true,
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: Theme.of(dialogContext).colorScheme.error),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Pull and replace'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return false;
+
+  await vm.pullFromGit();
+  if (context.mounted) {
+    final error = vm.errorMessage;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Pulled successfully from Git repository!'),
         backgroundColor: error != null ? context.colors.statusError : null,
       ),
     );

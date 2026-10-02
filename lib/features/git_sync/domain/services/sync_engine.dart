@@ -75,6 +75,22 @@ final class SyncEngine {
     return SecretFields.applyPolicy(parsed.snapshot, includeSecrets: link.includeSecrets);
   }
 
+  /// Whether the files of [link]'s collection at [commitSha] are exactly the ones
+  /// [base] describes: the branch may have moved, but only elsewhere (another
+  /// collection of the same repository, a README), so this collection has nothing
+  /// to pull and nothing that stops it from pushing on top.
+  Future<bool> remoteUnchanged(
+    GitLink link, {
+    required String commitSha,
+    required Map<String, BaseEntry> base,
+  }) async {
+    if (base.isEmpty) return false; // nothing shared yet: compare nothing, assume it moved
+    final tree = await _host.getTree(link.repo, commitSha, pathPrefix: link.basePath);
+    final relevant = RepoLayout.relevantPaths(tree.blobShaByPath.keys, basePath: link.basePath);
+    final baseShaByPath = {for (final entry in base.values) entry.path: entry.blobSha};
+    return relevant.length == baseShaByPath.length && relevant.every((path) => baseShaByPath[path] == tree.blobShaByPath[path]);
+  }
+
   /// Blob texts by repository path, with at most 8 downloads in flight.
   Future<Map<String, String>> downloadTexts(RepoRef repo, Map<String, String> blobShaByPath) async {
     final queue = blobShaByPath.entries.toList();

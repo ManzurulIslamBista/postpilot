@@ -4,7 +4,6 @@
 
 ![Flutter](https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 ![Dart](https://img.shields.io/badge/dart-%230175C2.svg?style=for-the-badge&logo=dart&logoColor=white)
-![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
 ![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)
 [![Build & Release](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml)
@@ -34,7 +33,7 @@ Download the latest version built directly from the `main` branch:
 
 ## 📖 Overview
 
-**PostPilot** is an open-source, cross-platform API testing and development environment crafted with Flutter and Dart. It combines the ease of use of modern API clients with powerful developer workflows such as direct Git repository synchronization, Supabase-backed team collaboration, and local-first SQLite persistence.
+**PostPilot** is an open-source, cross-platform API testing and development environment crafted with Flutter and Dart. It combines the ease of use of modern API clients with powerful developer workflows such as workspaces and collections that live in Git repositories (pull, push, merge), and local-first SQLite persistence. There is no hosted backend: your data stays on your device and in the repositories you choose.
 
 ---
 
@@ -61,10 +60,11 @@ Download the latest version built directly from the `main` branch:
 - Branch management: checkout, create, and switch branches.
 - Commit, pull, and push collection changes with built-in 3-way merge conflict handling.
 
-### 👥 Team Collaboration (Powered by Supabase)
-- Real-time cloud sync for team collections.
-- Role-based permissions (`Owner`, `Editor`, `Viewer`).
-- Instant updates and team member invitations.
+### 👥 Teams Through Git
+- Teams collaborate the way they already do: through the Git repository (and its access rules).
+- **Workplaces** keep several independent workspaces side by side, each stored as one `workspace.json`
+  and optionally connected to its own GitHub repository (pull / push).
+- **Collections** can each be linked to their own repository, branch and folder, and are synced separately.
 
 ### 🍪 Cookie Jar & Network Inspector
 - Built-in persistent cookie management.
@@ -97,7 +97,6 @@ lib/
 │   ├── theme/                  # Modern UI themes and styles
 │   └── utils/                  # Dynamic variables & helpers
 └── features/                   # Feature modules (Clean Architecture)
-    ├── auth/                   # Supabase authentication
     ├── collections/            # Collections, folders, and request tree
     ├── console/                # Network logs & live console
     ├── cookies/                # Cookie manager
@@ -110,7 +109,7 @@ lib/
     ├── scripting/              # Pre/post request scripts
     ├── settings/               # App configuration & preferences
     ├── shell/                  # Navigation rail & split-view workbench
-    └── team/                   # Team workspaces & cloud sync
+    └── workplace/              # Workspaces stored as workspace.json, with Git pull/push
 ```
 
 ### Core Libraries & Tools
@@ -118,7 +117,6 @@ lib/
 - **Local Persistence:** [Drift](https://drift.simonbinder.eu/) (Reactive SQLite for Dart) & [drift_flutter](https://pub.dev/packages/drift_flutter)
 - **HTTP Engine:** [Dio](https://pub.dev/packages/dio) with [cookie_jar](https://pub.dev/packages/cookie_jar)
 - **Dependency Injection:** [GetIt](https://pub.dev/packages/get_it)
-- **Backend / Realtime:** [Supabase Flutter](https://pub.dev/packages/supabase_flutter)
 - **Secure Storage:** [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage)
 
 ---
@@ -164,21 +162,13 @@ lib/
 
 ---
 
-## 🗄️ Database & Backend Setup
+## 🗄️ Data & Git
 
-PostPilot supports local-first standalone mode right out of the box with SQLite. If you wish to use team collaboration features:
+PostPilot is local-first: everything is stored in SQLite on your device (in the browser's storage on the web).
+There is nothing to set up on a server.
 
-1. Create a project at [Supabase](https://supabase.com).
-2. Execute the database schema provided in `supabase_team_schema.sql` in your Supabase SQL editor:
-   - Sets up `cloud_collections`, `cloud_requests`, `collection_members`, and workspace tables.
-   - Enforces PostgreSQL Row Level Security (RLS) policies.
-3. Configure your project credentials in `lib/core/config/supabase_config.dart`:
-   ```dart
-   final class SupabaseConfig {
-     static const url = 'YOUR_SUPABASE_URL';
-     static const publishableKey = 'YOUR_SUPABASE_ANON_KEY';
-   }
-   ```
+To share work, connect a **workplace** (a whole workspace) or a single **collection** to a GitHub repository.
+Use a GitHub personal access token with the `repo` scope, and keep real credentials out of shared files.
 
 ---
 

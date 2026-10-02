@@ -1,3 +1,4 @@
+import '../../../core/widgets/busy_label.dart';
 import '../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,7 +10,8 @@ import 'view_models/import_export_view_model.dart';
 class ImportOpenApiDialog extends StatefulWidget {
   const ImportOpenApiDialog({super.key});
 
-  static Future<int?> show(BuildContext context) => showDialog<int>(context: context, builder: (_) => const ImportOpenApiDialog());
+  static Future<int?> show(BuildContext context) =>
+      showDialog<int>(context: context, builder: (_) => const ImportOpenApiDialog());
 
   @override
   State<ImportOpenApiDialog> createState() => _ImportOpenApiDialogState();
@@ -61,7 +63,11 @@ class _ImportOpenApiDialogState extends State<ImportOpenApiDialog> {
                   TextField(
                     controller: _controller,
                     maxLines: 10,
-                    style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 12),
+                    style: const TextStyle(
+                      fontFamily: AppFonts.monoFamily,
+                      fontFamilyFallback: AppFonts.monoFallback,
+                      fontSize: 12,
+                    ),
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
                       hintText: 'openapi: 3.0.0\ninfo:\n  title: My API\npaths:\n  /users:\n    get: ...',
@@ -76,12 +82,13 @@ class _ImportOpenApiDialogState extends State<ImportOpenApiDialog> {
               ),
             ),
             actions: [
-              TextButton(onPressed: vm.isImportingOpenApi ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: vm.isImportingOpenApi ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
                 onPressed: vm.isImportingOpenApi || _controller.text.trim().isEmpty ? null : _import,
-                child: vm.isImportingOpenApi
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Import'),
+                child: BusyLabel(busy: vm.isImportingOpenApi, label: 'Import', busyLabel: 'Importing…'),
               ),
             ],
           ),

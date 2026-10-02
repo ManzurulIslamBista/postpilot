@@ -6,23 +6,21 @@ final class WorkplaceContent {
   final WorkplaceEntity workplace;
   final BackupSnapshot snapshot;
 
-  const WorkplaceContent({
-    required this.workplace,
-    required this.snapshot,
-  });
+  const WorkplaceContent({required this.workplace, required this.snapshot});
 
   factory WorkplaceContent.empty(WorkplaceEntity workplace) => WorkplaceContent(
-        workplace: workplace,
-        snapshot: BackupSnapshot(
-          exportedAt: DateTime.now(),
-          collections: const [],
-          environments: const [],
-          globals: const [],
-        ),
-      );
+    workplace: workplace,
+    snapshot: BackupSnapshot(
+      exportedAt: DateTime.now(),
+      collections: const [],
+      environments: const [],
+      globals: const [],
+    ),
+  );
 
   String toJsonString() {
-    final snapshotJson = jsonDecode(BackupCodec.encode(snapshot)) as Map<String, dynamic>;
+    // The Git link of each linked collection travels with the workspace.
+    final snapshotJson = jsonDecode(BackupCodec.encode(snapshot, includeGit: true)) as Map<String, dynamic>;
     final wpJson = workplace.toJson();
     // Security: Never serialize git token to workspace.json (prevents GitHub secret scanning rejection and credential leaks)
     wpJson['gitToken'] = null;

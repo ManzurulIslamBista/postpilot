@@ -36,7 +36,12 @@ final class GitCommitPushUseCase implements UseCase<PushResult, GitCommitPushPar
     if (changes.isEmpty || writes.isEmpty) throw const GitNothingToCommitException();
 
     final head = await _host.getBranchHead(link.repo, link.branch);
-    if (head != link.lastSyncedSha) throw const GitNotFastForwardException('The remote branch changed - pull first');
+    // Only a change to THIS collection's files blocks the push; the same repository
+    // often holds other collections, whose commits move the branch too.
+    if (head != link.lastSyncedSha &&
+        (head == null || !await _engine.remoteUnchanged(link, commitSha: head, base: base))) {
+      throw const GitNotFastForwardException('The remote branch changed - pull first');
+    }
 
     final message = params.message.trim();
     final sha = await _host.commit(

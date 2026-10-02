@@ -1,3 +1,4 @@
+import '../../../../core/widgets/busy_label.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,11 +57,11 @@ class AuthEditor extends StatelessWidget {
               AuthType.awsSignatureV4 => _awsFields(),
               AuthType.jwtBearer => _jwtFields(),
               AuthType.oauth2 => [
-                  ChangeNotifierProvider<RequestOAuth2ViewModel>(
-                    create: (_) => locator<RequestOAuth2ViewModel>(),
-                    child: _OAuth2Fields(auth: auth, onChanged: onChanged, collectionId: collectionId),
-                  ),
-                ],
+                ChangeNotifierProvider<RequestOAuth2ViewModel>(
+                  create: (_) => locator<RequestOAuth2ViewModel>(),
+                  child: _OAuth2Fields(auth: auth, onChanged: onChanged, collectionId: collectionId),
+                ),
+              ],
               AuthType.none || AuthType.inherit => const [],
             },
           ),
@@ -70,111 +71,111 @@ class AuthEditor extends StatelessWidget {
   }
 
   List<Widget> _apiKeyFields() => [
-        TextFormField(
-          initialValue: auth.apiKeyName,
-          decoration: const InputDecoration(labelText: 'Key'),
-          onChanged: (v) => onChanged(auth.copyWith(apiKeyName: v)),
-        ),
-        TextFormField(
-          initialValue: auth.apiKeyValue,
-          decoration: const InputDecoration(labelText: 'Value'),
-          onChanged: (v) => onChanged(auth.copyWith(apiKeyValue: v)),
-        ),
-        DropdownButton<ApiKeyLocation>(
-          value: auth.apiKeyLocation,
-          onChanged: (l) => l == null ? null : onChanged(auth.copyWith(apiKeyLocation: l)),
-          items: const [
-            DropdownMenuItem(value: ApiKeyLocation.header, child: Text('Header')),
-            DropdownMenuItem(value: ApiKeyLocation.query, child: Text('Query Params')),
-          ],
-        ),
-      ];
+    TextFormField(
+      initialValue: auth.apiKeyName,
+      decoration: const InputDecoration(labelText: 'Key'),
+      onChanged: (v) => onChanged(auth.copyWith(apiKeyName: v)),
+    ),
+    TextFormField(
+      initialValue: auth.apiKeyValue,
+      decoration: const InputDecoration(labelText: 'Value'),
+      onChanged: (v) => onChanged(auth.copyWith(apiKeyValue: v)),
+    ),
+    DropdownButton<ApiKeyLocation>(
+      value: auth.apiKeyLocation,
+      onChanged: (l) => l == null ? null : onChanged(auth.copyWith(apiKeyLocation: l)),
+      items: const [
+        DropdownMenuItem(value: ApiKeyLocation.header, child: Text('Header')),
+        DropdownMenuItem(value: ApiKeyLocation.query, child: Text('Query Params')),
+      ],
+    ),
+  ];
 
   List<Widget> _bearerFields() => [
-        TextFormField(
-          initialValue: auth.bearerToken,
-          decoration: const InputDecoration(labelText: 'Token'),
-          onChanged: (v) => onChanged(auth.copyWith(bearerToken: v)),
-        ),
-      ];
+    TextFormField(
+      initialValue: auth.bearerToken,
+      decoration: const InputDecoration(labelText: 'Token'),
+      onChanged: (v) => onChanged(auth.copyWith(bearerToken: v)),
+    ),
+  ];
 
   List<Widget> _basicFields() => [
-        TextFormField(
-          initialValue: auth.basicUsername,
-          decoration: const InputDecoration(labelText: 'Username'),
-          onChanged: (v) => onChanged(auth.copyWith(basicUsername: v)),
-        ),
-        TextFormField(
-          initialValue: auth.basicPassword,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'Password'),
-          onChanged: (v) => onChanged(auth.copyWith(basicPassword: v)),
-        ),
-      ];
+    TextFormField(
+      initialValue: auth.basicUsername,
+      decoration: const InputDecoration(labelText: 'Username'),
+      onChanged: (v) => onChanged(auth.copyWith(basicUsername: v)),
+    ),
+    TextFormField(
+      initialValue: auth.basicPassword,
+      obscureText: true,
+      decoration: const InputDecoration(labelText: 'Password'),
+      onChanged: (v) => onChanged(auth.copyWith(basicPassword: v)),
+    ),
+  ];
 
   List<Widget> _awsFields() => [
-        TextFormField(
-          initialValue: auth.awsAccessKey,
-          decoration: const InputDecoration(labelText: 'Access Key'),
-          onChanged: (v) => onChanged(auth.copyWith(awsAccessKey: v)),
+    TextFormField(
+      initialValue: auth.awsAccessKey,
+      decoration: const InputDecoration(labelText: 'Access Key'),
+      onChanged: (v) => onChanged(auth.copyWith(awsAccessKey: v)),
+    ),
+    TextFormField(
+      initialValue: auth.awsSecretKey,
+      obscureText: true,
+      decoration: const InputDecoration(labelText: 'Secret Key'),
+      onChanged: (v) => onChanged(auth.copyWith(awsSecretKey: v)),
+    ),
+    TextFormField(
+      initialValue: auth.awsSessionToken,
+      decoration: const InputDecoration(labelText: 'Session Token (optional)'),
+      onChanged: (v) => onChanged(auth.copyWith(awsSessionToken: v)),
+    ),
+    Row(
+      children: [
+        Expanded(
+          child: TextFormField(
+            initialValue: auth.awsRegion,
+            decoration: const InputDecoration(labelText: 'AWS Region'),
+            onChanged: (v) => onChanged(auth.copyWith(awsRegion: v)),
+          ),
         ),
-        TextFormField(
-          initialValue: auth.awsSecretKey,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'Secret Key'),
-          onChanged: (v) => onChanged(auth.copyWith(awsSecretKey: v)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: TextFormField(
+            initialValue: auth.awsService,
+            decoration: const InputDecoration(labelText: 'Service Name'),
+            onChanged: (v) => onChanged(auth.copyWith(awsService: v)),
+          ),
         ),
-        TextFormField(
-          initialValue: auth.awsSessionToken,
-          decoration: const InputDecoration(labelText: 'Session Token (optional)'),
-          onChanged: (v) => onChanged(auth.copyWith(awsSessionToken: v)),
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                initialValue: auth.awsRegion,
-                decoration: const InputDecoration(labelText: 'AWS Region'),
-                onChanged: (v) => onChanged(auth.copyWith(awsRegion: v)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextFormField(
-                initialValue: auth.awsService,
-                decoration: const InputDecoration(labelText: 'Service Name'),
-                onChanged: (v) => onChanged(auth.copyWith(awsService: v)),
-              ),
-            ),
-          ],
-        ),
-      ];
+      ],
+    ),
+  ];
 
   List<Widget> _jwtFields() => [
-        DropdownButton<JwtAlgorithm>(
-          value: auth.jwtAlgorithm,
-          onChanged: (a) => a == null ? null : onChanged(auth.copyWith(jwtAlgorithm: a)),
-          items: [for (final a in JwtAlgorithm.values) DropdownMenuItem(value: a, child: Text(a.label))],
-        ),
-        TextFormField(
-          initialValue: auth.jwtSecret,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'Secret'),
-          onChanged: (v) => onChanged(auth.copyWith(jwtSecret: v)),
-        ),
-        TextFormField(
-          initialValue: auth.jwtPayload,
-          maxLines: 4,
-          style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 13),
-          decoration: const InputDecoration(labelText: 'Payload (JSON)'),
-          onChanged: (v) => onChanged(auth.copyWith(jwtPayload: v)),
-        ),
-        TextFormField(
-          initialValue: auth.jwtHeaderPrefix,
-          decoration: const InputDecoration(labelText: 'Header Prefix'),
-          onChanged: (v) => onChanged(auth.copyWith(jwtHeaderPrefix: v)),
-        ),
-      ];
+    DropdownButton<JwtAlgorithm>(
+      value: auth.jwtAlgorithm,
+      onChanged: (a) => a == null ? null : onChanged(auth.copyWith(jwtAlgorithm: a)),
+      items: [for (final a in JwtAlgorithm.values) DropdownMenuItem(value: a, child: Text(a.label))],
+    ),
+    TextFormField(
+      initialValue: auth.jwtSecret,
+      obscureText: true,
+      decoration: const InputDecoration(labelText: 'Secret'),
+      onChanged: (v) => onChanged(auth.copyWith(jwtSecret: v)),
+    ),
+    TextFormField(
+      initialValue: auth.jwtPayload,
+      maxLines: 4,
+      style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 13),
+      decoration: const InputDecoration(labelText: 'Payload (JSON)'),
+      onChanged: (v) => onChanged(auth.copyWith(jwtPayload: v)),
+    ),
+    TextFormField(
+      initialValue: auth.jwtHeaderPrefix,
+      decoration: const InputDecoration(labelText: 'Header Prefix'),
+      onChanged: (v) => onChanged(auth.copyWith(jwtHeaderPrefix: v)),
+    ),
+  ];
 }
 
 class _OAuth2Fields extends StatefulWidget {
@@ -194,8 +195,8 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
   /// state always sees the latest [widget]), not as it was when the button was
   /// pressed, so those edits survive.
   void _applyToken(OAuth2Token token) => widget.onChanged(
-        widget.auth.withOAuth2Token(token.accessToken, token.expiresAt, refreshToken: token.refreshToken ?? ''),
-      );
+    widget.auth.withOAuth2Token(token.accessToken, token.expiresAt, refreshToken: token.refreshToken ?? ''),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -215,26 +216,55 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
           items: [for (final g in OAuth2GrantType.values) DropdownMenuItem(value: g, child: Text(g.label))],
         ),
         if (isPkce)
-          _field('oauth2AuthorizationUrl', 'Authorization URL', auth.oauth2AuthorizationUrl,
-              (v) => onChanged(auth.copyWith(oauth2AuthorizationUrl: v))),
-        _field('oauth2AccessTokenUrl', 'Access Token URL', auth.oauth2AccessTokenUrl,
-            (v) => onChanged(auth.copyWith(oauth2AccessTokenUrl: v))),
+          _field(
+            'oauth2AuthorizationUrl',
+            'Authorization URL',
+            auth.oauth2AuthorizationUrl,
+            (v) => onChanged(auth.copyWith(oauth2AuthorizationUrl: v)),
+          ),
+        _field(
+          'oauth2AccessTokenUrl',
+          'Access Token URL',
+          auth.oauth2AccessTokenUrl,
+          (v) => onChanged(auth.copyWith(oauth2AccessTokenUrl: v)),
+        ),
         if (isPkce)
-          _field('oauth2RedirectUri', 'Redirect URI', auth.oauth2RedirectUri,
-              (v) => onChanged(auth.copyWith(oauth2RedirectUri: v))),
+          _field(
+            'oauth2RedirectUri',
+            'Redirect URI',
+            auth.oauth2RedirectUri,
+            (v) => onChanged(auth.copyWith(oauth2RedirectUri: v)),
+          ),
         _field('oauth2ClientId', 'Client ID', auth.oauth2ClientId, (v) => onChanged(auth.copyWith(oauth2ClientId: v))),
-        _field('oauth2ClientSecret', isPkce ? 'Client Secret (optional for public clients)' : 'Client Secret',
-            auth.oauth2ClientSecret, (v) => onChanged(auth.copyWith(oauth2ClientSecret: v)),
-            obscure: true),
+        _field(
+          'oauth2ClientSecret',
+          isPkce ? 'Client Secret (optional for public clients)' : 'Client Secret',
+          auth.oauth2ClientSecret,
+          (v) => onChanged(auth.copyWith(oauth2ClientSecret: v)),
+          obscure: true,
+        ),
         if (grant == OAuth2GrantType.password) ...[
           _field('oauth2Username', 'Username', auth.oauth2Username, (v) => onChanged(auth.copyWith(oauth2Username: v))),
-          _field('oauth2Password', 'Password', auth.oauth2Password, (v) => onChanged(auth.copyWith(oauth2Password: v)),
-              obscure: true),
+          _field(
+            'oauth2Password',
+            'Password',
+            auth.oauth2Password,
+            (v) => onChanged(auth.copyWith(oauth2Password: v)),
+            obscure: true,
+          ),
         ],
-        _field('oauth2Scope', 'Scope (space-separated)', auth.oauth2Scope,
-            (v) => onChanged(auth.copyWith(oauth2Scope: v))),
-        _field('oauth2Audience', 'Audience (optional)', auth.oauth2Audience,
-            (v) => onChanged(auth.copyWith(oauth2Audience: v))),
+        _field(
+          'oauth2Scope',
+          'Scope (space-separated)',
+          auth.oauth2Scope,
+          (v) => onChanged(auth.copyWith(oauth2Scope: v)),
+        ),
+        _field(
+          'oauth2Audience',
+          'Audience (optional)',
+          auth.oauth2Audience,
+          (v) => onChanged(auth.copyWith(oauth2Audience: v)),
+        ),
         const SizedBox(height: 8),
         Row(
           children: [
@@ -259,19 +289,24 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
         if (vm.errorMessage != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(vm.errorMessage!, style: context.textStyles.caption.copyWith(color: context.colors.statusError)),
+            child: Text(
+              vm.errorMessage!,
+              style: context.textStyles.caption.copyWith(color: context.colors.statusError),
+            ),
           ),
         const SizedBox(height: 12),
-        FilledButton.icon(
+        FilledButton(
           onPressed: vm.isFetching
               ? null
               : () => isPkce
-                  ? _openAuthorization(context, vm)
-                  : vm.fetchToken(auth, _applyToken, collectionId: collectionId),
-          icon: vm.isFetching
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.vpn_key_outlined, size: 18),
-          label: Text(isPkce ? 'Get new access token (opens browser)' : 'Get new access token'),
+                    ? _openAuthorization(context, vm)
+                    : vm.fetchToken(auth, _applyToken, collectionId: collectionId),
+          child: BusyLabel(
+            busy: vm.isFetching,
+            icon: Icons.vpn_key_outlined,
+            label: isPkce ? 'Get new access token (opens browser)' : 'Get new access token',
+            busyLabel: 'Fetching token…',
+          ),
         ),
         if (isPkce && vm.authorizationUrl != null) ...[
           const SizedBox(height: 12),
@@ -292,8 +327,9 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
     if (url == null) return;
     final opened = await launchUrl(url);
     if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Couldn't open the browser — copy the URL below instead")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Couldn't open the browser — copy the URL below instead")));
     }
   }
 
@@ -324,16 +360,19 @@ class _TokenStatus extends StatelessWidget {
     final statusColor = !auth.hasOAuth2Token
         ? context.colors.secondaryText
         : expired
-            ? context.colors.statusError
-            : context.colors.statusSuccess;
+        ? context.colors.statusError
+        : context.colors.statusSuccess;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(auth.hasOAuth2Token && !expired ? Icons.check_circle_outline : Icons.error_outline,
-                size: 16, color: statusColor),
+            Icon(
+              auth.hasOAuth2Token && !expired ? Icons.check_circle_outline : Icons.error_outline,
+              size: 16,
+              color: statusColor,
+            ),
             const SizedBox(width: 6),
             Text(status, style: context.textStyles.caption.copyWith(color: statusColor)),
             const Spacer(),
@@ -402,13 +441,13 @@ class _AuthorizationCodeExchangeState extends State<_AuthorizationCodeExchange> 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('1. Sign in at the URL below, then copy the redirect URL (or just its `code`).',
-            style: context.textStyles.caption),
+        Text(
+          '1. Sign in at the URL below, then copy the redirect URL (or just its `code`).',
+          style: context.textStyles.caption,
+        ),
         Row(
           children: [
-            Expanded(
-              child: SelectableText(url, maxLines: 2, style: context.textStyles.mono),
-            ),
+            Expanded(child: SelectableText(url, maxLines: 2, style: context.textStyles.mono)),
             IconButton(
               icon: const Icon(Icons.copy, size: 16),
               tooltip: 'Copy URL',
@@ -434,12 +473,12 @@ class _AuthorizationCodeExchangeState extends State<_AuthorizationCodeExchange> 
               onPressed: vm.isFetching
                   ? null
                   : () => vm.exchangeAuthorizationCode(
-                        widget.auth,
-                        _codeController.text,
-                        widget.onToken,
-                        collectionId: widget.collectionId,
-                      ),
-              child: const Text('Exchange code'),
+                      widget.auth,
+                      _codeController.text,
+                      widget.onToken,
+                      collectionId: widget.collectionId,
+                    ),
+              child: BusyLabel(busy: vm.isFetching, label: 'Exchange code', busyLabel: 'Exchanging…'),
             ),
           ],
         ),

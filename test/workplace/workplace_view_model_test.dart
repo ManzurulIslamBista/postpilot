@@ -1,107 +1,52 @@
 import 'dart:io';
 import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:postpilot/core/database/app_database.dart';
-import 'package:postpilot/features/collections/data/repositories/collection_auth_repository_impl.dart';
-import 'package:postpilot/features/collections/data/repositories/collection_repository_impl.dart';
-import 'package:postpilot/features/collections/data/repositories/collection_variable_repository_impl.dart';
-import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
-import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
-import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
-import 'package:postpilot/features/documentation/data/repositories/documentation_repository_impl.dart';
-import 'package:postpilot/features/documentation/data/repositories/tag_repository_impl.dart';
-import 'package:postpilot/features/documentation/domain/repositories/documentation_repository.dart';
-import 'package:postpilot/features/documentation/domain/repositories/tag_repository.dart';
-import 'package:postpilot/features/environments/data/repositories/environment_repository_impl.dart';
-import 'package:postpilot/features/environments/data/repositories/global_variable_repository_impl.dart';
-import 'package:postpilot/features/environments/domain/repositories/environment_repository.dart';
-import 'package:postpilot/features/environments/domain/repositories/global_variable_repository.dart';
 import 'package:postpilot/features/import_export/domain/services/backup_codec.dart';
-import 'package:postpilot/features/request_builder/data/repositories/request_repository_impl.dart';
-import 'package:postpilot/features/request_builder/data/repositories/request_scripts_repository_impl.dart';
-import 'package:postpilot/features/request_builder/data/repositories/response_example_repository_impl.dart';
-import 'package:postpilot/features/request_builder/domain/repositories/request_repository.dart';
-import 'package:postpilot/features/request_builder/domain/repositories/request_scripts_repository.dart';
-import 'package:postpilot/features/request_builder/domain/repositories/response_example_repository.dart';
-import 'package:postpilot/features/settings/data/repositories/request_settings_repository_impl.dart';
-import 'package:postpilot/features/settings/domain/repositories/request_settings_repository.dart';
+import 'package:postpilot/features/git_sync/data/repositories/drift_git_state_store.dart';
 import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
 import 'package:postpilot/features/workplace/data/repositories/workplace_repository_impl.dart';
 import 'package:postpilot/features/workplace/data/storage/file_workplace_storage.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_entity.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_exception.dart';
 import 'package:postpilot/features/workplace/presentation/view_models/workplace_view_model.dart';
+import '../support/drift_repos.dart';
 import '../support/in_memory_import_export_fakes.dart';
-
-/// The real repositories over a real (in-memory SQLite) database.
-final class _Repos implements RepositoryBundle {
-  _Repos(AppDatabase database)
-      : collectionRepository = CollectionRepositoryImpl(database.collectionsDao),
-        requestRepository = RequestRepositoryImpl(database.requestsDao),
-        collectionVariableRepository = CollectionVariableRepositoryImpl(database.collectionVariablesDao),
-        collectionAuthRepository = CollectionAuthRepositoryImpl(database.collectionAuthDao),
-        scriptsRepository = RequestScriptsRepositoryImpl(database.requestScriptsDao),
-        exampleRepository = ResponseExampleRepositoryImpl(database.responseExamplesDao),
-        environmentRepository = EnvironmentRepositoryImpl(database.environmentsDao),
-        globalVariableRepository = GlobalVariableRepositoryImpl(database.globalVariablesDao),
-        requestSettingsRepository = RequestSettingsRepositoryImpl(database.requestSettingsDao),
-        documentationRepository = DocumentationRepositoryImpl(database.entityDocsDao),
-        tagRepository = TagRepositoryImpl(database.entityTagsDao);
-
-  @override
-  final CollectionRepository collectionRepository;
-  @override
-  final RequestRepository requestRepository;
-  @override
-  final CollectionVariableRepository collectionVariableRepository;
-  @override
-  final CollectionAuthRepository collectionAuthRepository;
-  @override
-  final RequestScriptsRepository scriptsRepository;
-  @override
-  final ResponseExampleRepository exampleRepository;
-  @override
-  final EnvironmentRepository environmentRepository;
-  @override
-  final GlobalVariableRepository globalVariableRepository;
-  @override
-  final RequestSettingsRepository requestSettingsRepository;
-  @override
-  final DocumentationRepository documentationRepository;
-  @override
-  final TagRepository tagRepository;
-}
 
 /// One "app run": its own database and view model over shared storage.
 final class _App {
   final AppDatabase database;
-  final _Repos repos;
+  final DriftRepos repos;
   final ShellViewModel shell;
   WorkplaceViewModel vm;
 
   _App._(this.database, this.repos, this.shell, this.vm);
 
-  factory _App(WorkplaceRepositoryImpl repository) {
+  factory _App(WorkplaceRepositoryImpl repository, {Duration autosaveDelay = const Duration(milliseconds: 30)}) {
     final database = AppDatabase.forTesting(NativeDatabase.memory());
-    final repos = _Repos(database);
+    final repos = DriftRepos(database);
     final shell = ShellViewModel(repos.requestRepository);
     final vm = WorkplaceViewModel(
       repository: repository,
-      backupService: repos.backupService,
+      backupService: repos.backupServiceWith(DriftGitStateStore(database)),
       database: database,
       shellViewModel: shell,
-      autosaveDelay: const Duration(milliseconds: 30),
+      autosaveDelay: autosaveDelay,
       settleDelay: const Duration(milliseconds: 20),
     );
     return _App._(database, repos, shell, vm);
   }
 
-  Future<List<String>> collectionNames() async =>
-      [for (final c in await repos.collectionRepository.watchCollections().first) c.name];
+  Future<List<String>> collectionNames() async => [
+    for (final c in await repos.collectionRepository.watchCollections().first) c.name,
+  ];
 
-  Future<List<String>> environmentNames() async => [for (final e in await repos.environmentRepository.watchAll().first) e.name];
+  Future<List<String>> environmentNames() async => [
+    for (final e in await repos.environmentRepository.watchAll().first) e.name,
+  ];
 
   Future<String?> activeEnvironmentName() async {
     for (final e in await repos.environmentRepository.watchAll().first) {
@@ -111,8 +56,8 @@ final class _App {
   }
 
   Future<Map<String, int>> collectionIds() async => {
-        for (final c in await repos.collectionRepository.watchCollections().first) c.name: c.id,
-      };
+    for (final c in await repos.collectionRepository.watchCollections().first) c.name: c.id,
+  };
 
   /// A new view model over this same database: the app restarting without the
   /// database being wiped (as on every reload of the web build).
@@ -120,7 +65,7 @@ final class _App {
     vm.dispose();
     return WorkplaceViewModel(
       repository: repository,
-      backupService: repos.backupService,
+      backupService: repos.backupServiceWith(DriftGitStateStore(database)),
       database: database,
       shellViewModel: shell,
       autosaveDelay: const Duration(milliseconds: 30),
@@ -175,6 +120,51 @@ void main() {
     await app.close();
     if (temp.existsSync()) temp.deleteSync(recursive: true);
   });
+
+  /// Collection [name] with one request, linked to a repository the way a connect and
+  /// a first push leave it: link row, a sync base and the uids of its entities.
+  Future<int> addLinkedCollection(String name, {String sha = 'sha-1'}) async {
+    final id = await app.repos.collectionRepository.createCollection(name);
+    final request = await app.repos.requestRepository.createRequest(collectionId: id, name: '$name request');
+    final link = await app.database.gitLinksDao.insertLink(
+      GitLinksCompanion.insert(
+        collectionId: id,
+        provider: 'github',
+        owner: 'acme',
+        repo: name.toLowerCase(),
+        branch: 'main',
+        lastSyncedSha: Value(sha),
+      ),
+    );
+    await app.database.gitLinksDao.replaceBase(link, [
+      GitBaseEntriesCompanion.insert(
+        linkId: link,
+        uid: 'uid-$name',
+        path: 'collection.json',
+        blobSha: 'blob-$name',
+        docJson: '{"uid":"uid-$name"}',
+      ),
+    ]);
+    await app.database.entityUidsDao.put('collection', id, 'uid-$name');
+    await app.database.entityUidsDao.put('request', request, 'uid-$name-request');
+    return id;
+  }
+
+  /// Everything Git knows about collection [name], as the sync engine would read it.
+  Future<Map<String, Object?>> gitStateOf(String name) async {
+    final loaded = (await app.repos.loader.loadAll()).where((c) => c.collection.name == name).firstOrNull;
+    if (loaded == null) return {'present': false};
+    final link = await app.database.gitLinksDao.findByCollection(loaded.collection.id);
+    return {
+      'present': true,
+      'link': link == null ? null : '${link.owner}/${link.repo}@${link.branch} sha=${link.lastSyncedSha}',
+      'base': link == null
+          ? null
+          : [for (final b in await app.database.gitLinksDao.baseEntries(link.id)) '${b.uid}:${b.blobSha}'],
+      'uid': await app.database.entityUidsDao.uidOf('collection', loaded.collection.id),
+      'requestUid': await app.database.entityUidsDao.uidOf('request', loaded.requests.single.id),
+    };
+  }
 
   test('first run adopts data that predates workplaces instead of wiping it', () async {
     await app.repos.collectionRepository.createCollection('Legacy');
@@ -266,13 +256,121 @@ void main() {
     await waitFor(() => namesInFile(app.vm.activeWorkplace!).contains('Before'), reason: 'autosave');
     await app.vm.saveCurrentWorkplace();
     final workplace = app.vm.activeWorkplace!;
-    final snapshot = BackupSnapshot(exportedAt: DateTime.utc(2026, 1, 1), collections: const [BackupCollection(name: 'From a git pull')]);
+    final snapshot = BackupSnapshot(
+      exportedAt: DateTime.utc(2026, 1, 1),
+      collections: const [BackupCollection(name: 'From a git pull')],
+    );
     File(p.join(workplace.folderPath, 'workspace.json')).writeAsStringSync(BackupCodec.encode(snapshot));
 
     app.vm = app.restartedViewModel(repository);
     await app.vm.init();
 
     expect(await app.collectionNames(), ['From a git pull']);
+  });
+
+  test(
+    'a collection linked to Git is still linked, with its sync state, after switching workplaces and back',
+    () async {
+      await app.vm.init();
+      final a = await app.vm.createWorkplace(name: 'A', folderPath: folder('a'));
+      await addLinkedCollection('Shop');
+      final before = await gitStateOf('Shop');
+      final b = await app.vm.createWorkplace(name: 'B', folderPath: folder('b'));
+
+      expect(await gitStateOf('Shop'), {'present': false}, reason: "A's collection must not show up in B");
+      await addLinkedCollection('Blog', sha: 'sha-blog');
+
+      await app.vm.switchWorkplace(a);
+      expect(await gitStateOf('Shop'), before);
+      expect(await gitStateOf('Blog'), {'present': false});
+
+      await app.vm.switchWorkplace(b);
+      expect(await gitStateOf('Blog'), containsPair('link', 'acme/blog@main sha=sha-blog'));
+      expect(await gitStateOf('Shop'), {'present': false});
+    },
+  );
+
+  test('several linked collections in one workplace each keep their own link through a switch', () async {
+    await app.vm.init();
+    final a = await app.vm.createWorkplace(name: 'A', folderPath: folder('a'));
+    await addLinkedCollection('Shop', sha: 'sha-shop');
+    await addLinkedCollection('Blog', sha: 'sha-blog');
+    final b = await app.vm.createWorkplace(name: 'B', folderPath: folder('b'));
+
+    await app.vm.switchWorkplace(a);
+
+    expect((await gitStateOf('Shop'))['link'], 'acme/shop@main sha=sha-shop');
+    expect((await gitStateOf('Blog'))['link'], 'acme/blog@main sha=sha-blog');
+    expect((await gitStateOf('Shop'))['base'], ['uid-Shop:blob-Shop']);
+    expect((await gitStateOf('Blog'))['base'], ['uid-Blog:blob-Blog']);
+    expect(b.id, isNot(a.id));
+  });
+
+  test('a push or pull (the sync state changing) is mirrored to the file, so a restart finds it', () async {
+    await app.vm.init();
+    final collection = await addLinkedCollection('Shop');
+    await waitFor(
+      () => File(p.join(app.vm.activeWorkplace!.folderPath, 'workspace.json')).readAsStringSync().contains('sha-1'),
+      reason: 'autosave of the link',
+    );
+
+    final link = (await app.database.gitLinksDao.findByCollection(collection))!;
+    await app.database.gitLinksDao.updateLink(link.id, const GitLinksCompanion(lastSyncedSha: Value('sha-after-push')));
+    await waitFor(
+      () => File(
+        p.join(app.vm.activeWorkplace!.folderPath, 'workspace.json'),
+      ).readAsStringSync().contains('sha-after-push'),
+      reason: 'autosave of the push',
+    );
+    await app.close();
+
+    // A fresh database, as after the browser dropped it: the file brings the link back.
+    app = _App(repository);
+    await app.vm.init();
+
+    expect((await gitStateOf('Shop'))['link'], 'acme/shop@main sha=sha-after-push');
+  });
+
+  test('a workspace file written before collections could be linked still opens', () async {
+    await app.vm.init();
+    final workplace = await app.vm.createWorkplace(name: 'Old', folderPath: folder('old'));
+    await app.vm.switchWorkplace(app.vm.workplaces.first); // leaves 'Old' saved; its file is free to replace
+    final plain = BackupSnapshot(
+      exportedAt: DateTime.utc(2026, 1, 1),
+      collections: const [BackupCollection(name: 'Plain')],
+    );
+    File(p.join(workplace.folderPath, 'workspace.json')).writeAsStringSync(BackupCodec.encode(plain));
+
+    await app.vm.switchWorkplace(workplace);
+
+    expect(app.vm.errorMessage, isNull);
+    expect(await app.collectionNames(), ['Plain']);
+  });
+
+  test('leaving the app saves what is pending at once instead of waiting out the autosave delay', () async {
+    await app.close();
+    app = _App(repository, autosaveDelay: const Duration(seconds: 30)); // far longer than the test
+    await app.vm.init();
+    await app.repos.collectionRepository.createCollection('Typed just before closing');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(namesInFile(app.vm.activeWorkplace!), isEmpty, reason: 'the debounce has not fired yet');
+
+    app.vm.didChangeAppLifecycleState(AppLifecycleState.paused);
+
+    await waitFor(
+      () => namesInFile(app.vm.activeWorkplace!).contains('Typed just before closing'),
+      reason: 'the flush',
+    );
+  });
+
+  test('coming back to the foreground does not save anything on its own', () async {
+    await app.vm.init();
+    final before = File(p.join(app.vm.activeWorkplace!.folderPath, 'workspace.json')).readAsStringSync();
+
+    app.vm.didChangeAppLifecycleState(AppLifecycleState.resumed);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(File(p.join(app.vm.activeWorkplace!.folderPath, 'workspace.json')).readAsStringSync(), before);
   });
 
   test('swapping the database never autosaves the half-emptied state over a workplace file', () async {
@@ -325,8 +423,12 @@ void main() {
 
   test("a workplace's tags and descriptions do not leak into the next workplace", () async {
     await app.vm.init();
-    await app.database.into(app.database.entityTags).insert(EntityTagsCompanion.insert(kind: 'collection', localId: 1, tag: 'stale'));
-    await app.database.into(app.database.entityDocs).insert(EntityDocsCompanion.insert(kind: 'collection', localId: 1, markdown: const Value('stale')));
+    await app.database
+        .into(app.database.entityTags)
+        .insert(EntityTagsCompanion.insert(kind: 'collection', localId: 1, tag: 'stale'));
+    await app.database
+        .into(app.database.entityDocs)
+        .insert(EntityDocsCompanion.insert(kind: 'collection', localId: 1, markdown: const Value('stale')));
 
     await app.vm.createWorkplace(name: 'Next', folderPath: folder('next'));
 
@@ -353,7 +455,10 @@ void main() {
     final seed = BackupSnapshot(
       exportedAt: DateTime.utc(2026, 1, 1),
       collections: const [BackupCollection(name: 'FlowPros Mobile API')],
-      environments: const [BackupEnvironment(name: 'Testing'), BackupEnvironment(name: 'Production')],
+      environments: const [
+        BackupEnvironment(name: 'Testing'),
+        BackupEnvironment(name: 'Production'),
+      ],
     );
     File(p.join(existing, 'workspace.json')).writeAsStringSync(BackupCodec.encode(seed));
     await app.vm.init();
@@ -368,6 +473,9 @@ void main() {
   test('exposes what the platform storage can do, for the UI', () async {
     expect(app.vm.usesRealFolders, isTrue);
     expect(app.vm.fileManagerName, isNotEmpty);
-    expect(await app.vm.getDefaultWorkplacesDirectory(workplaceName: 'Team A'), p.join(temp.path, 'workplaces', 'Team_A'));
+    expect(
+      await app.vm.getDefaultWorkplacesDirectory(workplaceName: 'Team A'),
+      p.join(temp.path, 'workplaces', 'Team_A'),
+    );
   });
 }

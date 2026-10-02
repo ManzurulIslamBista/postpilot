@@ -1,3 +1,4 @@
+import '../../../core/widgets/busy_label.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
@@ -19,7 +20,8 @@ class ImportAnyDialog extends StatefulWidget {
 
   const ImportAnyDialog({super.key, this.collectionId, this.folderId});
 
-  static Future<ImportSummary?> show(BuildContext context, {int? collectionId, int? folderId}) => showDialog<ImportSummary>(
+  static Future<ImportSummary?> show(BuildContext context, {int? collectionId, int? folderId}) =>
+      showDialog<ImportSummary>(
         context: context,
         builder: (_) => ImportAnyDialog(collectionId: collectionId, folderId: folderId),
       );
@@ -85,7 +87,9 @@ class _ImportAnyDialogState extends State<ImportAnyDialog> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Expanded(child: _DetectedFormat(vm: vm, importsIntoNewCollection: widget.collectionId == null)),
+                      Expanded(
+                        child: _DetectedFormat(vm: vm, importsIntoNewCollection: widget.collectionId == null),
+                      ),
                       const SizedBox(width: 8),
                       _FormatPicker(vm: vm),
                     ],
@@ -101,9 +105,7 @@ class _ImportAnyDialogState extends State<ImportAnyDialog> {
               TextButton(onPressed: vm.isImporting ? null : () => Navigator.pop(context), child: const Text('Cancel')),
               FilledButton(
                 onPressed: vm.canImport ? _import : null,
-                child: vm.isImporting
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Import'),
+                child: BusyLabel(busy: vm.isImporting, label: 'Import', busyLabel: 'Importing…'),
               ),
             ],
           ),

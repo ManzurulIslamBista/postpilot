@@ -61,7 +61,9 @@ WebStorageKind? _kindOfExistingDatabase(
   Iterable<ExistingWebDatabase> existingDatabases,
 ) {
   for (final (kind, name) in existingDatabases) {
-    if (name == databaseName && candidates.any((candidate) => candidate.kind == kind)) return kind;
+    if (name == databaseName && candidates.any((candidate) => candidate.kind == kind)) {
+      return kind;
+    }
   }
   return null;
 }

@@ -2,10 +2,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../../core/widgets/method_badge.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../shell_view_model.dart';
 
-const _tabBarHeight = 36.0;
+const _tabBarHeight = 42.0;
 const _maxTabWidth = 200.0;
 
 /// Postman-style strip of open request tabs. Click selects, the close icon or
@@ -51,7 +52,7 @@ class _RequestTabBarState extends State<RequestTabBar> {
     return Container(
       height: _tabBarHeight,
       decoration: BoxDecoration(
-        color: context.colors.sidebarBackground,
+        color: context.colors.surface.withValues(alpha: 0.35),
         border: Border(bottom: BorderSide(color: context.colors.border)),
       ),
       child: Listener(
@@ -100,6 +101,8 @@ class _RequestTab extends StatefulWidget {
 }
 
 class _RequestTabState extends State<_RequestTab> {
+  bool _hovered = false;
+
   @override
   void initState() {
     super.initState();
@@ -124,52 +127,73 @@ class _RequestTabState extends State<_RequestTab> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final summary = widget.summary;
+    final active = widget.isActive;
     return GestureDetector(
       onTertiaryTapUp: (_) => widget.onClose(),
-      child: InkWell(
-        onTap: widget.onSelect,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: _maxTabWidth),
-          padding: const EdgeInsets.only(left: 12, right: 4),
-          decoration: BoxDecoration(
-            color: widget.isActive ? colors.surface : null,
-            border: Border(
-              right: BorderSide(color: colors.border),
-              bottom: BorderSide(color: widget.isActive ? colors.mainAccent : Colors.transparent, width: 2),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: InkWell(
+          onTap: widget.onSelect,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: _maxTabWidth),
+            margin: const EdgeInsets.only(left: 4, top: 5),
+            padding: const EdgeInsets.only(left: 10, right: 4),
+            decoration: BoxDecoration(
+              color: active ? colors.surface : (_hovered ? colors.hover : null),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              border: active
+                  ? Border(
+                      top: BorderSide(color: colors.border),
+                      left: BorderSide(color: colors.border),
+                      right: BorderSide(color: colors.border),
+                    )
+                  : null,
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (summary != null) ...[
-                Text(
-                  summary.method.label,
-                  style: TextStyle(
-                    color: colors.forMethod(summary.method.label),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11,
-                  ),
+            child: Stack(
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (summary != null) ...[
+                      MethodBadge(method: summary.method.label, width: 38),
+                      const SizedBox(width: 8),
+                    ],
+                    Flexible(
+                      child: Text(
+                        summary?.name ?? '…',
+                        overflow: TextOverflow.ellipsis,
+                        style: context.textStyles.body.copyWith(
+                          color: active ? colors.primaryText : colors.secondaryText,
+                          fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 14),
+                      tooltip: 'Close',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+                      onPressed: widget.onClose,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
+                if (active)
+                  Positioned(
+                    top: 0,
+                    left: -10,
+                    right: -4,
+                    height: 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: colors.accentGradient,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                      ),
+                    ),
+                  ),
               ],
-              Flexible(
-                child: Text(
-                  summary?.name ?? '…',
-                  overflow: TextOverflow.ellipsis,
-                  style: context.textStyles.body.copyWith(
-                    color: widget.isActive ? colors.primaryText : colors.secondaryText,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.close, size: 14),
-                tooltip: 'Close',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-                onPressed: widget.onClose,
-              ),
-            ],
+            ),
           ),
         ),
       ),

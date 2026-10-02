@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 import '../../../core/layout/layout_prefs.dart';
 import '../../../core/shortcuts/app_shortcuts.dart';
 import '../../../core/widgets/app_backdrop.dart';
+import '../../../core/widgets/app_logo.dart';
 import '../../../core/widgets/split_handle.dart';
 import '../../../core/theme/context_theme_extensions.dart';
-import '../../auth/presentation/widgets/account_dialog.dart';
 import '../../collections/presentation/view_models/collections_view_model.dart';
 import '../../collections/presentation/widgets/collections_sidebar.dart';
 import '../../console/presentation/widgets/console_dialog.dart';
@@ -15,10 +15,11 @@ import '../../history/presentation/widgets/history_dialog.dart';
 import '../../import_export/presentation/backup_dialog.dart';
 import '../../request_builder/presentation/request_builder_page.dart';
 import '../../settings/presentation/widgets/settings_dialog.dart';
-import '../../team/presentation/widgets/team_dialog.dart';
 import '../../workplace/presentation/view_models/workplace_view_model.dart';
 import '../../workplace/presentation/widgets/push_to_git.dart';
 import 'shell_view_model.dart';
+import '../../import_export/presentation/import_any_dialog.dart';
+import 'widgets/empty_workspace.dart';
 import 'widgets/request_tab_bar.dart';
 
 /// Below this width, the collections sidebar no longer fits alongside the
@@ -57,10 +58,18 @@ class _ShellPageState extends State<ShellPage> {
                   if (!narrow) const _DesktopSidebar(),
                   Expanded(
                     child: Column(
+                      // Stretch so the tab strip spans the window instead of
+                      // shrink-wrapping its tabs and sitting in the middle.
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _TopBar(narrow: narrow),
                         const RequestTabBar(),
-                        const Expanded(child: _MainContent()),
+                        Expanded(
+                          child: _MainContent(
+                            onNewRequest: () => _createRequest(context),
+                            onImport: () => ImportAnyDialog.show(context),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -129,9 +138,15 @@ class _DesktopSidebar extends StatelessWidget {
     final prefs = context.watch<LayoutPrefs>();
     if (prefs.sidebarCollapsed) return const SizedBox.shrink();
     final colors = context.colors;
+    // A wide sidebar saved on a big monitor must not swallow a small window.
+    final cap = MediaQuery.sizeOf(context).width * 0.4;
+    final width = prefs.sidebarWidth.clamp(
+      LayoutPrefs.sidebarMin,
+      cap < LayoutPrefs.sidebarMin ? LayoutPrefs.sidebarMin : cap,
+    );
     return Row(
       children: [
-        SizedBox(width: prefs.sidebarWidth, child: const CollectionsSidebar()),
+        SizedBox(width: width, child: const CollectionsSidebar()),
         ColoredBox(
           color: colors.sidebarBackground,
           child: SplitHandle(
@@ -177,14 +192,27 @@ class _TopBar extends StatelessWidget {
               tooltip: prefs.sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar',
               onPressed: prefs.toggleSidebar,
             ),
+          // The wordmark only where there is room beside the actions.
+          if (!narrow)
+            LayoutBuilder(
+              builder: (context, _) => MediaQuery.sizeOf(context).width >= 1280
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 6, right: 12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const AppLogo(size: 24),
+                          const SizedBox(width: 8),
+                          Text('PostPilot', style: context.textStyles.heading),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
           // Right-aligned while it fits; on a phone it scrolls instead of
           // overflowing, starting at the end so the environment picker stays in view.
           const Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              reverse: true,
-              child: _TopBarActions(),
-            ),
+            child: SingleChildScrollView(scrollDirection: Axis.horizontal, reverse: true, child: _TopBarActions()),
           ),
         ],
       ),
@@ -211,9 +239,7 @@ class _TopBarActions extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 backgroundColor: context.colors.sidebarBackground.withValues(alpha: 0.5),
               ),
-              onPressed: workplaceVm.isBusy
-                  ? null
-                  : () => pushWorkplaceToGit(context, workplaceVm),
+              onPressed: workplaceVm.isBusy ? null : () => pushWorkplaceToGit(context, workplaceVm),
               icon: workplaceVm.isBusy
                   ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.sync, size: 14),
@@ -238,11 +264,6 @@ class _TopBarActions extends StatelessWidget {
           onPressed: () => HistoryDialog.show(context),
         ),
         IconButton(
-          icon: const Icon(Icons.group_outlined, size: 20),
-          tooltip: 'Team',
-          onPressed: () => TeamDialog.show(context),
-        ),
-        IconButton(
           icon: const Icon(Icons.settings_outlined, size: 20),
           tooltip: 'Settings',
           onPressed: () => SettingsDialog.show(
@@ -250,11 +271,6 @@ class _TopBarActions extends StatelessWidget {
             onOpenBackup: () => BackupDialog.show(context),
             onOpenShortcuts: () => ShortcutsHelpDialog.show(context),
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.account_circle_outlined, size: 20),
-          tooltip: 'Account',
-          onPressed: () => AccountDialog.show(context),
         ),
         const EnvironmentSelector(),
       ],
@@ -307,14 +323,16 @@ class _MoreMenu extends StatelessWidget {
 }
 
 class _MainContent extends StatelessWidget {
-  const _MainContent();
+  final VoidCallback onNewRequest;
+  final VoidCallback onImport;
+  const _MainContent({required this.onNewRequest, required this.onImport});
 
   @override
   Widget build(BuildContext context) {
     final shell = context.watch<ShellViewModel>();
     final selectedId = shell.selectedRequestId;
     if (selectedId == null) {
-      return const Center(child: Text('Select or create a request to get started'));
+      return EmptyWorkspace(onNewRequest: onNewRequest, onImport: onImport);
     }
     // One builder per open tab, kept alive off-screen so each tab holds on to
     // its own response and in-progress send across tab switches. The key sits

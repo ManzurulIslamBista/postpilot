@@ -11,6 +11,9 @@ class FakeLinkRepository implements GitLinkRepository {
       links.values.where((link) => link.collectionId == collectionId).firstOrNull;
 
   @override
+  Future<List<GitLink>> findAll() async => links.values.toList();
+
+  @override
   Stream<GitLink?> watchByCollection(int collectionId) => Stream.fromFuture(findByCollection(collectionId));
 
   @override

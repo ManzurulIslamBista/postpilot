@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:postpilot/core/theme/app_text_styles.dart';
 import 'package:postpilot/features/documentation/presentation/widgets/simple_markdown.dart';
 
 import 'support/pump_app.dart';
@@ -87,7 +88,7 @@ void main() {
 
       expect(styled('b').style?.fontWeight, FontWeight.w700);
       expect(styled('i').style?.fontStyle, FontStyle.italic);
-      expect(styled('c').style?.fontFamily, 'monospace');
+      expect(styled('c').style?.fontFamily, AppFonts.monoFamily);
       expect(styled('c').style?.backgroundColor, isNotNull);
       expect(styled('l').style?.decoration, TextDecoration.underline);
       expect(spans.firstWhere((s) => s.text == 'l').recognizer, isA<TapGestureRecognizer>());

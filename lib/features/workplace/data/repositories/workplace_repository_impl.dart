@@ -18,13 +18,16 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   final WorkplaceStorage _storage;
 
   WorkplaceRepositoryImpl({Dio? dio, WorkplaceStorage? storage})
-      : _dio = dio ??
-            Dio(BaseOptions(
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
               connectTimeout: const Duration(seconds: 15),
               sendTimeout: const Duration(seconds: 30),
               receiveTimeout: const Duration(seconds: 30),
-            )),
-        _storage = storage ?? createPlatformWorkplaceStorage();
+            ),
+          ),
+      _storage = storage ?? createPlatformWorkplaceStorage();
 
   static const _remoteFileName = 'workspace.json';
 
@@ -146,6 +149,8 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
       throw WorkplaceException('The workplace "${clash.name}" already uses this folder. Choose a different folder.');
     }
 
+    if (repoUrl != null) _requireFreeRepository(workplaces, repoUrl, _blankToNull(gitBranch) ?? 'main');
+
     var workplace = WorkplaceEntity(
       id: const Uuid().v4(),
       name: trimmedName,
@@ -184,7 +189,12 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
         options: Options(headers: _authHeaders(token)),
       );
     } on DioException catch (e) {
-      throw _formatGitDioError(e, repoInfo: repoInfo, branch: workplace.gitBranch, operation: 'connecting to the repository');
+      throw _formatGitDioError(
+        e,
+        repoInfo: repoInfo,
+        branch: workplace.gitBranch,
+        operation: 'connecting to the repository',
+      );
     }
 
     try {
@@ -201,6 +211,13 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   @override
   Future<void> updateWorkplace(WorkplaceEntity workplace) async {
     final registry = await _readRegistry();
+    final current = registry.workplaces.where((w) => w.id == workplace.id).firstOrNull;
+    // Only when the repository or branch is being changed: a workplace that already
+    // shares one (an older registry) must still be able to save its data.
+    if (workplace.isGitConnected &&
+        (current == null || current.gitRepoUrl != workplace.gitRepoUrl || current.gitBranch != workplace.gitBranch)) {
+      _requireFreeRepository(registry.workplaces, workplace.gitRepoUrl!, workplace.gitBranch, exceptId: workplace.id);
+    }
     final updated = [
       for (final w in registry.workplaces) w.id == workplace.id ? workplace.copyWith(updatedAt: DateTime.now()) : w,
     ];
@@ -254,7 +271,11 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
       throw const WorkplaceException('This workplace is not connected to a Git repository or has no token.');
     }
     final content = await loadWorkplaceContent(workplace);
-    await _pushToRemoteGit(workplace, content.toJsonString(), message: commitMessage ?? 'Update workplace data from PostPilot');
+    await _pushToRemoteGit(
+      workplace,
+      content.toJsonString(),
+      message: commitMessage ?? 'Update workplace data from PostPilot',
+    );
     await updateWorkplace(workplace.copyWith(lastSyncedAt: DateTime.now()));
   }
 
@@ -270,9 +291,9 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   }
 
   Map<String, String> _authHeaders(String token) => {
-        'Authorization': 'token $token',
-        'Accept': 'application/vnd.github.v3+json',
-      };
+    'Authorization': 'token $token',
+    'Accept': 'application/vnd.github.v3+json',
+  };
 
   ({String owner, String repo}) _parseRepo(String url) {
     var cleaned = url.trim();
@@ -282,9 +303,7 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     if (parts.length >= 2) {
       return (owner: parts[0], repo: parts[1].replaceFirst(RegExp(r'\.git$'), ''));
     }
-    throw const WorkplaceException(
-      'Invalid GitHub repository. Use "owner/repo" or "https://github.com/owner/repo".',
-    );
+    throw const WorkplaceException('Invalid GitHub repository. Use "owner/repo" or "https://github.com/owner/repo".');
   }
 
   Future<WorkplaceContent> _pullFromRemoteGit(WorkplaceEntity workplace) async {
@@ -378,15 +397,10 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     }
 
     Future<void> put(String? sha) => _dio.put(
-          url,
-          data: {
-            'message': message,
-            'content': base64Encode(utf8.encode(jsonContent)),
-            'branch': branch,
-            'sha': ?sha,
-          },
-          options: Options(headers: headers),
-        );
+      url,
+      data: {'message': message, 'content': base64Encode(utf8.encode(jsonContent)), 'branch': branch, 'sha': ?sha},
+      options: Options(headers: headers),
+    );
 
     final sha = await currentSha();
     try {
@@ -400,7 +414,12 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
             await put(latest);
             return;
           } on DioException catch (retryError) {
-            throw _formatGitDioError(retryError, repoInfo: repoInfo, branch: branch, operation: 'pushing workplace to Git');
+            throw _formatGitDioError(
+              retryError,
+              repoInfo: repoInfo,
+              branch: branch,
+              operation: 'pushing workplace to Git',
+            );
           }
         }
       }
@@ -418,7 +437,9 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     final responseMsg = e.response?.data is Map ? e.response?.data['message'] as String? : null;
 
     if (status == 401) {
-      return const WorkplaceException('GitHub Authentication failed: Personal Access Token (classic) is invalid or expired.');
+      return const WorkplaceException(
+        'GitHub Authentication failed: Personal Access Token (classic) is invalid or expired.',
+      );
     }
     if (status == 403) {
       return WorkplaceException(
@@ -431,7 +452,8 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
       );
     }
     if (status == 409) {
-      if (responseMsg != null && (responseMsg.contains('Secret detected') || responseMsg.contains('Repository rule violations'))) {
+      if (responseMsg != null &&
+          (responseMsg.contains('Secret detected') || responseMsg.contains('Repository rule violations'))) {
         return const WorkplaceException(
           'GitHub Security Block: A secret or token was detected in the payload and blocked by GitHub Push Protection.',
         );
@@ -451,6 +473,29 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   }
 
   // --- helpers ------------------------------------------------------------
+
+  /// Two workplaces pushing one `workspace.json` to the same repository and branch
+  /// would keep overwriting each other, so a repository + branch belongs to one.
+  void _requireFreeRepository(List<WorkplaceEntity> workplaces, String repoUrl, String branch, {String? exceptId}) {
+    final wanted = _parseRepo(repoUrl);
+    for (final other in workplaces) {
+      if (other.id == exceptId || !other.isGitConnected) continue;
+      final ({String owner, String repo}) used;
+      try {
+        used = _parseRepo(other.gitRepoUrl!);
+      } on WorkplaceException {
+        continue;
+      }
+      if (used.owner.toLowerCase() == wanted.owner.toLowerCase() &&
+          used.repo.toLowerCase() == wanted.repo.toLowerCase() &&
+          other.gitBranch == branch) {
+        throw WorkplaceException(
+          'The workplace "${other.name}" already uses ${used.owner}/${used.repo} on branch "$branch". '
+          'Two workplaces sharing one file would overwrite each other; use another branch or repository.',
+        );
+      }
+    }
+  }
 
   String? _blankToNull(String? value) {
     final trimmed = value?.trim();

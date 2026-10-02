@@ -1,3 +1,4 @@
+import '../../../../core/widgets/busy_label.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
@@ -103,10 +104,14 @@ class GitConflictsDialog extends StatelessWidget {
                           onPressed: vm.isBusy ? null : () => _cancel(context, vm),
                           child: const Text('Cancel'),
                         ),
-                        FilledButton.icon(
+                        FilledButton(
                           onPressed: vm.isBusy || count == 0 ? null : () => _apply(context, vm),
-                          icon: const Icon(Icons.merge_type, size: 18),
-                          label: const Text('Apply merge'),
+                          child: BusyLabel(
+                            busy: vm.isBusy,
+                            icon: Icons.merge_type,
+                            label: 'Apply merge',
+                            busyLabel: 'Applying…',
+                          ),
                         ),
                       ],
                     ),
@@ -197,22 +202,20 @@ class _ConflictCard extends StatelessWidget {
   }
 
   static String _description(ConflictKind kind) => switch (kind) {
-        ConflictKind.bothModified => 'Changed both here and on GitHub. The fields that differ are listed below.',
-        ConflictKind.deletedLocallyModifiedRemotely => 'You deleted this here, but it was changed on GitHub.',
-        ConflictKind.modifiedLocallyDeletedRemotely => 'You changed this here, but it was deleted on GitHub.',
-      };
+    ConflictKind.bothModified => 'Changed both here and on GitHub. The fields that differ are listed below.',
+    ConflictKind.deletedLocallyModifiedRemotely => 'You deleted this here, but it was changed on GitHub.',
+    ConflictKind.modifiedLocallyDeletedRemotely => 'You changed this here, but it was deleted on GitHub.',
+  };
 
   static String _outcome(ConflictKind kind, ConflictChoice choice) => switch ((kind, choice)) {
-        (ConflictKind.bothModified, ConflictChoice.local) => 'Every field above keeps your value.',
-        (ConflictKind.bothModified, ConflictChoice.remote) => 'Every field above takes their value.',
-        (ConflictKind.deletedLocallyModifiedRemotely, ConflictChoice.local) => 'The item stays deleted.',
-        (ConflictKind.deletedLocallyModifiedRemotely, ConflictChoice.remote) =>
-          'The item is restored with their changes.',
-        (ConflictKind.modifiedLocallyDeletedRemotely, ConflictChoice.local) =>
-          'Your changes are kept and the item stays.',
-        (ConflictKind.modifiedLocallyDeletedRemotely, ConflictChoice.remote) =>
-          'The item is deleted and your changes are dropped.',
-      };
+    (ConflictKind.bothModified, ConflictChoice.local) => 'Every field above keeps your value.',
+    (ConflictKind.bothModified, ConflictChoice.remote) => 'Every field above takes their value.',
+    (ConflictKind.deletedLocallyModifiedRemotely, ConflictChoice.local) => 'The item stays deleted.',
+    (ConflictKind.deletedLocallyModifiedRemotely, ConflictChoice.remote) => 'The item is restored with their changes.',
+    (ConflictKind.modifiedLocallyDeletedRemotely, ConflictChoice.local) => 'Your changes are kept and the item stays.',
+    (ConflictKind.modifiedLocallyDeletedRemotely, ConflictChoice.remote) =>
+      'The item is deleted and your changes are dropped.',
+  };
 }
 
 class _FieldComparison extends StatelessWidget {
@@ -285,12 +288,7 @@ class _ValueCell extends StatelessWidget {
               style: context.textStyles.caption.copyWith(color: colors.secondaryText, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 2),
-            Text(
-              formatConflictValue(value),
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: gitMono(context),
-            ),
+            Text(formatConflictValue(value), maxLines: 4, overflow: TextOverflow.ellipsis, style: gitMono(context)),
           ],
         ),
       ),

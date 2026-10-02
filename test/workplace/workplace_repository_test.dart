@@ -18,7 +18,11 @@ final class _FakeGitHub implements HttpClientAdapter {
   _FakeGitHub(this.handler);
 
   @override
-  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
     calls.add(options);
     return handler(options);
   }
@@ -28,25 +32,28 @@ final class _FakeGitHub implements HttpClientAdapter {
 }
 
 ResponseBody _json(int status, Object body) => ResponseBody.fromString(
-      jsonEncode(body),
-      status,
-      headers: {
-        Headers.contentTypeHeader: [Headers.jsonContentType],
-      },
-    );
+  jsonEncode(body),
+  status,
+  headers: {
+    Headers.contentTypeHeader: [Headers.jsonContentType],
+  },
+);
 
 WorkplaceEntity _entity(String folder, {String name = 'Test'}) => WorkplaceEntity(
-      id: 'test-id',
-      name: name,
-      folderPath: folder,
-      createdAt: DateTime.utc(2026, 1, 1),
-      updatedAt: DateTime.utc(2026, 1, 1),
-    );
+  id: 'test-id',
+  name: name,
+  folderPath: folder,
+  createdAt: DateTime.utc(2026, 1, 1),
+  updatedAt: DateTime.utc(2026, 1, 1),
+);
 
 String _workspaceJson(String folder, String collectionName) => WorkplaceContent(
-      workplace: _entity(folder),
-      snapshot: BackupSnapshot(exportedAt: DateTime.utc(2026, 1, 1), collections: [BackupCollection(name: collectionName)]),
-    ).toJsonString();
+  workplace: _entity(folder),
+  snapshot: BackupSnapshot(
+    exportedAt: DateTime.utc(2026, 1, 1),
+    collections: [BackupCollection(name: collectionName)],
+  ),
+).toJsonString();
 
 void main() {
   late Directory tempDir;
@@ -161,7 +168,9 @@ void main() {
       final repository = newRepository();
       await expectLater(
         repository.createWorkplace(name: 'Broken', folderPath: folder),
-        throwsA(isA<WorkplaceException>().having((e) => e.message, 'message', contains('not a valid PostPilot workspace'))),
+        throwsA(
+          isA<WorkplaceException>().having((e) => e.message, 'message', contains('not a valid PostPilot workspace')),
+        ),
       );
 
       expect(file.readAsStringSync(), '{ this is not json');
@@ -228,7 +237,10 @@ void main() {
       final workplace = await repository.createWorkplace(name: 'Save', folderPath: folder);
       final content = WorkplaceContent(
         workplace: workplace,
-        snapshot: BackupSnapshot(exportedAt: DateTime.utc(2026, 1, 1), collections: const [BackupCollection(name: 'Saved')]),
+        snapshot: BackupSnapshot(
+          exportedAt: DateTime.utc(2026, 1, 1),
+          collections: const [BackupCollection(name: 'Saved')],
+        ),
       );
 
       await repository.saveWorkplaceContent(workplace, content);
@@ -253,7 +265,13 @@ void main() {
       for (final action in [() => repository.syncWithGit(workplace), () => repository.pullFromGit(workplace)]) {
         await expectLater(
           action(),
-          throwsA(isA<WorkplaceException>().having((e) => e.message, 'message', contains('not connected to a Git repository'))),
+          throwsA(
+            isA<WorkplaceException>().having(
+              (e) => e.message,
+              'message',
+              contains('not connected to a Git repository'),
+            ),
+          ),
         );
       }
     });
@@ -268,7 +286,12 @@ void main() {
       final folder = p.join(tempDir.path, 'git_bad');
 
       await expectLater(
-        repository.createWorkplace(name: 'Git', folderPath: folder, gitRepoUrl: 'https://github.com/o/r', gitToken: 'bad'),
+        repository.createWorkplace(
+          name: 'Git',
+          folderPath: folder,
+          gitRepoUrl: 'https://github.com/o/r',
+          gitToken: 'bad',
+        ),
         throwsA(isA<WorkplaceException>().having((e) => e.message, 'message', contains('Authentication failed'))),
       );
 
@@ -351,11 +374,82 @@ void main() {
       final repository = newRepository(dio: dioFor(github));
 
       await expectLater(
-        repository.createWorkplace(name: 'Git', folderPath: p.join(tempDir.path, 'git_ro'), gitRepoUrl: 'o/r', gitToken: 'ghp_x'),
+        repository.createWorkplace(
+          name: 'Git',
+          folderPath: p.join(tempDir.path, 'git_ro'),
+          gitRepoUrl: 'o/r',
+          gitToken: 'ghp_x',
+        ),
         throwsA(isA<WorkplaceException>().having((e) => e.message, 'message', contains('Access Denied'))),
       );
       expect((await repository.getWorkplaces()).map((w) => w.name), isNot(contains('Git')));
     });
+
+    test('a repository and branch belong to one workplace: another spelling of the same repo is refused', () async {
+      final remote = _workspaceJson('x', 'Remote');
+      final github = _FakeGitHub((o) {
+        if (o.uri.path == '/repos/o/r') return _json(200, {'default_branch': 'main'});
+        return _json(200, {'encoding': 'base64', 'content': base64Encode(utf8.encode(remote)), 'sha': 'abc'});
+      });
+      final repository = newRepository(dio: dioFor(github));
+      await repository.createWorkplace(
+        name: 'First',
+        folderPath: p.join(tempDir.path, 'one'),
+        gitRepoUrl: 'https://github.com/o/r',
+        gitToken: 't',
+      );
+
+      for (final spelling in ['O/R', 'https://github.com/o/r.git', 'git@github.com:o/r.git']) {
+        await expectLater(
+          repository.createWorkplace(
+            name: 'Second',
+            folderPath: p.join(tempDir.path, 'two'),
+            gitRepoUrl: spelling,
+            gitToken: 't',
+          ),
+          throwsA(isA<WorkplaceException>().having((e) => e.message, 'message', contains('"First" already uses o/r'))),
+          reason: spelling,
+        );
+      }
+      // Another branch is a different file in the repository, so it is allowed.
+      final other = await repository.createWorkplace(
+        name: 'Second',
+        folderPath: p.join(tempDir.path, 'two'),
+        gitRepoUrl: 'o/r',
+        gitBranch: 'team-b',
+        gitToken: 't',
+      );
+      expect(other.gitBranch, 'team-b');
+    });
+
+    test(
+      'connecting an existing workplace to a taken repository is refused, but already shared ones can still save',
+      () async {
+        final repository = newRepository(dio: dioFor(_FakeGitHub((o) => _json(404, {'message': 'Not Found'}))));
+        final a = await repository.createWorkplace(name: 'A', folderPath: p.join(tempDir.path, 'a'));
+        final b = await repository.createWorkplace(name: 'B', folderPath: p.join(tempDir.path, 'b'));
+        // An older registry (written before the rule existed) with both on one repository.
+        final registryFile = File(p.join(tempDir.path, 'registry', 'workplaces_registry.json'));
+        final registry = jsonDecode(registryFile.readAsStringSync()) as Map<String, dynamic>;
+        for (final w in registry['workplaces'] as List) {
+          (w as Map<String, dynamic>)['gitRepoUrl'] = 'o/shared';
+          w['gitBranch'] = 'main';
+        }
+        registryFile.writeAsStringSync(jsonEncode(registry));
+
+        await repository.saveWorkplaceContent(a.copyWith(gitRepoUrl: 'o/shared'), WorkplaceContent.empty(a));
+        await repository.updateWorkplace(b.copyWith(gitRepoUrl: 'o/shared', gitBranch: 'main', name: 'B renamed'));
+        await repository.updateWorkplace(
+          b.copyWith(gitRepoUrl: 'o/shared', gitBranch: 'other'),
+        ); // a different file: free
+
+        final c = await repository.createWorkplace(name: 'C', folderPath: p.join(tempDir.path, 'c'));
+        await expectLater(
+          repository.updateWorkplace(c.copyWith(gitRepoUrl: 'o/shared', gitBranch: 'main')),
+          throwsA(isA<WorkplaceException>().having((e) => e.message, 'message', contains('already uses o/shared'))),
+        );
+      },
+    );
 
     test('syncWithGit updates the existing remote file using its sha', () async {
       Map<String, dynamic>? pushed;
@@ -381,12 +475,17 @@ void main() {
 
       expect(pushed!['sha'], 'old-sha');
       expect(pushed!['message'], 'my message');
-      expect(BackupCodec.decode(utf8.decode(base64Decode(pushed!['content'] as String))).collections.single.name, 'Local');
+      expect(
+        BackupCodec.decode(utf8.decode(base64Decode(pushed!['content'] as String))).collections.single.name,
+        'Local',
+      );
     });
 
     test('pullFromGit replaces the local file with the remote one', () async {
       final remote = _workspaceJson('x', 'Newer Remote');
-      final github = _FakeGitHub((o) => _json(200, {'encoding': 'base64', 'content': base64Encode(utf8.encode(remote))}));
+      final github = _FakeGitHub(
+        (o) => _json(200, {'encoding': 'base64', 'content': base64Encode(utf8.encode(remote))}),
+      );
       final repository = newRepository(dio: dioFor(github));
       final folder = p.join(tempDir.path, 'git_pull');
       Directory(folder).createSync();

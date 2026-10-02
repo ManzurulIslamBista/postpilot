@@ -4,6 +4,7 @@ import '../entities/git_sync_exceptions.dart';
 import '../repositories/git_host_client.dart';
 import '../repositories/git_link_repository.dart';
 import '../repositories/local_collection_store.dart';
+import '../services/link_overlap_guard.dart';
 import '../services/repo_layout.dart';
 import '../services/sync_engine.dart';
 
@@ -33,6 +34,7 @@ final class GitCloneUseCase implements UseCase<GitLink, GitCloneParams> {
   Future<GitLink> call(GitCloneParams params) async {
     final basePath = RepoLayout.normalizeBasePath(params.basePath);
     await _host.getRepo(params.repo);
+    await LinkOverlapGuard.requireFree(_links, repo: params.repo, branch: params.branch, basePath: basePath);
     final head = await _host.getBranchHead(params.repo, params.branch);
     if (head == null) throw GitBranchMissingException(params.branch);
 

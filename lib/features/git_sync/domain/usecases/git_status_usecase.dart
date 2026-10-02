@@ -36,7 +36,9 @@ final class GitStatusUseCase implements UseCase<GitStatus, GitStatusParams> {
       localChanges: changes,
       repoInfo: info,
       remoteHeadSha: head,
-      behind: head != link.lastSyncedSha,
+      // The branch moving is not enough: a sibling collection's push moves it too.
+      behind: head != link.lastSyncedSha &&
+          (head == null || !await _engine.remoteUnchanged(link, commitSha: head, base: base)),
     );
   }
 }

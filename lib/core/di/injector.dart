@@ -2,15 +2,11 @@ import '../layout/layout_prefs.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:get_it/get_it.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../database/app_database.dart';
 import '../network/api_client.dart';
 import '../network/dio_api_client.dart';
 import '../network/logging_api_client.dart';
 import '../network/strict_cookie_jar.dart';
-import '../../features/auth/data/repositories/auth_repository_impl.dart';
-import '../../features/auth/domain/repositories/auth_repository.dart';
-import '../../features/auth/presentation/view_models/auth_view_model.dart';
 import '../../features/collections/data/repositories/collection_auth_repository_impl.dart';
 import '../../features/collections/data/repositories/collection_repository_impl.dart';
 import '../../features/collections/data/repositories/collection_variable_repository_impl.dart';
@@ -40,6 +36,7 @@ import '../../features/environments/domain/repositories/environment_repository.d
 import '../../features/environments/domain/repositories/global_variable_repository.dart';
 import '../../features/environments/presentation/view_models/environments_view_model.dart';
 import '../../features/git_sync/data/github/github_host_client.dart';
+import '../../features/git_sync/data/repositories/drift_git_state_store.dart';
 import '../../features/git_sync/data/repositories/entity_uid_registry.dart';
 import '../../features/git_sync/data/repositories/git_link_repository_impl.dart';
 import '../../features/git_sync/data/repositories/local_collection_store_impl.dart';
@@ -70,6 +67,7 @@ import '../../features/git_sync/presentation/view_models/linked_collections_view
 import '../../features/history/data/repositories/history_repository_impl.dart';
 import '../../features/history/domain/repositories/history_repository.dart';
 import '../../features/history/presentation/view_models/history_view_model.dart';
+import '../../features/import_export/domain/repositories/git_state_store.dart';
 import '../../features/import_export/domain/services/backup_service.dart';
 import '../../features/import_export/domain/services/collection_loader.dart';
 import '../../features/import_export/domain/services/imported_collection_writer.dart';
@@ -113,10 +111,6 @@ import '../../features/settings/domain/repositories/settings_repository.dart';
 import '../../features/settings/presentation/view_models/request_settings_view_model.dart';
 import '../../features/settings/presentation/view_models/settings_view_model.dart';
 import '../../features/shell/presentation/shell_view_model.dart';
-import '../../features/team/data/repositories/team_repository_impl.dart';
-import '../../features/team/domain/repositories/team_repository.dart';
-import '../../features/team/domain/usecases/copy_cloud_collection_usecase.dart';
-import '../../features/team/presentation/view_models/team_view_model.dart';
 import '../../features/workplace/data/repositories/workplace_repository_impl.dart';
 import '../../features/workplace/domain/repositories/workplace_repository.dart';
 import '../../features/workplace/presentation/view_models/workplace_view_model.dart';
@@ -144,14 +138,11 @@ void setupDependencies({AppDatabase? database}) {
   _registerDocumentation();
   _registerImportExport();
   _registerGitSync();
-  _registerAuthAndTeam();
   _registerWorkplace();
 }
 
 void _registerWorkplace() {
-  locator.registerLazySingleton<WorkplaceRepository>(
-    () => WorkplaceRepositoryImpl(),
-  );
+  locator.registerLazySingleton<WorkplaceRepository>(() => WorkplaceRepositoryImpl());
   locator.registerLazySingleton<WorkplaceViewModel>(
     () => WorkplaceViewModel(
       repository: locator<WorkplaceRepository>(),
@@ -197,9 +188,7 @@ void _registerCollections() {
 }
 
 void _registerRequestBuilder() {
-  locator.registerLazySingleton<RequestRepository>(
-    () => RequestRepositoryImpl(locator<AppDatabase>().requestsDao),
-  );
+  locator.registerLazySingleton<RequestRepository>(() => RequestRepositoryImpl(locator<AppDatabase>().requestsDao));
   locator.registerLazySingleton<RequestScriptsRepository>(
     () => RequestScriptsRepositoryImpl(locator<AppDatabase>().requestScriptsDao),
   );
@@ -266,9 +255,7 @@ void _registerScripting() {
       locator<GlobalVariableRepository>(),
     ),
   );
-  locator.registerFactory<RequestScriptsViewModel>(
-    () => RequestScriptsViewModel(locator<RequestScriptsRepository>()),
-  );
+  locator.registerFactory<RequestScriptsViewModel>(() => RequestScriptsViewModel(locator<RequestScriptsRepository>()));
 }
 
 void _registerEnvironments() {
@@ -284,28 +271,18 @@ void _registerEnvironments() {
 }
 
 void _registerHistory() {
-  locator.registerLazySingleton<HistoryRepository>(
-    () => HistoryRepositoryImpl(locator<AppDatabase>().historyDao),
-  );
-  locator.registerLazySingleton<HistoryViewModel>(
-    () => HistoryViewModel(locator<HistoryRepository>()),
-  );
+  locator.registerLazySingleton<HistoryRepository>(() => HistoryRepositoryImpl(locator<AppDatabase>().historyDao));
+  locator.registerLazySingleton<HistoryViewModel>(() => HistoryViewModel(locator<HistoryRepository>()));
 }
 
 void _registerCookies() {
-  locator.registerLazySingleton<CookieRepository>(
-    () => CookieRepositoryImpl(locator<CookieJar>()),
-  );
-  locator.registerFactory<CookiesViewModel>(
-    () => CookiesViewModel(locator<CookieRepository>()),
-  );
+  locator.registerLazySingleton<CookieRepository>(() => CookieRepositoryImpl(locator<CookieJar>()));
+  locator.registerFactory<CookiesViewModel>(() => CookiesViewModel(locator<CookieRepository>()));
 }
 
 void _registerShell() {
   locator.registerLazySingleton<LayoutPrefs>(LayoutPrefs.new);
-  locator.registerLazySingleton<ShellViewModel>(
-    () => ShellViewModel(locator<RequestRepository>()),
-  );
+  locator.registerLazySingleton<ShellViewModel>(() => ShellViewModel(locator<RequestRepository>()));
 }
 
 void _registerSettings() {
@@ -315,9 +292,7 @@ void _registerSettings() {
   locator.registerLazySingleton<RequestSettingsRepository>(
     () => RequestSettingsRepositoryImpl(locator<AppDatabase>().requestSettingsDao),
   );
-  locator.registerLazySingleton<SettingsViewModel>(
-    () => SettingsViewModel(locator<SettingsRepository>()),
-  );
+  locator.registerLazySingleton<SettingsViewModel>(() => SettingsViewModel(locator<SettingsRepository>()));
   locator.registerFactory<RequestSettingsViewModel>(
     () => RequestSettingsViewModel(locator<RequestSettingsRepository>(), locator<SettingsRepository>()),
   );
@@ -327,9 +302,7 @@ void _registerDocumentation() {
   locator.registerLazySingleton<DocumentationRepository>(
     () => DocumentationRepositoryImpl(locator<AppDatabase>().entityDocsDao),
   );
-  locator.registerLazySingleton<TagRepository>(
-    () => TagRepositoryImpl(locator<AppDatabase>().entityTagsDao),
-  );
+  locator.registerLazySingleton<TagRepository>(() => TagRepositoryImpl(locator<AppDatabase>().entityTagsDao));
   locator.registerLazySingleton<BuildApiDocsUseCase>(
     () => BuildApiDocsUseCase(
       locator<CollectionRepository>(),
@@ -385,6 +358,7 @@ void _registerImportExport() {
       locator<RequestSettingsRepository>(),
       locator<DocumentationRepository>(),
       locator<TagRepository>(),
+      locator<GitStateStore>(),
     ),
   );
 
@@ -404,9 +378,7 @@ void _registerImportExport() {
       locator<CollectionAuthRepository>(),
     ),
   );
-  locator.registerLazySingleton<ImportCurlUseCase>(
-    () => ImportCurlUseCase(locator<RequestRepository>()),
-  );
+  locator.registerLazySingleton<ImportCurlUseCase>(() => ImportCurlUseCase(locator<RequestRepository>()));
   locator.registerLazySingleton<ImportOpenApiUseCase>(
     () => ImportOpenApiUseCase(
       locator<CollectionRepository>(),
@@ -464,15 +436,13 @@ void _registerImportExport() {
 void _registerGitSync() {
   locator.registerLazySingleton<GitCredentialsStore>(() => SecureGitCredentialsStore());
   locator.registerLazySingleton<GitHostClient>(() => GitHubHostClient(locator<GitCredentialsStore>()));
-  locator.registerLazySingleton<GitLinkRepository>(
-    () => GitLinkRepositoryImpl(locator<AppDatabase>().gitLinksDao),
-  );
-  locator.registerLazySingleton<EntityUidRegistry>(
-    () => EntityUidRegistry(locator<AppDatabase>().entityUidsDao),
-  );
+  locator.registerLazySingleton<GitLinkRepository>(() => GitLinkRepositoryImpl(locator<AppDatabase>().gitLinksDao));
+  locator.registerLazySingleton<EntityUidRegistry>(() => EntityUidRegistry(locator<AppDatabase>().entityUidsDao));
   locator.registerLazySingleton<LocalCollectionStore>(
     () => LocalCollectionStoreImpl(locator<AppDatabase>(), locator<EntityUidRegistry>()),
   );
+  // Lets a workspace file carry each linked collection's Git link (see BackupService).
+  locator.registerLazySingleton<GitStateStore>(() => DriftGitStateStore(locator<AppDatabase>()));
   locator.registerLazySingleton<SyncEngine>(
     () => SyncEngine(locator<GitHostClient>(), locator<LocalCollectionStore>()),
   );
@@ -484,7 +454,7 @@ void _registerGitSync() {
     () => GitDiscoverUseCase(locator<GitHostClient>(), locator<SyncEngine>()),
   );
   locator.registerLazySingleton<GitConnectUseCase>(
-    () => GitConnectUseCase(locator<GitLinkRepository>(), locator<GitHostClient>()),
+    () => GitConnectUseCase(locator<GitLinkRepository>(), locator<GitHostClient>(), locator<LocalCollectionStore>()),
   );
   locator.registerLazySingleton<GitCloneUseCase>(
     () => GitCloneUseCase(
@@ -534,9 +504,7 @@ void _registerGitSync() {
   locator.registerLazySingleton<GitUpdateLinkSettingsUseCase>(
     () => GitUpdateLinkSettingsUseCase(locator<GitLinkRepository>()),
   );
-  locator.registerLazySingleton<GitDisconnectUseCase>(
-    () => GitDisconnectUseCase(locator<GitLinkRepository>()),
-  );
+  locator.registerLazySingleton<GitDisconnectUseCase>(() => GitDisconnectUseCase(locator<GitLinkRepository>()));
 
   locator.registerLazySingleton<LinkedCollectionsViewModel>(
     () => LinkedCollectionsViewModel(locator<GitLinkRepository>()),
@@ -566,28 +534,6 @@ void _registerGitSync() {
       saveTokenUseCase: locator<GitSaveTokenUseCase>(),
       discoverUseCase: locator<GitDiscoverUseCase>(),
       cloneUseCase: locator<GitCloneUseCase>(),
-    ),
-  );
-}
-
-void _registerAuthAndTeam() {
-  locator.registerLazySingleton<AuthRepository>(
-    () => AuthRepositoryImpl(Supabase.instance.client),
-  );
-  locator.registerLazySingleton<TeamRepository>(
-    () => TeamRepositoryImpl(Supabase.instance.client),
-  );
-  locator.registerLazySingleton<CopyCloudCollectionUseCase>(
-    () => CopyCloudCollectionUseCase(locator<CollectionRepository>(), locator<RequestRepository>()),
-  );
-  locator.registerLazySingleton<AuthViewModel>(
-    () => AuthViewModel(locator<AuthRepository>()),
-  );
-  locator.registerFactory<TeamViewModel>(
-    () => TeamViewModel(
-      locator<TeamRepository>(),
-      sendRequest: locator<SendRequestUseCase>().call,
-      copyCollection: locator<CopyCloudCollectionUseCase>(),
     ),
   );
 }

@@ -18,6 +18,8 @@ class GitLinksDao extends DatabaseAccessor<AppDatabase> with _$GitLinksDaoMixin 
 
   Stream<List<GitLinkRow>> watchAll() => select(gitLinks).watch();
 
+  Future<List<GitLinkRow>> findAll() => select(gitLinks).get();
+
   Future<int> insertLink(GitLinksCompanion link) => into(gitLinks).insert(link);
 
   /// Returns the number of rows changed (0 when [id] no longer exists).

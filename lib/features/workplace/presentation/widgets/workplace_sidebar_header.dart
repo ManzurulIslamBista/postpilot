@@ -177,10 +177,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                   children: [
                     Text(
                       active?.name ?? 'No Workplace',
-                      style: textStyles.body.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
+                      style: textStyles.body.copyWith(fontWeight: FontWeight.w600, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),
                     Row(
@@ -188,10 +185,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                         Flexible(
                           child: Text(
                             active?.isGitConnected == true ? 'Git: ${active?.gitBranch}' : 'Workplace',
-                            style: textStyles.caption.copyWith(
-                              fontSize: 10,
-                              color: colors.secondaryText,
-                            ),
+                            style: textStyles.caption.copyWith(fontSize: 10, color: colors.secondaryText),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -200,10 +194,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                           Container(
                             width: 6,
                             height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: colors.statusSuccess,
-                            ),
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: colors.statusSuccess),
                           ),
                         ],
                       ],
@@ -225,9 +216,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
       final wp = vm.workplaces.firstWhere((w) => w.id == id);
       await vm.switchWorkplace(wp);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Switched to workplace "${wp.name}"')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Switched to workplace "${wp.name}"')));
       }
     } else if (action == 'add_workplace') {
       await AddWorkplaceDialog.show(context);
@@ -236,16 +225,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
     } else if (action == 'sync_git') {
       await pushWorkplaceToGit(context, vm);
     } else if (action == 'pull_git') {
-      await vm.pullFromGit();
-      if (context.mounted) {
-        final error = vm.errorMessage;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error ?? 'Pulled successfully from Git repository!'),
-            backgroundColor: error != null ? context.colors.statusError : null,
-          ),
-        );
-      }
+      await pullWorkplaceFromGit(context, vm);
     } else if (action == 'workplace_settings') {
       if (vm.activeWorkplace != null) {
         await WorkplaceSettingsDialog.show(context, vm.activeWorkplace!);

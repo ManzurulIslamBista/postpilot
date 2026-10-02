@@ -1,3 +1,4 @@
+import '../../../core/widgets/busy_label.dart';
 import '../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,7 +10,8 @@ import 'view_models/import_export_view_model.dart';
 class ImportPostmanDialog extends StatefulWidget {
   const ImportPostmanDialog({super.key});
 
-  static Future<int?> show(BuildContext context) => showDialog<int>(context: context, builder: (_) => const ImportPostmanDialog());
+  static Future<int?> show(BuildContext context) =>
+      showDialog<int>(context: context, builder: (_) => const ImportPostmanDialog());
 
   @override
   State<ImportPostmanDialog> createState() => _ImportPostmanDialogState();
@@ -57,8 +59,15 @@ class _ImportPostmanDialogState extends State<ImportPostmanDialog> {
                 TextField(
                   controller: _controller,
                   maxLines: 10,
-                  style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 12),
-                  decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '{ "info": { "name": "..." }, "item": [...] }'),
+                  style: const TextStyle(
+                    fontFamily: AppFonts.monoFamily,
+                    fontFamilyFallback: AppFonts.monoFallback,
+                    fontSize: 12,
+                  ),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: '{ "info": { "name": "..." }, "item": [...] }',
+                  ),
                   onChanged: (_) => setState(() {}),
                 ),
                 if (vm.importPostmanError != null) ...[
@@ -69,12 +78,13 @@ class _ImportPostmanDialogState extends State<ImportPostmanDialog> {
             ),
           ),
           actions: [
-            TextButton(onPressed: vm.isImportingPostman ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+              onPressed: vm.isImportingPostman ? null : () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
               onPressed: vm.isImportingPostman || _controller.text.trim().isEmpty ? null : _import,
-              child: vm.isImportingPostman
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Import'),
+              child: BusyLabel(busy: vm.isImportingPostman, label: 'Import', busyLabel: 'Importing…'),
             ),
           ],
         ),

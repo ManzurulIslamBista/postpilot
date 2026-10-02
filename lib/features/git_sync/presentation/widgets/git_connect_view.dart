@@ -1,3 +1,4 @@
+import '../../../../core/widgets/busy_label.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
@@ -28,11 +29,11 @@ class _GitConnectViewState extends State<GitConnectView> {
   }
 
   Future<void> _connect(GitSyncViewModel vm) => vm.connect(
-        repository: _repository.text,
-        branch: _branch.text,
-        basePath: _folder.text,
-        includeSecrets: _includeSecrets,
-      );
+    repository: _repository.text,
+    branch: _branch.text,
+    basePath: _folder.text,
+    includeSecrets: _includeSecrets,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +91,8 @@ class _GitConnectViewState extends State<GitConnectView> {
                   labelText: 'Folder in repository (optional)',
                   hintText: 'apis/billing',
                   floatingLabelBehavior: FloatingLabelBehavior.always,
-                  helperText: 'Leave empty to keep the collection at the repository root. '
+                  helperText:
+                      'Leave empty to keep the collection at the repository root. '
                       'Use a folder to keep several collections in one repository.',
                   helperMaxLines: 3,
                 ),
@@ -112,10 +114,14 @@ class _GitConnectViewState extends State<GitConnectView> {
           padding: const EdgeInsets.all(12),
           child: Align(
             alignment: Alignment.centerRight,
-            child: FilledButton.icon(
+            child: FilledButton(
               onPressed: canConnect ? () => _connect(vm) : null,
-              icon: const Icon(Icons.link, size: 18),
-              label: const Text('Connect'),
+              child: BusyLabel(
+                busy: vm.isBusy && (vm.busyLabel?.startsWith('Connecting') ?? false),
+                icon: Icons.link,
+                label: 'Connect',
+                busyLabel: 'Connecting…',
+              ),
             ),
           ),
         ),

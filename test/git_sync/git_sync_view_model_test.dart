@@ -110,6 +110,9 @@ final class _FakeLinks implements GitLinkRepository {
   Future<GitLink?> findByCollection(int collectionId) async => link;
 
   @override
+  Future<List<GitLink>> findAll() async => [?link];
+
+  @override
   Stream<GitLink?> watchByCollection(int collectionId) => Stream.value(link);
 
   @override
@@ -1633,6 +1636,13 @@ void main() {
       expect(h.updateSettings.calls.single.includeSecrets, isTrue);
       expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
 
+      // The settings list builds lazily, so Disconnect may sit below the built
+      // range until it is scrolled to, as it is for a user.
+      await tester.scrollUntilVisible(
+        find.text('Disconnect'),
+        200,
+        scrollable: find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)).first,
+      );
       await tester.tap(find.text('Disconnect'));
       await tester.pumpAndSettle();
       expect(find.text('Disconnect from Git'), findsOneWidget);

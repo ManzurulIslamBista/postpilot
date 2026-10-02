@@ -12,9 +12,6 @@ import 'package:postpilot/core/layout/layout_prefs.dart';
 import 'package:postpilot/core/di/injector.dart';
 import 'package:postpilot/core/shortcuts/app_shortcuts.dart';
 import 'package:postpilot/core/usecases/usecase.dart';
-import 'package:postpilot/features/auth/domain/entities/app_user_entity.dart';
-import 'package:postpilot/features/auth/domain/repositories/auth_repository.dart';
-import 'package:postpilot/features/auth/presentation/view_models/auth_view_model.dart';
 import 'package:postpilot/features/collections/domain/entities/collection_entity.dart';
 import 'package:postpilot/features/collections/presentation/view_models/collections_view_model.dart';
 import 'package:postpilot/features/console/presentation/view_models/request_console_log.dart';
@@ -78,23 +75,6 @@ final class _NoHistory implements HistoryRepository {
   Future<void> clear() async {}
 }
 
-final class _SignedOut implements AuthRepository {
-  @override
-  AppUserEntity? get currentUser => null;
-
-  @override
-  Stream<AppUserEntity?> get authStateChanges => const Stream.empty();
-
-  @override
-  Future<void> signUp(String email, String password) async {}
-
-  @override
-  Future<void> signIn(String email, String password) async {}
-
-  @override
-  Future<void> signOut() async {}
-}
-
 final class _LinkedCollections implements GitLinkRepository {
   final Set<int> ids;
   _LinkedCollections(this.ids);
@@ -120,7 +100,10 @@ void main() {
       ..seed(EntityKind.collection, 1, '# Shop docs')
       ..seed(EntityKind.folder, 10, '# Users docs');
     final collections = FakeCollectionRepository(
-      collections: const [CollectionEntity(id: 1, name: 'Shop'), CollectionEntity(id: 2, name: 'Blog')],
+      collections: const [
+        CollectionEntity(id: 1, name: 'Shop'),
+        CollectionEntity(id: 2, name: 'Blog'),
+      ],
       folders: {
         1: [folderEntity(10, name: 'Users')],
       },
@@ -151,14 +134,15 @@ void main() {
         EnvironmentsViewModel(environments.environmentRepository, environments.globalVariableRepository),
       )
       ..registerSingleton<HistoryViewModel>(HistoryViewModel(_NoHistory()))
-      ..registerSingleton<AuthViewModel>(AuthViewModel(_SignedOut()))
       ..registerSingleton<LinkedCollectionsViewModel>(LinkedCollectionsViewModel(_LinkedCollections({1})))
       ..registerSingleton<SettingsViewModel>(SettingsViewModel(FakeSettingsRepository()))
       ..registerSingleton<TagFilterViewModel>(tagFilter)
       ..registerSingleton<LayoutPrefs>(LayoutPrefs())
       ..registerSingleton<RequestConsoleLog>(RequestConsoleLog())
       ..registerFactory<ImportAnyViewModel>(() => ImportAnyViewModel(_Pending<ImportSummary, ImportAnyParams>()))
-      ..registerFactory<BackupViewModel>(() => BackupViewModel(_Pending<BackupExport, NoParams>(), _Pending<ImportSummary, String>()))
+      ..registerFactory<BackupViewModel>(
+        () => BackupViewModel(_Pending<BackupExport, NoParams>(), _Pending<ImportSummary, String>()),
+      )
       ..registerFactory<GitCloneViewModel>(
         () => GitCloneViewModel(
           credentials: FakeCredentialsStore(),
@@ -178,7 +162,6 @@ void main() {
     locator<CollectionsViewModel>().dispose();
     locator<EnvironmentsViewModel>().dispose();
     locator<HistoryViewModel>().dispose();
-    locator<AuthViewModel>().dispose();
     locator<LinkedCollectionsViewModel>().dispose();
     locator<SettingsViewModel>().dispose();
     locator<TagFilterViewModel>().dispose();
@@ -204,7 +187,7 @@ void main() {
       testWidgets('fits a ${width.toInt()} px window without scrolling', (tester) async {
         await launch(tester, width: width);
 
-        for (final tooltip in ['More', 'History', 'Team', 'Settings', 'Account', 'Manage environments']) {
+        for (final tooltip in ['More', 'History', 'Settings', 'Manage environments']) {
           expect(find.byTooltip(tooltip), findsOneWidget, reason: tooltip);
         }
         expect(find.text('No Environment'), findsOneWidget);

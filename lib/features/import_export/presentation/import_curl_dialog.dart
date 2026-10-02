@@ -1,3 +1,4 @@
+import '../../../core/widgets/busy_label.dart';
 import '../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -13,9 +14,9 @@ class ImportCurlDialog extends StatefulWidget {
   const ImportCurlDialog({super.key, required this.collectionId, required this.folderId});
 
   static Future<int?> show(BuildContext context, {required int collectionId, int? folderId}) => showDialog<int>(
-        context: context,
-        builder: (_) => ImportCurlDialog(collectionId: collectionId, folderId: folderId),
-      );
+    context: context,
+    builder: (_) => ImportCurlDialog(collectionId: collectionId, folderId: folderId),
+  );
 
   @override
   State<ImportCurlDialog> createState() => _ImportCurlDialogState();
@@ -63,8 +64,15 @@ class _ImportCurlDialogState extends State<ImportCurlDialog> {
                 TextField(
                   controller: _controller,
                   maxLines: 8,
-                  style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 12),
-                  decoration: const InputDecoration(border: OutlineInputBorder(), hintText: "curl -X GET https://api.example.com"),
+                  style: const TextStyle(
+                    fontFamily: AppFonts.monoFamily,
+                    fontFamilyFallback: AppFonts.monoFallback,
+                    fontSize: 12,
+                  ),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: "curl -X GET https://api.example.com",
+                  ),
                   onChanged: (_) => setState(() {}),
                 ),
                 if (vm.importCurlError != null) ...[
@@ -75,12 +83,13 @@ class _ImportCurlDialogState extends State<ImportCurlDialog> {
             ),
           ),
           actions: [
-            TextButton(onPressed: vm.isImportingCurl ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+              onPressed: vm.isImportingCurl ? null : () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
               onPressed: vm.isImportingCurl || _controller.text.trim().isEmpty ? null : _import,
-              child: vm.isImportingCurl
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Import'),
+              child: BusyLabel(busy: vm.isImportingCurl, label: 'Import', busyLabel: 'Importing…'),
             ),
           ],
         ),

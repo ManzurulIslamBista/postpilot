@@ -1,3 +1,4 @@
+import '../../../core/widgets/busy_label.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -73,7 +74,11 @@ class _BackupDialogState extends State<BackupDialog> {
 
   static String _size(String text) {
     final bytes = utf8.encode(text).length;
-    return bytes < 1024 ? '$bytes B' : bytes < 1048576 ? '${(bytes / 1024).toStringAsFixed(1)} KB' : '${(bytes / 1048576).toStringAsFixed(1)} MB';
+    return bytes < 1024
+        ? '$bytes B'
+        : bytes < 1048576
+        ? '${(bytes / 1024).toStringAsFixed(1)} KB'
+        : '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 
   @override
@@ -106,11 +111,14 @@ class _BackupDialogState extends State<BackupDialog> {
                         ],
                       ),
                     ),
-                    const TabBar(tabs: [Tab(text: 'Export'), Tab(text: 'Restore')]),
+                    const TabBar(
+                      tabs: [
+                        Tab(text: 'Export'),
+                        Tab(text: 'Restore'),
+                      ],
+                    ),
                     Expanded(
-                      child: TabBarView(
-                        children: [_buildExportTab(context, vm), _buildRestoreTab(context, vm)],
-                      ),
+                      child: TabBarView(children: [_buildExportTab(context, vm), _buildRestoreTab(context, vm)]),
                     ),
                   ],
                 ),
@@ -144,7 +152,11 @@ class _BackupDialogState extends State<BackupDialog> {
           const SizedBox(height: 8),
           Row(
             children: [
-              FilledButton.icon(icon: const Icon(Icons.copy, size: 16), label: const Text('Copy'), onPressed: () => _copy(backup)),
+              FilledButton.icon(
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy'),
+                onPressed: () => _copy(backup),
+              ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 icon: const Icon(Icons.download, size: 16),
@@ -155,7 +167,9 @@ class _BackupDialogState extends State<BackupDialog> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: SingleChildScrollView(child: SelectableText(preview, style: context.textStyles.mono.copyWith(fontSize: 12))),
+            child: SingleChildScrollView(
+              child: SelectableText(preview, style: context.textStyles.mono.copyWith(fontSize: 12)),
+            ),
           ),
         ],
       );
@@ -191,7 +205,10 @@ class _BackupDialogState extends State<BackupDialog> {
               expands: true,
               textAlignVertical: TextAlignVertical.top,
               style: context.textStyles.mono.copyWith(fontSize: 12),
-              decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '{ "format": "postpilot-backup", ... }'),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '{ "format": "postpilot-backup", ... }',
+              ),
               onChanged: (_) => setState(() {}),
             ),
           ),
@@ -204,9 +221,7 @@ class _BackupDialogState extends State<BackupDialog> {
             alignment: Alignment.centerRight,
             child: FilledButton(
               onPressed: vm.isRestoring || _restoreController.text.trim().isEmpty ? null : _restore,
-              child: vm.isRestoring
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Restore'),
+              child: BusyLabel(busy: vm.isRestoring, label: 'Restore', busyLabel: 'Restoring…'),
             ),
           ),
         ],

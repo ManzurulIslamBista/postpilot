@@ -9,9 +9,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:postpilot/core/database/app_database.dart';
 import 'package:postpilot/core/di/injector.dart';
+import 'package:postpilot/core/layout/layout_prefs.dart';
 import 'package:postpilot/core/network/api_client.dart';
-import 'package:postpilot/features/auth/domain/repositories/auth_repository.dart';
-import 'package:postpilot/features/auth/presentation/view_models/auth_view_model.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
@@ -58,6 +57,7 @@ import 'package:postpilot/features/git_sync/presentation/view_models/git_sync_vi
 import 'package:postpilot/features/git_sync/presentation/view_models/linked_collections_view_model.dart';
 import 'package:postpilot/features/history/domain/repositories/history_repository.dart';
 import 'package:postpilot/features/history/presentation/view_models/history_view_model.dart';
+import 'package:postpilot/features/import_export/domain/repositories/git_state_store.dart';
 import 'package:postpilot/features/import_export/domain/services/backup_service.dart';
 import 'package:postpilot/features/import_export/domain/services/collection_loader.dart';
 import 'package:postpilot/features/import_export/domain/services/imported_collection_writer.dart';
@@ -96,12 +96,8 @@ import 'package:postpilot/features/settings/domain/repositories/settings_reposit
 import 'package:postpilot/features/settings/presentation/view_models/request_settings_view_model.dart';
 import 'package:postpilot/features/settings/presentation/view_models/settings_view_model.dart';
 import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
-import 'package:postpilot/features/team/domain/repositories/team_repository.dart';
-import 'package:postpilot/features/team/domain/usecases/copy_cloud_collection_usecase.dart';
-import 'package:postpilot/features/team/presentation/view_models/team_view_model.dart';
 import 'package:postpilot/features/workplace/domain/repositories/workplace_repository.dart';
 import 'package:postpilot/features/workplace/presentation/view_models/workplace_view_model.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 final class _Wiring {
   final String name;
@@ -148,6 +144,7 @@ final _wirings = <_Wiring>[
   _wire<CookieRepository>(),
   _wire<CookiesViewModel>(),
   _wire<ShellViewModel>(),
+  _wire<LayoutPrefs>(),
   // settings
   _wire<SettingsRepository>(),
   _wire<RequestSettingsRepository>(),
@@ -188,6 +185,7 @@ final _wirings = <_Wiring>[
   _wire<GitLinkRepository>(),
   _wire<EntityUidRegistry>(),
   _wire<LocalCollectionStore>(),
+  _wire<GitStateStore>(),
   _wire<SyncEngine>(),
   _wire<GitSaveTokenUseCase>(),
   _wire<GitDiscoverUseCase>(),
@@ -207,12 +205,6 @@ final _wirings = <_Wiring>[
   _wire<LinkedCollectionsViewModel>(),
   _wire<GitSyncViewModel>(),
   _wire<GitCloneViewModel>(),
-  // auth and team: these read Supabase.instance
-  _wire<AuthRepository>(),
-  _wire<TeamRepository>(),
-  _wire<CopyCloudCollectionUseCase>(),
-  _wire<AuthViewModel>(),
-  _wire<TeamViewModel>(),
   // workplace
   _wire<WorkplaceRepository>(),
   _wire<WorkplaceViewModel>(),
@@ -220,21 +212,6 @@ final _wirings = <_Wiring>[
 
 final _registration = RegExp(r'\bregister(?:Lazy)?(?:Singleton|Factory|FactoryParam)<(\w+)');
 final _locatorUse = RegExp(r'\blocator<(\w+)>');
-
-/// Session storage for Supabase's PKCE flow that stays in memory, so the test
-/// needs neither shared_preferences nor a platform channel.
-final class _MemoryPkceStorage extends GotrueAsyncStorage {
-  final _items = <String, String>{};
-
-  @override
-  Future<String?> getItem({required String key}) async => _items[key];
-
-  @override
-  Future<void> setItem({required String key, required String value}) async => _items[key] = value;
-
-  @override
-  Future<void> removeItem({required String key}) async => _items.remove(key);
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -246,16 +223,6 @@ void main() {
     await locator.reset();
     database = AppDatabase.forTesting(NativeDatabase.memory());
     setupDependencies(database: database);
-    await Supabase.initialize(
-      url: 'https://example.supabase.co',
-      publishableKey: 'test-publishable-key',
-      authOptions: FlutterAuthClientOptions(
-        pkceAsyncStorage: _MemoryPkceStorage(),
-        persistSession: false,
-        detectSessionInUri: false,
-        autoRefreshToken: false,
-      ),
-    );
   });
 
   tearDownAll(() async {
@@ -264,7 +231,6 @@ void main() {
     }
     await locator.reset();
     await database.close();
-    await Supabase.instance.dispose();
   });
 
   group('every registration builds', () {
@@ -280,7 +246,8 @@ void main() {
   group('the registrations and their users agree', () {
     test('this test lists every type the injector registers', () {
       final registered = {
-        for (final match in _registration.allMatches(File('lib/core/di/injector.dart').readAsStringSync())) match.group(1)!,
+        for (final match in _registration.allMatches(File('lib/core/di/injector.dart').readAsStringSync()))
+          match.group(1)!,
       };
       final listed = {for (final wiring in _wirings) wiring.name};
 
@@ -339,7 +306,8 @@ void main() {
       await pumpEventQueue(times: 60);
 
       final shop = sidebar.collections.firstWhere((c) => c.id == collectionId);
-      bool visible(int id) => sidebar.isRequestVisible(sidebar.requestsByCollection[collectionId]!.firstWhere((r) => r.id == id));
+      bool visible(int id) =>
+          sidebar.isRequestVisible(sidebar.requestsByCollection[collectionId]!.firstWhere((r) => r.id == id));
       expect(sidebar.isFiltering, isTrue);
       expect(sidebar.isCollectionExpanded(shop), isTrue);
       expect(visible(tagged), isTrue);
@@ -350,14 +318,6 @@ void main() {
 
       expect(sidebar.isFiltering, isFalse);
       expect(visible(untagged), isTrue);
-    });
-
-    test('the team view model can send requests and copy collections to the device', () {
-      final team = locator<TeamViewModel>();
-      resolved.add(team);
-
-      expect(team.canSendRequests, isTrue);
-      expect(team.canCopyCollection, isTrue);
     });
   });
 }

@@ -78,7 +78,8 @@ TextStyle _headingStyle(BuildContext context, int level) {
     2 => base.copyWith(fontSize: 21, fontWeight: FontWeight.w700),
     3 => base.copyWith(fontSize: 18),
     4 => base.copyWith(fontSize: 16),
-    _ => base.copyWith(fontSize: 14),
+    // The smallest headings sit at body size (bold), never above the text they introduce.
+    _ => base.copyWith(fontSize: context.textStyles.body.fontSize),
   };
 }
 

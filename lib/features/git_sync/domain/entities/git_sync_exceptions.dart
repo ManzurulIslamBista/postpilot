@@ -40,6 +40,14 @@ final class GitPathOccupiedException extends GitSyncException {
       : super('The repository folder "$path" already contains a collection. Clone it instead, or pick another folder.');
 }
 
+/// Another collection on this device already syncs that folder (or one above or inside it) of the
+/// same repository and branch. Two links would write and delete each other's files.
+final class GitPathOverlapException extends GitSyncException {
+  const GitPathOverlapException(String path, String other)
+      : super('The repository folder "$path" overlaps "$other", which another collection on this device already syncs. '
+            'Give each collection its own folder.');
+}
+
 /// Switching or pulling would overwrite local edits that were not pushed.
 final class GitUncommittedChangesException extends GitSyncException {
   const GitUncommittedChangesException() : super('You have local changes that are not pushed yet. Push or discard them first.');

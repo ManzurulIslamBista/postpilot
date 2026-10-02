@@ -17,6 +17,9 @@ final class GitLinkRepositoryImpl implements GitLinkRepository {
   }
 
   @override
+  Future<List<GitLink>> findAll() async => [for (final row in await _dao.findAll()) _toLink(row)];
+
+  @override
   Stream<GitLink?> watchByCollection(int collectionId) =>
       _dao.watchByCollection(collectionId).map((row) => row == null ? null : _toLink(row));
 

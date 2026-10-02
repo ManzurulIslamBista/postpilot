@@ -41,6 +41,15 @@ abstract final class RepoLayout {
 
   static String join(String dir, String name) => dir.isEmpty ? name : '$dir/$name';
 
+  /// Whether two collection folders of one repository branch share files: equal,
+  /// one inside the other, or either the repository root. Compared without regard
+  /// to case, because the repository may be cloned onto a case-insensitive disk.
+  static bool overlaps(String a, String b) {
+    final x = normalizeBasePath(a).toLowerCase();
+    final y = normalizeBasePath(b).toLowerCase();
+    return x.isEmpty || y.isEmpty || x == y || x.startsWith('$y/') || y.startsWith('$x/');
+  }
+
   static String slug(String name) {
     final slug = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '');
     return slug.isEmpty ? 'untitled' : slug;

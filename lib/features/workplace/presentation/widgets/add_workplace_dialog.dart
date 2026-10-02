@@ -1,3 +1,4 @@
+import '../../../../core/widgets/busy_label.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,16 +7,14 @@ import '../../../../core/theme/context_theme_extensions.dart';
 import '../../domain/entities/workplace_exception.dart';
 import '../view_models/workplace_view_model.dart';
 
-const _classicTokenUrl = 'https://github.com/settings/tokens/new?scopes=repo,read:user,user:email&description=PostPilot';
+const _classicTokenUrl =
+    'https://github.com/settings/tokens/new?scopes=repo,read:user,user:email&description=PostPilot';
 
 class AddWorkplaceDialog extends StatefulWidget {
   const AddWorkplaceDialog({super.key});
 
-  static Future<void> show(BuildContext context) => showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const AddWorkplaceDialog(),
-      );
+  static Future<void> show(BuildContext context) =>
+      showDialog(context: context, barrierDismissible: false, builder: (_) => const AddWorkplaceDialog());
 
   @override
   State<AddWorkplaceDialog> createState() => _AddWorkplaceDialogState();
@@ -123,9 +122,7 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
       );
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Workplace "$name" created successfully')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Workplace "$name" created successfully')));
       }
     } catch (e) {
       if (!mounted) return;
@@ -226,8 +223,10 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(realFolders ? 'Workplace Folder on PC' : 'Workplace Storage (this browser)',
-                                style: textStyles.body.copyWith(fontWeight: FontWeight.w600)),
+                            child: Text(
+                              realFolders ? 'Workplace Folder on PC' : 'Workplace Storage (this browser)',
+                              style: textStyles.body.copyWith(fontWeight: FontWeight.w600),
+                            ),
                           ),
                           Text(
                             _isFolderManuallyEdited ? 'Custom Path' : 'Auto Selected',
@@ -243,7 +242,11 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                           Expanded(
                             child: TextField(
                               controller: _folderController,
-                              style: const TextStyle(fontSize: 12, fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontFamily: AppFonts.monoFamily,
+                                fontFamilyFallback: AppFonts.monoFallback,
+                              ),
                               decoration: InputDecoration(
                                 hintText: realFolders ? 'Full path of the workplace folder' : 'Name to store it under',
                                 isDense: true,
@@ -269,9 +272,9 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                       Text(
                         realFolders
                             ? 'PostPilot saves all data in this folder as a single "workspace.json" file. '
-                                'If the folder already contains one, it is opened as it is.'
+                                  'If the folder already contains one, it is opened as it is.'
                             : 'The web version has no file access, so this workplace is saved in your browser. '
-                                'Use the desktop app to keep it as a real workspace.json file in a folder.',
+                                  'Use the desktop app to keep it as a real workspace.json file in a folder.',
                         style: textStyles.caption.copyWith(color: colors.secondaryText),
                       ),
                       const SizedBox(height: 20),
@@ -296,7 +299,10 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                                 children: [
                                   const Icon(Icons.alt_route, size: 18),
                                   const SizedBox(width: 8),
-                                  Text('Connect Git Repository', style: textStyles.body.copyWith(fontWeight: FontWeight.w600)),
+                                  Text(
+                                    'Connect Git Repository',
+                                    style: textStyles.body.copyWith(fontWeight: FontWeight.w600),
+                                  ),
                                 ],
                               ),
                               subtitle: Text(
@@ -315,7 +321,10 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     // Git Repo URL
-                                    Text('Git Repository URL', style: textStyles.caption.copyWith(fontWeight: FontWeight.w600)),
+                                    Text(
+                                      'Git Repository URL',
+                                      style: textStyles.caption.copyWith(fontWeight: FontWeight.w600),
+                                    ),
                                     const SizedBox(height: 6),
                                     TextField(
                                       controller: _gitRepoController,
@@ -384,7 +393,11 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                                     TextField(
                                       controller: _gitTokenController,
                                       obscureText: _obscureToken,
-                                      style: const TextStyle(fontSize: 13, fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontFamily: AppFonts.monoFamily,
+                                        fontFamilyFallback: AppFonts.monoFallback,
+                                      ),
                                       decoration: InputDecoration(
                                         hintText: 'ghp_...',
                                         isDense: true,
@@ -446,9 +459,7 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                     const SizedBox(width: 12),
                     FilledButton(
                       onPressed: _isSubmitting ? null : _submit,
-                      child: _isSubmitting
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Create Workplace'),
+                      child: BusyLabel(busy: _isSubmitting, label: 'Create Workplace', busyLabel: 'Creating…'),
                     ),
                   ],
                 ),

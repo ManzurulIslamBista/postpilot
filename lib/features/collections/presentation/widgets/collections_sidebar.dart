@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
+import '../../../../core/widgets/method_badge.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../documentation/domain/entities/entity_kind.dart';
 import '../../../documentation/presentation/widgets/collection_docs_dialog.dart';
@@ -92,16 +93,12 @@ class CollectionsSidebar extends StatelessWidget {
           const TagFilterBar(),
           Expanded(
             child: vm.collections.isEmpty
-                ? Center(
-                    child: Text('No collections yet — tap + to create one', style: _emptyStyle(context)),
-                  )
+                ? Center(child: Text('No collections yet — tap + to create one', style: _emptyStyle(context)))
                 : vm.isFiltering && visibleCollections.isEmpty
-                    ? Center(child: Text('Nothing matches', style: _emptyStyle(context)))
-                    : ListView(
-                        children: [
-                          for (final collection in visibleCollections) _CollectionTile(collection: collection),
-                        ],
-                      ),
+                ? Center(child: Text('Nothing matches', style: _emptyStyle(context)))
+                : ListView(
+                    children: [for (final collection in visibleCollections) _CollectionTile(collection: collection)],
+                  ),
           ),
         ],
       ),
@@ -123,8 +120,7 @@ class CollectionsSidebar extends StatelessWidget {
   }
 }
 
-TextStyle _emptyStyle(BuildContext context) =>
-    context.textStyles.caption.copyWith(color: context.colors.secondaryText);
+TextStyle _emptyStyle(BuildContext context) => context.textStyles.caption.copyWith(color: context.colors.secondaryText);
 
 void _showSnack(BuildContext context, String message) =>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -239,8 +235,11 @@ class _CollectionTile extends StatelessWidget {
         await vm.duplicateCollection(collection.id);
         if (context.mounted) _showSnack(context, 'Collection duplicated');
       case 'delete':
-        final confirmed = await showConfirmDialog(context,
-            title: 'Delete collection', message: 'Delete "${collection.name}" and everything inside it?');
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Delete collection',
+          message: 'Delete "${collection.name}" and everything inside it?',
+        );
         if (confirmed) {
           await vm.deleteCollection(collection.id);
           if (context.mounted) _showSnack(context, 'Collection deleted');
@@ -274,8 +273,9 @@ class _FolderChildren extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<CollectionsViewModel>();
-    final childFolders =
-        allFolders.where((f) => f.parentFolderId == parentFolderId && vm.isFolderVisible(collectionId, f));
+    final childFolders = allFolders.where(
+      (f) => f.parentFolderId == parentFolderId && vm.isFolderVisible(collectionId, f),
+    );
     final childRequests = allRequests.where((r) => r.folderId == parentFolderId && vm.isRequestVisible(r));
 
     if (childFolders.isEmpty && childRequests.isEmpty) {
@@ -389,8 +389,11 @@ class _FolderTileState extends State<_FolderTile> {
         await vm.duplicateFolder(widget.folder.id);
         if (context.mounted) _showSnack(context, 'Folder duplicated');
       case 'delete':
-        final confirmed = await showConfirmDialog(context,
-            title: 'Delete folder', message: 'Delete "${widget.folder.name}" and everything inside it?');
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Delete folder',
+          message: 'Delete "${widget.folder.name}" and everything inside it?',
+        );
         if (confirmed) {
           await vm.deleteFolder(widget.folder.id);
           if (context.mounted) _showSnack(context, 'Folder deleted');
@@ -400,35 +403,78 @@ class _FolderTileState extends State<_FolderTile> {
   }
 }
 
-class _RequestTile extends StatelessWidget {
+class _RequestTile extends StatefulWidget {
   final RequestSummaryEntity request;
   final double indent;
   const _RequestTile({super.key, required this.request, required this.indent});
 
   @override
+  State<_RequestTile> createState() => _RequestTileState();
+}
+
+class _RequestTileState extends State<_RequestTile> {
+  bool _hovered = false;
+
+  RequestSummaryEntity get request => widget.request;
+
+  @override
   Widget build(BuildContext context) {
     final vm = context.read<CollectionsViewModel>();
-    final isSelected = context.watch<ShellViewModel>().selectedRequestId == request.id;
+    final colors = context.colors;
+    final isSelected = context.select<ShellViewModel, bool>((shell) => shell.selectedRequestId == request.id);
+    final background = isSelected
+        ? colors.mainAccent.withValues(alpha: 0.13)
+        : _hovered
+        ? colors.hover
+        : Colors.transparent;
     return Padding(
-      padding: EdgeInsets.only(left: indent),
-      child: ListTile(
-        dense: true,
-        selected: isSelected,
-        leading: SizedBox(
-          width: 52,
-          child: Text(request.method.label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: context.colors.forMethod(request.method.label), fontWeight: FontWeight.bold, fontSize: 11)),
-        ),
-        title: Text(request.name, overflow: TextOverflow.ellipsis),
-        onTap: () => _openRequest(context, request.id),
-        trailing: PopupMenuButton<String>(
-          onSelected: (action) => _handleAction(context, vm, action),
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'rename', child: Text('Rename')),
-            PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-            PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
+      padding: EdgeInsets.fromLTRB(widget.indent, 1, 8, 1),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Material(
+          color: background,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _openRequest(context, request.id),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8, right: 2, top: 4, bottom: 4),
+              child: Row(
+                children: [
+                  MethodBadge(method: request.method.label),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      request.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.textStyles.body.copyWith(
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                        color: isSelected ? colors.primaryText : colors.primaryText.withValues(alpha: 0.88),
+                      ),
+                    ),
+                  ),
+                  // Dimmed rather than hidden until hover: a phone has no hover.
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 120),
+                    opacity: _hovered || isSelected ? 1 : 0.4,
+                    child: PopupMenuButton<String>(
+                      tooltip: 'More',
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                      onSelected: (action) => _handleAction(context, vm, action),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'rename', child: Text('Rename')),
+                        PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -446,8 +492,11 @@ class _RequestTile extends StatelessWidget {
         await vm.duplicateRequest(request.id);
         if (context.mounted) _showSnack(context, 'Request duplicated');
       case 'delete':
-        final confirmed =
-            await showConfirmDialog(context, title: 'Delete request', message: 'Delete "${request.name}"?');
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Delete request',
+          message: 'Delete "${request.name}"?',
+        );
         if (confirmed) {
           await vm.deleteRequest(request.id);
           if (context.mounted && context.read<ShellViewModel>().selectedRequestId == request.id) {

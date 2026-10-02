@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:postpilot/core/database/app_database.dart';
 import 'package:postpilot/core/theme/app_theme.dart';
 import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
+import 'package:postpilot/features/environments/domain/entities/environment_entity.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_exception.dart';
 import 'package:postpilot/features/workplace/presentation/view_models/workplace_view_model.dart';
 import 'package:postpilot/features/workplace/presentation/widgets/add_workplace_dialog.dart';
@@ -16,15 +17,16 @@ void main() {
   late AppDatabase database;
   late FakeWorkplaceRepository repository;
   late WorkplaceViewModel vm;
+  late InMemoryDb memory;
 
-  Future<void> open(WidgetTester tester, {bool desktop = true}) async {
+  Future<void> open(WidgetTester tester, {bool desktop = true, String? gitRepoUrl}) async {
     tester.view.physicalSize = const Size(1000, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
     database = AppDatabase.forTesting(NativeDatabase.memory());
-    repository = FakeWorkplaceRepository(usesRealFolders: desktop, canPickFolder: desktop);
-    final memory = InMemoryDb();
+    repository = FakeWorkplaceRepository(usesRealFolders: desktop, canPickFolder: desktop, gitRepoUrl: gitRepoUrl);
+    memory = InMemoryDb();
     final shell = ShellViewModel(memory.requestRepository);
     vm = WorkplaceViewModel(
       repository: repository,
@@ -98,7 +100,9 @@ void main() {
 
   testWidgets('a creation failure is shown as its own message, with the dialog still open', (tester) async {
     await open(tester);
-    repository.createError = const WorkplaceException('The workplace "A" already uses this folder. Choose a different folder.');
+    repository.createError = const WorkplaceException(
+      'The workplace "A" already uses this folder. Choose a different folder.',
+    );
 
     await tester.enterText(find.byType(TextField).first, 'New one');
     await tester.enterText(find.byType(TextField).at(1), '/some/folder');
@@ -200,6 +204,115 @@ void main() {
 
     expect(find.text('Repository URL'), findsOneWidget);
     expect(find.text('Branch'), findsOneWidget);
+  });
+
+  /// The open workplace is connected to a repository, ready to push or pull.
+  Future<void> openGitWorkplace(WidgetTester tester) async {
+    await open(tester, gitRepoUrl: 'acme/api');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await vm.init();
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> chooseFromMenu(WidgetTester tester, String item) async {
+    await tester.tap(find.text('My Workplace'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(item));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('pushing is not interrupted when the workspace holds no secret values', (tester) async {
+    await openGitWorkplace(tester);
+
+    await chooseFromMenu(tester, 'Sync with Git');
+
+    expect(find.text('Push secret values to Git?'), findsNothing);
+    expect(repository.syncCalls, 1);
+  });
+
+  testWidgets('pushing a workspace with secret values asks first, and Cancel pushes nothing', (tester) async {
+    await openGitWorkplace(tester);
+    final testing = await memory.environmentRepository.create('Testing');
+    await memory.environmentRepository.upsertVariable(
+      EnvironmentVariableEntity(
+        id: 0,
+        environmentId: testing,
+        key: 'password',
+        value: 'hunter2',
+        isSecret: true,
+        enabled: true,
+      ),
+    );
+    await memory.environmentRepository.upsertVariable(
+      EnvironmentVariableEntity(
+        id: 0,
+        environmentId: testing,
+        key: 'baseUrl',
+        value: 'https://x',
+        isSecret: false,
+        enabled: true,
+      ),
+    );
+    await memory.environmentRepository.upsertVariable(
+      EnvironmentVariableEntity(id: 0, environmentId: testing, key: 'apiKey', value: '', isSecret: true, enabled: true),
+    );
+
+    await chooseFromMenu(tester, 'Sync with Git');
+
+    expect(find.text('Push secret values to Git?'), findsOneWidget);
+    expect(
+      find.textContaining('Testing › password'),
+      findsOneWidget,
+      reason: 'names the secret, never shows its value',
+    );
+    expect(find.textContaining('hunter2'), findsNothing);
+    expect(find.textContaining('baseUrl'), findsNothing, reason: 'a plain variable is not a secret');
+    expect(find.textContaining('apiKey'), findsNothing, reason: 'an empty secret leaks nothing');
+    expect(find.textContaining('acme/api'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(repository.syncCalls, 0);
+  });
+
+  testWidgets('"Push anyway" pushes after the warning', (tester) async {
+    await openGitWorkplace(tester);
+    final testing = await memory.environmentRepository.create('Testing');
+    await memory.environmentRepository.upsertVariable(
+      EnvironmentVariableEntity(
+        id: 0,
+        environmentId: testing,
+        key: 'token',
+        value: 'abc',
+        isSecret: true,
+        enabled: true,
+      ),
+    );
+
+    await chooseFromMenu(tester, 'Sync with Git');
+    await tester.tap(find.text('Push anyway'));
+    await tester.pumpAndSettle();
+
+    expect(repository.syncCalls, 1);
+    expect(find.text('Synced successfully with Git repository!'), findsOneWidget);
+  });
+
+  testWidgets('pulling asks first because it replaces the workplace, and Cancel pulls nothing', (tester) async {
+    await openGitWorkplace(tester);
+
+    await chooseFromMenu(tester, 'Pull from Git');
+    expect(find.text('Replace this workplace with the repository copy?'), findsOneWidget);
+    expect(find.textContaining('Changes you have not pushed yet will be lost'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(repository.pullCalls, 0);
+
+    await chooseFromMenu(tester, 'Pull from Git');
+    await tester.tap(find.text('Pull and replace'));
+    await tester.pumpAndSettle();
+    expect(repository.pullCalls, 1);
   });
 
   testWidgets('the sidebar menu offers a file-manager entry only where one exists', (tester) async {

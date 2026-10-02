@@ -44,7 +44,9 @@ Future<DatabaseConnection> _open() async {
   final implementation = WasmStorageImplementation.values.byName(storage.name);
 
   if (!sharedUsable) {
-    debugPrint('PostPilot: this browser blocks network access from shared workers; storing the database with ${storage.name} instead.');
+    debugPrint(
+      'PostPilot: this browser blocks network access from shared workers; storing the database with ${storage.name} instead.',
+    );
   }
   if (storage == WebStorage.inMemory) {
     debugPrint('PostPilot: no persistent storage is available here; data will be lost when the page is closed.');
@@ -65,10 +67,13 @@ T? _byName<T extends Enum>(List<T> values, String name) {
 /// whether that worked. Anything unexpected counts as "not usable", which only
 /// costs the (equally capable) dedicated-worker storage.
 Future<bool> _sharedWorkerCanFetch(Uri resource) async {
-  if (!globalContext.has('SharedWorker')) return true; // No shared storage is offered then.
+  if (!globalContext.has('SharedWorker')) {
+    return true; // No shared storage is offered then.
+  }
 
   final url = Uri.base.resolveUri(resource).toString();
-  final script = '''
+  final script =
+      '''
 self.onconnect = (event) => {
   const port = event.ports[0];
   const controller = new AbortController();

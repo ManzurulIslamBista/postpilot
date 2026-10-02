@@ -33,7 +33,7 @@ class Teammate {
   final credentials = FakeCredentialsStore();
 
   late final engine = SyncEngine(host, store);
-  late final connect = GitConnectUseCase(links, host);
+  late final connect = GitConnectUseCase(links, host, store);
   late final clone = GitCloneUseCase(host, store, links, engine);
   late final discover = GitDiscoverUseCase(host, engine);
   late final status = GitStatusUseCase(links, host, engine);

@@ -549,8 +549,8 @@ void main() {
       final t = await connectedPair(host);
       final newHead = host.commitFiles(t.repo, {'README.md': '# changed'});
       final before = await t.b.statusOf(t.bId, checkRemote: true);
-      expect(before.behind, isTrue);
       expect(before.remoteHeadSha, newHead);
+      expect(before.behind, isFalse, reason: "the branch moved, but nothing in this collection's folder did");
       host.blobReads = 0;
 
       final applied = await t.b.pullAll(t.bId) as PullApplied;

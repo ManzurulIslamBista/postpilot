@@ -25,6 +25,46 @@ final class BackupNotes {
   bool get isEmpty => description.isEmpty && tags.isEmpty;
 }
 
+/// One doc of a linked collection's last-synced Git state: where it lived in
+/// the repository, the blob sha of that file, and the doc itself as the JSON
+/// text the sync engine stored (kept verbatim, so merges see exactly what they
+/// saw before).
+final class BackupGitBase {
+  final String uid;
+  final String path;
+  final String blobSha;
+  final String doc;
+  const BackupGitBase({required this.uid, required this.path, required this.blobSha, required this.doc});
+}
+
+/// A collection's link to a Git repository and what it last shared with it.
+/// Carried in a workspace file so that switching workplaces, or rebuilding the
+/// database from the file, does not silently unlink the collection. No access
+/// token is ever part of it.
+final class BackupGit {
+  final String provider;
+  final String owner;
+  final String repo;
+  final String branch;
+  final String basePath;
+  final String? lastSyncedSha;
+  final DateTime? lastSyncedAt;
+  final bool includeSecrets;
+  final List<BackupGitBase> base;
+
+  const BackupGit({
+    required this.provider,
+    required this.owner,
+    required this.repo,
+    required this.branch,
+    this.basePath = '',
+    this.lastSyncedSha,
+    this.lastSyncedAt,
+    this.includeSecrets = false,
+    this.base = const [],
+  });
+}
+
 /// A request with the rows that hang off it. Only the request's own fields
 /// are meaningful: its ids are placeholders, except [FolderEntity.id] which is
 /// the file-local id that folders and requests refer to.
@@ -38,12 +78,17 @@ final class BackupRequest {
   final RequestSettings? settings;
   final BackupNotes notes;
 
+  /// The uid that identifies this request in a Git repository; only present in
+  /// a collection that is linked to one.
+  final String? uid;
+
   const BackupRequest({
     required this.request,
     this.scripts,
     this.examples = const [],
     this.settings,
     this.notes = BackupNotes.none,
+    this.uid,
   });
 }
 
@@ -58,6 +103,13 @@ final class BackupCollection {
   /// Descriptions and tags of the [folders], by their file-local id.
   final Map<int, BackupNotes> folderNotes;
 
+  /// Set only for a collection linked to a Git repository: [git] is the link,
+  /// [uid] and [folderUids] (by file-local folder id) identify the collection and
+  /// its folders in that repository (requests carry theirs in [BackupRequest.uid]).
+  final BackupGit? git;
+  final String? uid;
+  final Map<int, String> folderUids;
+
   const BackupCollection({
     required this.name,
     this.auth,
@@ -66,6 +118,9 @@ final class BackupCollection {
     this.requests = const [],
     this.notes = BackupNotes.none,
     this.folderNotes = const {},
+    this.git,
+    this.uid,
+    this.folderUids = const {},
   });
 }
 
@@ -98,54 +153,90 @@ final class BackupSnapshot {
 ///
 /// Version 2 added descriptions and tags (collections, folders, requests) and
 /// per-request settings; a version 1 file has none of them and still reads.
+/// Version 3 adds, for Git-linked collections only, the link and its sync state
+/// (see [BackupGit]); it is written only when a file actually carries them, so
+/// every other file stays readable by older apps, which refuse a version 3 file
+/// loudly instead of quietly dropping the links.
 abstract final class BackupCodec {
   static const formatId = 'postpilot-backup';
   static const currentVersion = 2;
+  static const gitVersion = 3;
   static const _notice =
       'This file contains secrets (variable values, tokens, passwords, API keys) in plain text. Keep it private.';
 
-  static String encode(BackupSnapshot snapshot) => const JsonEncoder.withIndent('  ').convert({
-        'format': formatId,
-        'version': currentVersion,
-        'sensitive': true,
-        'notice': _notice,
-        'exportedAt': snapshot.exportedAt.toUtc().toIso8601String(),
-        'collections': [for (final c in snapshot.collections) _encodeCollection(c)],
-        'environments': [
-          for (final e in snapshot.environments)
-            {
-              'name': e.name,
-              'variables': [
-                for (final v in e.variables) {'key': v.key, 'value': v.value, 'secret': v.isSecret, 'enabled': v.enabled},
-              ],
-            },
-        ],
-        'globals': [
-          for (final g in snapshot.globals) {'key': g.key, 'value': g.value, 'secret': g.isSecret, 'enabled': g.enabled},
-        ],
-      });
+  /// [includeGit] adds the Git link and sync state of linked collections. The
+  /// backup a user exports leaves them out; a workspace file mirrored from the
+  /// database needs them.
+  static String encode(BackupSnapshot snapshot, {bool includeGit = false}) {
+    final withGit = includeGit && snapshot.collections.any((c) => c.git != null);
+    return const JsonEncoder.withIndent('  ').convert({
+      'format': formatId,
+      'version': withGit ? gitVersion : currentVersion,
+      'sensitive': true,
+      'notice': _notice,
+      'exportedAt': snapshot.exportedAt.toUtc().toIso8601String(),
+      'collections': [for (final c in snapshot.collections) _encodeCollection(c, includeGit)],
+      'environments': [
+        for (final e in snapshot.environments)
+          {
+            'name': e.name,
+            'variables': [
+              for (final v in e.variables) {'key': v.key, 'value': v.value, 'secret': v.isSecret, 'enabled': v.enabled},
+            ],
+          },
+      ],
+      'globals': [
+        for (final g in snapshot.globals) {'key': g.key, 'value': g.value, 'secret': g.isSecret, 'enabled': g.enabled},
+      ],
+    });
+  }
 
-  static Map<String, dynamic> _encodeCollection(BackupCollection c) => {
-        'name': c.name,
-        ..._encodeNotes(c.notes),
-        'auth': ?c.auth?.toJson(),
-        'variables': [
-          for (final v in c.variables) {'key': v.key, 'value': v.value, 'enabled': v.enabled},
-        ],
-        'folders': [
-          for (final f in c.folders)
-            {'id': f.id, 'parentId': f.parentFolderId, 'name': f.name, ..._encodeNotes(c.folderNotes[f.id] ?? BackupNotes.none)},
-        ],
-        'requests': [for (final r in c.requests) _encodeRequest(r)],
-      };
+  static Map<String, dynamic> _encodeCollection(BackupCollection c, bool includeGit) {
+    final git = includeGit ? c.git : null;
+    return {
+      'name': c.name,
+      ..._encodeNotes(c.notes),
+      'uid': ?(git == null ? null : c.uid),
+      'git': ?(git == null ? null : _encodeGit(git)),
+      'auth': ?c.auth?.toJson(),
+      'variables': [
+        for (final v in c.variables) {'key': v.key, 'value': v.value, 'enabled': v.enabled},
+      ],
+      'folders': [
+        for (final f in c.folders)
+          {
+            'id': f.id,
+            'parentId': f.parentFolderId,
+            'name': f.name,
+            ..._encodeNotes(c.folderNotes[f.id] ?? BackupNotes.none),
+            'uid': ?(git == null ? null : c.folderUids[f.id]),
+          },
+      ],
+      'requests': [for (final r in c.requests) _encodeRequest(r, includeGit && git != null)],
+    };
+  }
+
+  static Map<String, dynamic> _encodeGit(BackupGit g) => {
+    'provider': g.provider,
+    'owner': g.owner,
+    'repo': g.repo,
+    'branch': g.branch,
+    'basePath': g.basePath,
+    'lastSyncedSha': g.lastSyncedSha,
+    'lastSyncedAt': g.lastSyncedAt?.toUtc().toIso8601String(),
+    'includeSecrets': g.includeSecrets,
+    'base': [
+      for (final b in g.base) {'uid': b.uid, 'path': b.path, 'blobSha': b.blobSha, 'doc': b.doc},
+    ],
+  };
 
   /// Only the parts that are set, so an undocumented entity adds no keys.
   static Map<String, dynamic> _encodeNotes(BackupNotes notes) => {
-        if (notes.description.isNotEmpty) 'description': notes.description,
-        if (notes.tags.isNotEmpty) 'tags': notes.tags,
-      };
+    if (notes.description.isNotEmpty) 'description': notes.description,
+    if (notes.tags.isNotEmpty) 'tags': notes.tags,
+  };
 
-  static Map<String, dynamic> _encodeRequest(BackupRequest r) {
+  static Map<String, dynamic> _encodeRequest(BackupRequest r, bool includeGit) {
     final q = r.request;
     final scripts = r.scripts;
     final settings = r.settings;
@@ -153,6 +244,7 @@ abstract final class BackupCodec {
       'folderId': q.folderId,
       'name': q.name,
       ..._encodeNotes(r.notes),
+      'uid': ?(includeGit ? r.uid : null),
       'method': q.method.name,
       'url': q.url,
       'headers': _encodeItems(q.headers),
@@ -188,8 +280,8 @@ abstract final class BackupCodec {
   }
 
   static List<Map<String, dynamic>> _encodeItems(List<KeyValueItem> items) => [
-        for (final i in items) {'key': i.key, 'value': i.value, 'enabled': i.enabled},
-      ];
+    for (final i in items) {'key': i.key, 'value': i.value, 'enabled': i.enabled},
+  ];
 
   /// The scripts columns are JSON arrays kept as text; the file embeds them
   /// as real arrays instead of doubly-escaped strings.
@@ -214,8 +306,10 @@ abstract final class BackupCodec {
     }
     final version = root['version'];
     if (version is! int || version < 1) throw const ImportException('the backup has no valid version number.');
-    if (version > currentVersion) {
-      throw ImportException('it was made by a newer PostPilot (backup version $version; this app reads up to $currentVersion).');
+    if (version > gitVersion) {
+      throw ImportException(
+        'it was made by a newer PostPilot (backup version $version; this app reads up to $gitVersion).',
+      );
     }
     try {
       return BackupSnapshot(
@@ -239,51 +333,106 @@ abstract final class BackupCodec {
     }
   }
 
-  static BackupCollection _decodeCollection(Map<String, dynamic> c) => BackupCollection(
-        name: _name(c['name'], 'Restored collection'),
-        auth: c['auth'] is Map ? RequestAuth.fromJson(_map(c['auth'])) : null,
-        notes: _decodeNotes(c),
-        variables: [
-          for (final v in _maps(c['variables']))
-            if (_text(v['key']).isNotEmpty)
-              CollectionVariableEntity(
-                id: 0,
-                collectionId: 0,
-                key: _text(v['key']),
-                value: _text(v['value']),
-                enabled: v['enabled'] != false,
-              ),
-        ],
-        folders: [
+  static BackupCollection _decodeCollection(Map<String, dynamic> c) {
+    final git = _decodeGit(c['git']);
+    return BackupCollection(
+      git: git,
+      // uids mean nothing without the link they belong to
+      uid: git != null && c['uid'] is String ? c['uid'] as String : null,
+      folderUids: {
+        if (git != null)
           for (final f in _maps(c['folders']))
-            if (f['id'] is int)
-              FolderEntity(
-                id: f['id'] as int,
-                collectionId: 0,
-                parentFolderId: f['parentId'] is int ? f['parentId'] as int : null,
-                name: _name(f['name'], 'Folder'),
-              ),
-        ],
-        folderNotes: {
-          for (final f in _maps(c['folders']))
-            if (f['id'] is int && !_decodeNotes(f).isEmpty) f['id'] as int: _decodeNotes(f),
-        },
-        requests: [for (final r in _maps(c['requests'])) _decodeRequest(r)],
+            if (f['id'] is int && f['uid'] is String) f['id'] as int: f['uid'] as String,
+      },
+      name: _name(c['name'], 'Restored collection'),
+      auth: c['auth'] is Map ? RequestAuth.fromJson(_map(c['auth'])) : null,
+      notes: _decodeNotes(c),
+      variables: [
+        for (final v in _maps(c['variables']))
+          if (_text(v['key']).isNotEmpty)
+            CollectionVariableEntity(
+              id: 0,
+              collectionId: 0,
+              key: _text(v['key']),
+              value: _text(v['value']),
+              enabled: v['enabled'] != false,
+            ),
+      ],
+      folders: [
+        for (final f in _maps(c['folders']))
+          if (f['id'] is int)
+            FolderEntity(
+              id: f['id'] as int,
+              collectionId: 0,
+              parentFolderId: f['parentId'] is int ? f['parentId'] as int : null,
+              name: _name(f['name'], 'Folder'),
+            ),
+      ],
+      folderNotes: {
+        for (final f in _maps(c['folders']))
+          if (f['id'] is int && !_decodeNotes(f).isEmpty) f['id'] as int: _decodeNotes(f),
+      },
+      requests: [for (final r in _maps(c['requests'])) _decodeRequest(r, withUid: git != null)],
+    );
+  }
+
+  /// A damaged section is dropped whole: half a link (or a base missing some
+  /// docs) would make the next sync mistake untouched docs for new or deleted ones.
+  static BackupGit? _decodeGit(dynamic raw) {
+    if (raw is! Map) return null;
+    final g = raw.cast<String, dynamic>();
+    String? text(String key) => g[key] is String && (g[key] as String).isNotEmpty ? g[key] as String : null;
+    final provider = text('provider');
+    final owner = text('owner');
+    final repo = text('repo');
+    final branch = text('branch');
+    if (provider == null || owner == null || repo == null || branch == null) return null;
+    final base = <BackupGitBase>[];
+    if (g['base'] != null && g['base'] is! List) return null;
+    for (final entry in (g['base'] as List? ?? const [])) {
+      if (entry is! Map ||
+          entry['uid'] is! String ||
+          entry['path'] is! String ||
+          entry['blobSha'] is! String ||
+          entry['doc'] is! String) {
+        return null;
+      }
+      base.add(
+        BackupGitBase(
+          uid: entry['uid'] as String,
+          path: entry['path'] as String,
+          blobSha: entry['blobSha'] as String,
+          doc: entry['doc'] as String,
+        ),
       );
+    }
+    return BackupGit(
+      provider: provider,
+      owner: owner,
+      repo: repo,
+      branch: branch,
+      basePath: g['basePath'] is String ? g['basePath'] as String : '',
+      lastSyncedSha: g['lastSyncedSha'] is String ? g['lastSyncedSha'] as String : null,
+      lastSyncedAt: DateTime.tryParse('${g['lastSyncedAt'] ?? ''}'),
+      includeSecrets: g['includeSecrets'] == true,
+      base: base,
+    );
+  }
 
   static BackupNotes _decodeNotes(Map<String, dynamic> map) => BackupNotes(
-        description: map['description'] is String ? map['description'] as String : '',
-        tags: [
-          if (map['tags'] is List)
-            for (final tag in map['tags'] as List)
-              if (tag is String && tag.trim().isNotEmpty) tag,
-        ],
-      );
+    description: map['description'] is String ? map['description'] as String : '',
+    tags: [
+      if (map['tags'] is List)
+        for (final tag in map['tags'] as List)
+          if (tag is String && tag.trim().isNotEmpty) tag,
+    ],
+  );
 
-  static BackupRequest _decodeRequest(Map<String, dynamic> r) {
+  static BackupRequest _decodeRequest(Map<String, dynamic> r, {bool withUid = false}) {
     final scripts = r['scripts'];
     final settings = r['settings'] is Map ? RequestSettings.fromJson(_map(r['settings'])) : null;
     return BackupRequest(
+      uid: withUid && r['uid'] is String ? r['uid'] as String : null,
       notes: _decodeNotes(r),
       settings: settings == null || settings.isEmpty ? null : settings,
       request: ApiRequestEntity(
@@ -321,44 +470,44 @@ abstract final class BackupCodec {
   }
 
   static RequestBody _decodeBody(Map<String, dynamic> b) => RequestBody(
-        type: _enumByName(BodyType.values, b['type'], BodyType.none),
-        rawContentType: _enumByName(RawContentType.values, b['rawContentType'], RawContentType.json),
-        rawText: _text(b['rawText']),
-        formFields: _decodeItems(b['formFields']),
-        urlEncodedFields: _decodeItems(b['urlEncodedFields']),
-        graphqlQuery: _text(b['graphqlQuery']),
-        graphqlVariables: b['graphqlVariables'] is String ? b['graphqlVariables'] as String : '{}',
-      );
+    type: _enumByName(BodyType.values, b['type'], BodyType.none),
+    rawContentType: _enumByName(RawContentType.values, b['rawContentType'], RawContentType.json),
+    rawText: _text(b['rawText']),
+    formFields: _decodeItems(b['formFields']),
+    urlEncodedFields: _decodeItems(b['urlEncodedFields']),
+    graphqlQuery: _text(b['graphqlQuery']),
+    graphqlVariables: b['graphqlVariables'] is String ? b['graphqlVariables'] as String : '{}',
+  );
 
   static BackupEnvironment _decodeEnvironment(Map<String, dynamic> e) => BackupEnvironment(
-        name: _name(e['name'], 'Restored environment'),
-        variables: [
-          for (final v in _maps(e['variables']))
-            if (_text(v['key']).isNotEmpty)
-              EnvironmentVariableEntity(
-                id: 0,
-                environmentId: 0,
-                key: _text(v['key']),
-                value: _text(v['value']),
-                isSecret: v['secret'] == true,
-                enabled: v['enabled'] != false,
-              ),
-        ],
-      );
+    name: _name(e['name'], 'Restored environment'),
+    variables: [
+      for (final v in _maps(e['variables']))
+        if (_text(v['key']).isNotEmpty)
+          EnvironmentVariableEntity(
+            id: 0,
+            environmentId: 0,
+            key: _text(v['key']),
+            value: _text(v['value']),
+            isSecret: v['secret'] == true,
+            enabled: v['enabled'] != false,
+          ),
+    ],
+  );
 
   static List<KeyValueItem> _decodeItems(dynamic list) => [
-        for (final i in _maps(list))
-          KeyValueItem(key: _text(i['key']), value: _text(i['value']), enabled: i['enabled'] != false),
-      ];
+    for (final i in _maps(list))
+      KeyValueItem(key: _text(i['key']), value: _text(i['value']), enabled: i['enabled'] != false),
+  ];
 
   static T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) =>
       values.firstWhere((v) => v.name == name, orElse: () => fallback);
 
   static List<Map<String, dynamic>> _maps(dynamic list) => [
-        if (list is List)
-          for (final e in list)
-            if (e is Map) e.cast<String, dynamic>(),
-      ];
+    if (list is List)
+      for (final e in list)
+        if (e is Map) e.cast<String, dynamic>(),
+  ];
 
   static Map<String, dynamic> _map(dynamic value) => value is Map ? value.cast<String, dynamic>() : const {};
   static String _text(dynamic value) => value == null ? '' : '$value';

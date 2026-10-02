@@ -1,3 +1,4 @@
+import '../../../../core/widgets/busy_label.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/enums/auth_type.dart';
@@ -14,10 +15,10 @@ class CollectionAuthDialog extends StatefulWidget {
   /// Not dismissible by a scrim click or Esc: everything typed here, and any
   /// token fetched through the browser, lives only in memory until Save.
   static Future<void> show(BuildContext context, {required int collectionId}) => showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => CollectionAuthDialog(collectionId: collectionId),
-      );
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => CollectionAuthDialog(collectionId: collectionId),
+  );
 
   @override
   State<CollectionAuthDialog> createState() => _CollectionAuthDialogState();
@@ -104,7 +105,10 @@ class _CollectionAuthDialogState extends State<CollectionAuthDialog> {
               const Divider(),
               Flexible(
                 child: auth == null
-                    ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+                    ? const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
                     : SingleChildScrollView(
                         child: AuthEditor(
                           auth: auth,
@@ -120,7 +124,10 @@ class _CollectionAuthDialogState extends State<CollectionAuthDialog> {
                 children: [
                   TextButton(onPressed: _close, child: const Text('Cancel')),
                   const SizedBox(width: 8),
-                  FilledButton(onPressed: auth == null || _saving ? null : _save, child: const Text('Save')),
+                  FilledButton(
+                    onPressed: auth == null || _saving ? null : _save,
+                    child: BusyLabel(busy: _saving, label: 'Save', busyLabel: 'Saving…'),
+                  ),
                 ],
               ),
             ],

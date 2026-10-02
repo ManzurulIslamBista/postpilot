@@ -5,6 +5,9 @@ import '../entities/git_link.dart';
 abstract interface class GitLinkRepository {
   Future<GitLink?> findByCollection(int collectionId);
 
+  /// Every link on this device (one per linked collection).
+  Future<List<GitLink>> findAll();
+
   /// Emits the link (or null) now and whenever it changes.
   Stream<GitLink?> watchByCollection(int collectionId);
 

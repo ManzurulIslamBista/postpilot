@@ -19,15 +19,22 @@ Designed for speed, offline-first reliability, Git-based version control, and re
 
 ## 📥 Download Latest Release
 
-Download the latest version built directly from the `main` branch:
+Choose the optimized package for your operating system and hardware architecture:
 
-| Platform | Format | Direct Download Link |
-| :--- | :--- | :--- |
-| 🪟 **Windows** | Setup Installer (`.exe`) | [**Download PostPilot-Windows-Setup.exe**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-Windows-Setup.exe) |
-| 🪟 **Windows** | Portable Archive (`.zip`) | [**Download PostPilot-Windows-Portable.zip**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-Windows-Portable.zip) |
-| 🍏 **macOS** | Disk Image (`.dmg`) | [**Download PostPilot-macOS.dmg**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-macOS.dmg) |
-| 🍏 **macOS** | Application Archive (`.zip`) | [**Download PostPilot-macOS.zip**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-macOS.zip) |
-| 🤖 **Android** | Installable Package (`.apk`) | [**Download PostPilot-Android.apk**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-Android.apk) |
+| Platform | Target Architecture | Package Format | Direct Download Link |
+| :--- | :--- | :--- | :--- |
+| 🪟 **Windows** | x86_64 / x64 | Setup Installer (`.exe`) | [**Download PostPilot_Windows_Installer.exe**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Windows_Installer.exe) |
+| 🪟 **Windows** | x86_64 / x64 | Portable Archive (`.zip`) | [**Download PostPilot_Windows_x64.zip**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Windows_x64.zip) |
+| 🍏 **macOS** | Universal (Intel & Silicon) | Disk Image (`.dmg`) | [**Download PostPilot_macOS_Universal.dmg**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_macOS_Universal.dmg) |
+| 🍏 **macOS** | Apple Silicon (M1/M2/M3/M4) | Disk Image (`.dmg`) | [**Download PostPilot_macOS_Silicon.dmg**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_macOS_Silicon.dmg) |
+| 🍏 **macOS** | Intel x86_64 | Disk Image (`.dmg`) | [**Download PostPilot_macOS_Intel_x86_64.dmg**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_macOS_Intel_x86_64.dmg) |
+| 🍏 **macOS** | All Macs | Application Archive (`.zip`) | [**Download PostPilot_macOS.zip**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_macOS.zip) |
+| 🤖 **Android** | Universal (All phones) | Package (`.apk`) | [**Download PostPilot_Android_Universal.apk**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Android_Universal.apk) |
+| 🤖 **Android** | Modern Phones (ARM64-v8a) | Package (`.apk`) | [**Download PostPilot_Android_arm64.apk**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Android_arm64.apk) |
+| 🤖 **Android** | Older Phones (ARMeabi-v7a) | Package (`.apk`) | [**Download PostPilot_Android_armv7.apk**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Android_armv7.apk) |
+| 🤖 **Android** | Emulators & PC (x86_64) | Package (`.apk`) | [**Download PostPilot_Android_Intel_x86_64.apk**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Android_Intel_x86_64.apk) |
+| 🐧 **Linux** | x86_64 / amd64 | Debian Package (`.deb`) | [**Download PostPilot_Linux_amd64.deb**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Linux_amd64.deb) |
+| 🐧 **Linux** | x86_64 / amd64 | Portable Archive (`.tar.gz`) | [**Download PostPilot_Linux_x64.tar.gz**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Linux_x64.tar.gz) |
 
 ---
 

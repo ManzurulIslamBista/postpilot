@@ -1,4 +1,4 @@
-; Inno Setup Script for PostPilot
+; Root Inno Setup Script for PostPilot
 ; Compiles a standalone Windows installer (.exe) for PostPilot
 
 #define MyAppName "PostPilot"
@@ -17,19 +17,17 @@ DefaultDirName={autopf}\{#MyAppName}
 ArchitecturesInstallIn64BitMode=x64compatible
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-OutputDir=..\..\dist-windows
+OutputDir=Output
 OutputBaseFilename=PostPilot_Windows_Installer
-SetupIconFile=..\runner\resources\app_icon.ico
+SetupIconFile=windows\runner\resources\app_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
-; Set privileges to lowest so the installer does not trigger the scary UAC Administrator elevation warning!
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
-; Detailed file and version metadata for Microsoft Defender inspection
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=PostPilot Desktop Application
@@ -44,7 +42,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -325,7 +325,8 @@ void main() {
 
     test('no version', () => expectRejected('{"format":"postpilot-backup"}', contains('version')));
 
-    test('a version from a newer app', () => expectRejected(_backupOf({'version': BackupCodec.currentVersion + 1}), contains('newer')));
+    // Version 3 (Git-linked collections) is readable; the first one this app does not know is newer.
+    test('a version from a newer app', () => expectRejected(_backupOf({'version': BackupCodec.gitVersion + 1}), contains('newer')));
 
     test('a field of the wrong type', () => expectRejected(_backupOf({'collections': [{'name': 'X', 'auth': {'bearerToken': 5}}]}), contains('damaged')));
   });

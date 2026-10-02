@@ -87,6 +87,8 @@ import '../../features/import_export/presentation/view_models/backup_view_model.
 import '../../features/import_export/presentation/view_models/export_collection_view_model.dart';
 import '../../features/import_export/presentation/view_models/import_any_view_model.dart';
 import '../../features/import_export/presentation/view_models/import_export_view_model.dart';
+import '../../features/request_builder/presentation/view_models/variable_scope.dart';
+import '../../features/request_builder/domain/usecases/list_variables_usecase.dart';
 import '../../features/request_builder/data/repositories/request_repository_impl.dart';
 import '../../features/request_builder/data/repositories/request_scripts_repository_impl.dart';
 import '../../features/request_builder/data/repositories/response_example_repository_impl.dart';
@@ -229,6 +231,16 @@ void _registerRequestBuilder() {
       locator<SendRequestUseCase>(),
       locator<RunRequestScriptsUseCase>(),
     ),
+  );
+  locator.registerLazySingleton<ListVariablesUseCase>(
+    () => ListVariablesUseCase(
+      locator<CollectionVariableRepository>(),
+      locator<EnvironmentRepository>(),
+      locator<GlobalVariableRepository>(),
+    ),
+  );
+  locator.registerFactory<VariableScope>(
+    () => VariableScope(locator<ListVariablesUseCase>(), refreshOn: locator<EnvironmentsViewModel>()),
   );
   locator.registerFactory<RequestBuilderViewModel>(
     () => RequestBuilderViewModel(

@@ -1,3 +1,4 @@
+import 'variables/variable_text_form_field.dart';
 import '../../../../core/widgets/busy_label.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -71,12 +72,12 @@ class AuthEditor extends StatelessWidget {
   }
 
   List<Widget> _apiKeyFields() => [
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.apiKeyName,
       decoration: const InputDecoration(labelText: 'Key'),
       onChanged: (v) => onChanged(auth.copyWith(apiKeyName: v)),
     ),
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.apiKeyValue,
       decoration: const InputDecoration(labelText: 'Value'),
       onChanged: (v) => onChanged(auth.copyWith(apiKeyValue: v)),
@@ -92,7 +93,7 @@ class AuthEditor extends StatelessWidget {
   ];
 
   List<Widget> _bearerFields() => [
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.bearerToken,
       decoration: const InputDecoration(labelText: 'Token'),
       onChanged: (v) => onChanged(auth.copyWith(bearerToken: v)),
@@ -100,12 +101,12 @@ class AuthEditor extends StatelessWidget {
   ];
 
   List<Widget> _basicFields() => [
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.basicUsername,
       decoration: const InputDecoration(labelText: 'Username'),
       onChanged: (v) => onChanged(auth.copyWith(basicUsername: v)),
     ),
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.basicPassword,
       obscureText: true,
       decoration: const InputDecoration(labelText: 'Password'),
@@ -114,18 +115,18 @@ class AuthEditor extends StatelessWidget {
   ];
 
   List<Widget> _awsFields() => [
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.awsAccessKey,
       decoration: const InputDecoration(labelText: 'Access Key'),
       onChanged: (v) => onChanged(auth.copyWith(awsAccessKey: v)),
     ),
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.awsSecretKey,
       obscureText: true,
       decoration: const InputDecoration(labelText: 'Secret Key'),
       onChanged: (v) => onChanged(auth.copyWith(awsSecretKey: v)),
     ),
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.awsSessionToken,
       decoration: const InputDecoration(labelText: 'Session Token (optional)'),
       onChanged: (v) => onChanged(auth.copyWith(awsSessionToken: v)),
@@ -133,7 +134,7 @@ class AuthEditor extends StatelessWidget {
     Row(
       children: [
         Expanded(
-          child: TextFormField(
+          child: VariableTextFormField(
             initialValue: auth.awsRegion,
             decoration: const InputDecoration(labelText: 'AWS Region'),
             onChanged: (v) => onChanged(auth.copyWith(awsRegion: v)),
@@ -141,7 +142,7 @@ class AuthEditor extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: TextFormField(
+          child: VariableTextFormField(
             initialValue: auth.awsService,
             decoration: const InputDecoration(labelText: 'Service Name'),
             onChanged: (v) => onChanged(auth.copyWith(awsService: v)),
@@ -157,20 +158,20 @@ class AuthEditor extends StatelessWidget {
       onChanged: (a) => a == null ? null : onChanged(auth.copyWith(jwtAlgorithm: a)),
       items: [for (final a in JwtAlgorithm.values) DropdownMenuItem(value: a, child: Text(a.label))],
     ),
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.jwtSecret,
       obscureText: true,
       decoration: const InputDecoration(labelText: 'Secret'),
       onChanged: (v) => onChanged(auth.copyWith(jwtSecret: v)),
     ),
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.jwtPayload,
       maxLines: 4,
       style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 13),
       decoration: const InputDecoration(labelText: 'Payload (JSON)'),
       onChanged: (v) => onChanged(auth.copyWith(jwtPayload: v)),
     ),
-    TextFormField(
+    VariableTextFormField(
       initialValue: auth.jwtHeaderPrefix,
       decoration: const InputDecoration(labelText: 'Header Prefix'),
       onChanged: (v) => onChanged(auth.copyWith(jwtHeaderPrefix: v)),
@@ -334,7 +335,7 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
   }
 
   Widget _field(String key, String label, String value, ValueChanged<String> onChanged, {bool obscure = false}) =>
-      TextFormField(
+      VariableTextFormField(
         key: ValueKey(key),
         initialValue: value,
         obscureText: obscure,

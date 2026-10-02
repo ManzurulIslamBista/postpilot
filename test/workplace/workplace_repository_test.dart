@@ -7,9 +7,28 @@ import 'package:path/path.dart' as p;
 import 'package:postpilot/features/import_export/domain/services/backup_codec.dart';
 import 'package:postpilot/features/workplace/data/repositories/workplace_repository_impl.dart';
 import 'package:postpilot/features/workplace/data/storage/file_workplace_storage.dart';
+import 'package:postpilot/features/workplace/data/storage/workplace_token_store.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_content.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_entity.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_exception.dart';
+
+/// A token store that remembers what was written, so a test can see where tokens did and did not go.
+final class _MemoryTokens implements WorkplaceTokenStore {
+  final values = <String, String>{};
+  int writes = 0;
+
+  @override
+  Future<String?> read(String workplaceId) async => values[workplaceId];
+
+  @override
+  Future<void> write(String workplaceId, String token) async {
+    writes++;
+    values[workplaceId] = token;
+  }
+
+  @override
+  Future<void> delete(String workplaceId) async => values.remove(workplaceId);
+}
 
 /// Answers GitHub's REST API from a function, so Git flows run without a network.
 final class _FakeGitHub implements HttpClientAdapter {
@@ -29,6 +48,17 @@ final class _FakeGitHub implements HttpClientAdapter {
 
   @override
   void close({bool force = false}) {}
+}
+
+/// GitHub as it answers a brand-new empty repository o/r: the repository exists, its branches exist,
+/// workspace.json does not yet, and the first push is accepted.
+ResponseBody _happyHandler(RequestOptions o) {
+  final key = '${o.method} ${o.uri.path}';
+  if (key == 'GET /repos/o/r') return _json(200, {'default_branch': 'main'});
+  if (key == 'GET /repos/o/r/contents/workspace.json') return _json(404, {'message': 'Not Found'});
+  if (key.startsWith('GET /repos/o/r/branches/')) return _json(200, {});
+  if (key == 'PUT /repos/o/r/contents/workspace.json') return _json(201, {});
+  return _json(500, {'message': 'unexpected $key'});
 }
 
 ResponseBody _json(int status, Object body) => ResponseBody.fromString(
@@ -55,16 +85,36 @@ String _workspaceJson(String folder, String collectionName) => WorkplaceContent(
   ),
 ).toJsonString();
 
+/// A workplace connected to o/r whose first pull finds nothing, so it starts from an empty workspace pushed as the first commit.
+Future<WorkplaceEntity> _createGitWorkplace(
+  WorkplaceRepositoryImpl repository,
+  Directory tempDir, {
+  required String token,
+  String folder = 'git',
+  String repo = 'o/r',
+  String branch = 'main',
+}) =>
+    repository.createWorkplace(
+      name: 'Git $folder',
+      folderPath: p.join(tempDir.path, folder),
+      gitRepoUrl: repo,
+      gitBranch: branch,
+      gitToken: token,
+    );
+
 void main() {
   late Directory tempDir;
   late FileWorkplaceStorage storage;
   late String workplacesRoot;
 
-  WorkplaceRepositoryImpl newRepository({Dio? dio}) => WorkplaceRepositoryImpl(storage: storage, dio: dio);
+  late _MemoryTokens tokens;
+
+  WorkplaceRepositoryImpl newRepository({Dio? dio}) => WorkplaceRepositoryImpl(storage: storage, dio: dio, tokens: tokens);
 
   setUp(() {
     // Every path the repository uses is inside this directory: the test never
     // reads or writes the real application-support or Documents folders.
+    tokens = _MemoryTokens();
     tempDir = Directory.systemTemp.createTempSync('postpilot_workplace_test_');
     workplacesRoot = p.join(tempDir.path, 'workplaces');
     storage = FileWorkplaceStorage(
@@ -383,6 +433,63 @@ void main() {
         throwsA(isA<WorkplaceException>().having((e) => e.message, 'message', contains('Access Denied'))),
       );
       expect((await repository.getWorkplaces()).map((w) => w.name), isNot(contains('Git')));
+    });
+
+    test('the GitHub token lives in the token store, never in the registry file, and still comes back after a restart', () async {
+      final github = _FakeGitHub(_happyHandler);
+      final repository = newRepository(dio: dioFor(github));
+      final registryFile = File(p.join(tempDir.path, 'registry', 'workplaces_registry.json'));
+      final created = await _createGitWorkplace(repository, tempDir, token: 'ghp_very_secret');
+
+      expect(registryFile.readAsStringSync(), isNot(contains('ghp_very_secret')));
+      expect(tokens.values[created.id], 'ghp_very_secret');
+      expect((await newRepository().getActiveWorkplace())?.gitToken, 'ghp_very_secret', reason: 'a new run reads it back');
+    });
+
+    test('a registry written by an older version, with the token inside it, is migrated to the token store', () async {
+      final repository = newRepository();
+      final created = await repository.createWorkplace(name: 'Old', folderPath: p.join(tempDir.path, 'old'));
+      final registryFile = File(p.join(tempDir.path, 'registry', 'workplaces_registry.json'));
+      final registry = jsonDecode(registryFile.readAsStringSync()) as Map<String, dynamic>;
+      for (final w in registry['workplaces'] as List) {
+        if ((w as Map)['id'] == created.id) {
+          w['gitRepoUrl'] = 'o/r';
+          w['gitToken'] = 'ghp_from_old_version';
+        }
+      }
+      registryFile.writeAsStringSync(jsonEncode(registry));
+
+      final reloaded = (await newRepository().getWorkplaces()).firstWhere((w) => w.id == created.id);
+
+      expect(reloaded.gitToken, 'ghp_from_old_version', reason: 'nothing is lost');
+      expect(tokens.values[created.id], 'ghp_from_old_version');
+      expect(registryFile.readAsStringSync(), isNot(contains('ghp_from_old_version')), reason: 'the file was rewritten without it');
+    });
+
+    test('deleting a workplace, or disconnecting it from Git, removes its token', () async {
+      final github = _FakeGitHub(_happyHandler);
+      final repository = newRepository(dio: dioFor(github));
+      final first = await _createGitWorkplace(repository, tempDir, token: 'ghp_one', folder: 'one', repo: 'o/r');
+      final second = await _createGitWorkplace(repository, tempDir, token: 'ghp_two', folder: 'two', repo: 'o/r', branch: 'other');
+      expect(tokens.values.keys, containsAll([first.id, second.id]));
+
+      await repository.updateWorkplace(first.copyWith(gitRepoUrl: null, gitToken: null));
+      await repository.deleteWorkplace(second.id);
+
+      expect(tokens.values, isEmpty);
+    });
+
+    test('saving the registry again does not rewrite a token that has not changed', () async {
+      final github = _FakeGitHub(_happyHandler);
+      final repository = newRepository(dio: dioFor(github));
+      final created = await _createGitWorkplace(repository, tempDir, token: 'ghp_once');
+      final writes = tokens.writes;
+
+      for (var i = 0; i < 5; i++) {
+        await repository.saveWorkplaceContent(created, WorkplaceContent.empty(created));
+      }
+
+      expect(tokens.writes, writes);
     });
 
     test('a repository and branch belong to one workplace: another spelling of the same repo is refused', () async {

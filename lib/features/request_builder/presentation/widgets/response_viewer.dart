@@ -17,6 +17,17 @@ import 'response_examples_tab.dart';
 /// Narrower than this, the body toolbar wraps its search box onto a second row.
 const _toolbarOneLineMinWidth = 460.0;
 
+/// At least this wide, the status chips sit on the same line as the tabs.
+const _headerOneLineMinWidth = 600.0;
+
+/// Lets the screen around a [ResponseViewer] open its body search, which is
+/// what Ctrl/Cmd+F does. The viewer attaches itself while it is on screen.
+class ResponseFindController {
+  VoidCallback? _open;
+
+  void open() => _open?.call();
+}
+
 class ResponseViewer extends StatefulWidget {
   /// The latest response, or null before the first send and after a failed
   /// one; the saved examples stay reachable either way.
@@ -32,23 +43,30 @@ class ResponseViewer extends StatefulWidget {
   /// request (a team request has no local row to attach an example to).
   final bool canSaveExamples;
 
+  /// Optional hook for opening the body search from outside (Ctrl/Cmd+F).
+  final ResponseFindController? findController;
+
   const ResponseViewer({
     super.key,
     required this.response,
     required this.requestId,
     this.requestName,
     this.canSaveExamples = true,
+    this.findController,
   });
 
   @override
   State<ResponseViewer> createState() => _ResponseViewerState();
 }
 
-class _ResponseViewerState extends State<ResponseViewer> {
+class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProviderStateMixin {
   static const _searchDebounce = Duration(milliseconds: 250);
 
   late final ResponseExamplesViewModel _examplesViewModel;
+  // Not a DefaultTabController: Ctrl/Cmd+F has to switch to the Body tab itself.
+  late final TabController _tabs = TabController(length: 3, vsync: this);
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   Timer? _searchTimer;
   ResponseBodyMode _mode = ResponseBodyMode.pretty;
   String _query = '';
@@ -68,11 +86,16 @@ class _ResponseViewerState extends State<ResponseViewer> {
     super.initState();
     _examplesViewModel = locator<ResponseExamplesViewModel>()..watch(widget.requestId);
     _liveFormatter = _formatterFor(widget.response);
+    widget.findController?._open = _openSearch;
   }
 
   @override
   void didUpdateWidget(covariant ResponseViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.findController != oldWidget.findController) {
+      if (oldWidget.findController?._open == _openSearch) oldWidget.findController?._open = null;
+      widget.findController?._open = _openSearch;
+    }
     if (widget.response != oldWidget.response) {
       _liveFormatter = _formatterFor(widget.response);
       _selectedExample = null;
@@ -89,8 +112,11 @@ class _ResponseViewerState extends State<ResponseViewer> {
 
   @override
   void dispose() {
+    if (widget.findController?._open == _openSearch) widget.findController?._open = null;
     _searchTimer?.cancel();
     _searchController.dispose();
+    _searchFocus.dispose();
+    _tabs.dispose();
     _examplesViewModel.dispose();
     super.dispose();
   }
@@ -108,35 +134,67 @@ class _ResponseViewerState extends State<ResponseViewer> {
           final example = _currentExample(vm.examples);
           final formatter = example == null ? _liveFormatter : _exampleFormatter;
           final headers = example?.headers ?? widget.response?.headers;
-          return DefaultTabController(
-            length: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: _buildSummary(example)),
-                TabBar(
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  tabs: [
-                    const Tab(text: 'Body'),
-                    const Tab(text: 'Headers'),
-                    Tab(text: 'Examples (${vm.examples.length})'),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(example, vm.examples.length),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabs,
+                  children: [
+                    _buildBodyTab(context, formatter, example: example),
+                    _buildHeadersTab(context, headers),
+                    ResponseExamplesTab(selectedId: example?.id, onSelect: _selectExample),
                   ],
                 ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _buildBodyTab(context, formatter, example: example),
-                      _buildHeadersTab(context, headers),
-                      ResponseExamplesTab(selectedId: example?.id, onSelect: _selectExample),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
+    );
+  }
+
+  /// The status/time/size chips and the Body/Headers/Examples tabs. On one line
+  /// when the pane is wide enough (saving a row of height for the body), stacked
+  /// otherwise.
+  Widget _buildHeader(ResponseExampleEntity? example, int exampleCount) {
+    TabBar tabs({required bool divider}) => TabBar(
+      controller: _tabs,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      // On one line the row draws the divider itself, under the chips as well.
+      dividerHeight: divider ? null : 0,
+      tabs: [
+        const Tab(text: 'Body'),
+        const Tab(text: 'Headers'),
+        Tab(text: 'Examples ($exampleCount)'),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final summary = _buildSummary(example);
+        if (constraints.maxWidth < _headerOneLineMinWidth) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: summary),
+              tabs(divider: true),
+            ],
+          );
+        }
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: context.colors.borderSubtle)),
+          ),
+          child: Row(
+            children: [
+              Expanded(child: tabs(divider: false)),
+              Padding(padding: const EdgeInsets.only(left: 8), child: summary),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -237,30 +295,34 @@ class _ResponseViewerState extends State<ResponseViewer> {
 
   Widget _buildSearchField(BuildContext context, int matchCount, int current) {
     final capped = matchCount >= maxSearchHighlights;
-    return TextField(
-      controller: _searchController,
-      style: context.textStyles.caption,
-      decoration: InputDecoration(
-        isDense: true,
-        hintText: 'Search body',
-        prefixIcon: const Icon(Icons.search, size: 16),
-        prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-        suffixIcon: _query.isEmpty
-            ? null
-            : _MatchNavigator(
-                label: matchCount == 0 ? 'No matches' : '${current + 1}/$matchCount${capped ? '+' : ''}',
-                hasMatches: matchCount > 0,
-                onPrevious: () => _stepMatch(-1),
-                onNext: () => _stepMatch(1),
-                onClear: _clearSearch,
-              ),
-        suffixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    return CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): _closeSearch},
+      child: TextField(
+        focusNode: _searchFocus,
+        controller: _searchController,
+        style: context.textStyles.caption,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Search body',
+          prefixIcon: const Icon(Icons.search, size: 16),
+          prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          suffixIcon: _query.isEmpty
+              ? null
+              : _MatchNavigator(
+                  label: matchCount == 0 ? 'No matches' : '${current + 1}/$matchCount${capped ? '+' : ''}',
+                  hasMatches: matchCount > 0,
+                  onPrevious: () => _stepMatch(-1),
+                  onNext: () => _stepMatch(1),
+                  onClear: _clearSearch,
+                ),
+          suffixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        ),
+        onChanged: _onSearchChanged,
+        // Keeps focus in the field, so Enter can step through the matches repeatedly.
+        onEditingComplete: () {},
+        onSubmitted: (_) => _stepMatch(HardwareKeyboard.instance.isShiftPressed ? -1 : 1),
       ),
-      onChanged: _onSearchChanged,
-      // Keeps focus in the field, so Enter can step through the matches repeatedly.
-      onEditingComplete: () {},
-      onSubmitted: (_) => _stepMatch(HardwareKeyboard.instance.isShiftPressed ? -1 : 1),
     );
   }
 
@@ -336,6 +398,36 @@ class _ResponseViewerState extends State<ResponseViewer> {
     }
     if (_matches.isEmpty) return;
     setState(() => _currentMatch = (_currentMatch + step) % _matches.length);
+  }
+
+  /// Ctrl/Cmd+F: show the body search and put the caret in it, ready to type.
+  void _openSearch() {
+    if (_tabs.index != 0) _tabs.index = 0;
+    // The rendered preview has no text to search; Pretty does.
+    if (_mode == ResponseBodyMode.preview) setState(() => _mode = ResponseBodyMode.pretty);
+    _focusSearchWhenReady(10);
+  }
+
+  // The field only exists once the Body tab has been built, a frame or two
+  // after switching to it, so keep trying for a few frames.
+  void _focusSearchWhenReady(int framesLeft) {
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_searchFocus.context == null) {
+          if (framesLeft > 0) _focusSearchWhenReady(framesLeft - 1);
+          return;
+        }
+        _searchFocus.requestFocus();
+        // Selected, so typing replaces the previous search, as in a browser.
+        _searchController.selection = TextSelection(baseOffset: 0, extentOffset: _searchController.text.length);
+      })
+      ..scheduleFrame();
+  }
+
+  void _closeSearch() {
+    _clearSearch();
+    _searchFocus.unfocus();
   }
 
   void _clearSearch() {

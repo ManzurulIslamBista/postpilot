@@ -1,3 +1,4 @@
+import 'variables/variable_text_form_field.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../domain/entities/key_value_item.dart';
@@ -59,7 +60,10 @@ class _KeyValueEditorState extends State<KeyValueEditor> {
     if (!_bulk) {
       _latest = widget.items;
       final text = BulkEditText.serialize(widget.items);
-      _bulkController.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+      _bulkController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
     }
     setState(() => _bulk = !_bulk);
   }
@@ -102,12 +106,7 @@ class _KeyValueEditorState extends State<KeyValueEditor> {
           )
         else ...[
           for (var i = 0; i < items.length; i++)
-            _KeyValueRow(
-              key: ValueKey(items[i].id),
-              item: items[i],
-              onChanged: _replace,
-              onRemove: () => _removeAt(i),
-            ),
+            _KeyValueRow(key: ValueKey(items[i].id), item: items[i], onChanged: _replace, onRemove: () => _removeAt(i)),
           TextButton.icon(onPressed: _addRow, icon: const Icon(Icons.add, size: 16), label: const Text('Add')),
         ],
       ],
@@ -140,9 +139,12 @@ class _KeyValueRowState extends State<_KeyValueRow> {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
-          Checkbox(value: _local.enabled, onChanged: (v) => setState(() => _apply(enabled: v))),
+          Checkbox(
+            value: _local.enabled,
+            onChanged: (v) => setState(() => _apply(enabled: v)),
+          ),
           Expanded(
-            child: TextFormField(
+            child: VariableTextFormField(
               initialValue: _local.key,
               decoration: const InputDecoration(hintText: 'Key', isDense: true),
               onChanged: (v) => _apply(key: v),
@@ -150,7 +152,7 @@ class _KeyValueRowState extends State<_KeyValueRow> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: TextFormField(
+            child: VariableTextFormField(
               initialValue: _local.value,
               decoration: const InputDecoration(hintText: 'Value', isDense: true),
               onChanged: (v) => _apply(value: v),

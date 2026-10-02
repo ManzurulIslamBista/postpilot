@@ -18,16 +18,20 @@ class LayoutPrefs extends ChangeNotifier {
   static const fractionMin = 0.25;
   static const fractionMax = 0.75;
 
+  /// The request editor's default share: the response (usually the longer
+  /// read) gets the larger part.
+  static const defaultRequestFraction = 0.42;
+
   static const _kSidebarWidth = 'layout.sidebarWidth';
   static const _kSidebarCollapsed = 'layout.sidebarCollapsed';
   static const _kResponseLayout = 'layout.responseLayout';
-  static const _kRequestFraction = 'layout.requestFraction';
+  static const _kRequestFraction = 'layout.requestFraction.v2';
 
   SharedPreferences? _prefs;
   double _sidebarWidth = sidebarDefault;
   bool _sidebarCollapsed = false;
   ResponseLayout _responseLayout = ResponseLayout.right;
-  double _requestFraction = 0.5;
+  double _requestFraction = defaultRequestFraction;
 
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarCollapsed => _sidebarCollapsed;
@@ -43,9 +47,10 @@ class LayoutPrefs extends ChangeNotifier {
       final prefs = _prefs = await SharedPreferences.getInstance();
       _sidebarWidth = (prefs.getDouble(_kSidebarWidth) ?? sidebarDefault).clamp(sidebarMin, sidebarMax);
       _sidebarCollapsed = prefs.getBool(_kSidebarCollapsed) ?? false;
-      _responseLayout =
-          prefs.getString(_kResponseLayout) == ResponseLayout.bottom.name ? ResponseLayout.bottom : ResponseLayout.right;
-      _requestFraction = (prefs.getDouble(_kRequestFraction) ?? 0.5).clamp(fractionMin, fractionMax);
+      _responseLayout = prefs.getString(_kResponseLayout) == ResponseLayout.bottom.name
+          ? ResponseLayout.bottom
+          : ResponseLayout.right;
+      _requestFraction = (prefs.getDouble(_kRequestFraction) ?? defaultRequestFraction).clamp(fractionMin, fractionMax);
       notifyListeners();
     } catch (_) {
       _prefs = null;
@@ -79,7 +84,7 @@ class LayoutPrefs extends ChangeNotifier {
   }
 
   void resetRequestFraction() {
-    _requestFraction = 0.5;
+    _requestFraction = defaultRequestFraction;
     notifyListeners();
     commit();
   }

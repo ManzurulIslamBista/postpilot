@@ -77,6 +77,8 @@ import 'package:postpilot/features/import_export/presentation/view_models/backup
 import 'package:postpilot/features/import_export/presentation/view_models/export_collection_view_model.dart';
 import 'package:postpilot/features/import_export/presentation/view_models/import_any_view_model.dart';
 import 'package:postpilot/features/import_export/presentation/view_models/import_export_view_model.dart';
+import 'package:postpilot/features/request_builder/presentation/view_models/variable_scope.dart';
+import 'package:postpilot/features/request_builder/domain/usecases/list_variables_usecase.dart';
 import 'package:postpilot/features/request_builder/domain/repositories/request_repository.dart';
 import 'package:postpilot/features/request_builder/domain/repositories/request_scripts_repository.dart';
 import 'package:postpilot/features/request_builder/domain/repositories/response_example_repository.dart';
@@ -130,6 +132,8 @@ final _wirings = <_Wiring>[
   _wire<GenerateCodeSnippetUseCase>(),
   _wire<CollectionRunnerService>(),
   _wire<RequestBuilderViewModel>(),
+  _wire<ListVariablesUseCase>(),
+  _wire<VariableScope>(),
   _wire<RequestOAuth2ViewModel>(),
   _wire<ResponseExamplesViewModel>(),
   // scripting

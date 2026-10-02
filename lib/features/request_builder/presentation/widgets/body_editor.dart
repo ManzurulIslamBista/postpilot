@@ -1,3 +1,5 @@
+import 'variables/variable_text_controller.dart';
+import 'variables/variable_text_form_field.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/enums/body_type.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
@@ -24,7 +26,7 @@ class BodyEditor extends StatefulWidget {
 }
 
 class _BodyEditorState extends State<BodyEditor> {
-  late final _rawController = TextEditingController(text: widget.body.rawText);
+  late final _rawController = VariableTextEditingController(text: widget.body.rawText);
   final _rawFocus = FocusNode();
   String? _jsonError;
 
@@ -46,7 +48,10 @@ class _BodyEditorState extends State<BodyEditor> {
   }
 
   void _setRawText(String text) {
-    _rawController.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+    _rawController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 
   void _onRawChanged(String text) {
@@ -124,29 +129,32 @@ class _BodyEditorState extends State<BodyEditor> {
     final body = widget.body;
     return switch (body.type) {
       BodyType.none => const SizedBox.shrink(),
-      BodyType.raw => TextFormField(
-          controller: _rawController,
-          focusNode: _rawFocus,
-          maxLines: null,
-          expands: true,
-          textAlignVertical: TextAlignVertical.top,
-          style: context.textStyles.mono,
-          decoration: const InputDecoration(border: OutlineInputBorder(), alignLabelWithHint: true),
-          onChanged: _onRawChanged,
-        ),
+      BodyType.raw => VariableTextFormField(
+        controller: _rawController,
+        focusNode: _rawFocus,
+        maxLines: null,
+        expands: true,
+        textAlignVertical: TextAlignVertical.top,
+        style: context.textStyles.mono,
+        decoration: const InputDecoration(border: OutlineInputBorder(), alignLabelWithHint: true),
+        onChanged: _onRawChanged,
+      ),
       // Distinct keys: both are the same widget at the same spot, and a state
       // left in "Bulk edit" must not carry over from one list to the other.
       BodyType.formData => SingleChildScrollView(
-          key: const ValueKey('form-data-fields'),
-          child: KeyValueEditor(items: body.formFields, onChanged: (v) => widget.onChanged(body.copyWith(formFields: v))),
+        key: const ValueKey('form-data-fields'),
+        child: KeyValueEditor(
+          items: body.formFields,
+          onChanged: (v) => widget.onChanged(body.copyWith(formFields: v)),
         ),
+      ),
       BodyType.urlEncoded => SingleChildScrollView(
-          key: const ValueKey('url-encoded-fields'),
-          child: KeyValueEditor(
-            items: body.urlEncodedFields,
-            onChanged: (v) => widget.onChanged(body.copyWith(urlEncodedFields: v)),
-          ),
+        key: const ValueKey('url-encoded-fields'),
+        child: KeyValueEditor(
+          items: body.urlEncodedFields,
+          onChanged: (v) => widget.onChanged(body.copyWith(urlEncodedFields: v)),
         ),
+      ),
       BodyType.graphql => _graphqlEditor(context),
     };
   }
@@ -160,7 +168,7 @@ class _BodyEditorState extends State<BodyEditor> {
         const SizedBox(height: 4),
         Expanded(
           flex: 2,
-          child: TextFormField(
+          child: VariableTextFormField(
             initialValue: body.graphqlQuery,
             maxLines: null,
             expands: true,
@@ -174,7 +182,7 @@ class _BodyEditorState extends State<BodyEditor> {
         Text('Variables (JSON)', style: context.textStyles.caption),
         const SizedBox(height: 4),
         Expanded(
-          child: TextFormField(
+          child: VariableTextFormField(
             initialValue: body.graphqlVariables,
             maxLines: null,
             expands: true,

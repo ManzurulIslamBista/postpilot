@@ -9,6 +9,7 @@ import '../../domain/entities/workplace_exception.dart';
 import '../../domain/repositories/workplace_repository.dart';
 import '../storage/workplace_storage.dart';
 import '../storage/workplace_storage_factory.dart';
+import '../storage/workplace_token_store.dart';
 
 /// The repository holds no file-system code of its own: all reads and writes go
 /// through a [WorkplaceStorage], real files on desktop/mobile and browser
@@ -16,8 +17,13 @@ import '../storage/workplace_storage_factory.dart';
 final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   final Dio _dio;
   final WorkplaceStorage _storage;
+  final WorkplaceTokenStore _tokens;
 
-  WorkplaceRepositoryImpl({Dio? dio, WorkplaceStorage? storage})
+  /// What the token store is known to hold per workplace id ('' = no token), so the registry,
+  /// which is saved on every autosave, does not rewrite the keychain each time.
+  final _knownTokens = <String, String>{};
+
+  WorkplaceRepositoryImpl({Dio? dio, WorkplaceStorage? storage, WorkplaceTokenStore? tokens})
     : _dio =
           dio ??
           Dio(
@@ -27,7 +33,8 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
               receiveTimeout: const Duration(seconds: 30),
             ),
           ),
-      _storage = storage ?? createPlatformWorkplaceStorage();
+      _storage = storage ?? createPlatformWorkplaceStorage(),
+      _tokens = tokens ?? SecureWorkplaceTokenStore();
 
   static const _remoteFileName = 'workspace.json';
 
@@ -92,10 +99,24 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     try {
       final map = jsonDecode(text) as Map<String, dynamic>;
       final list = map['workplaces'] as List? ?? [];
-      return (
-        activeId: map['activeId'] as String?,
-        workplaces: [for (final item in list) WorkplaceEntity.fromJson(item as Map<String, dynamic>)],
-      );
+      final workplaces = <WorkplaceEntity>[];
+      var legacyTokens = false;
+      for (final item in list) {
+        var workplace = WorkplaceEntity.fromJson(item as Map<String, dynamic>);
+        final plaintext = workplace.gitToken;
+        if (plaintext != null && plaintext.isNotEmpty) {
+          // Written by an older version, which kept the token in this file: move it to secure storage.
+          await _tokens.write(workplace.id, plaintext);
+          legacyTokens = true;
+        } else if (workplace.isGitConnected) {
+          workplace = workplace.copyWith(gitToken: await _tokens.read(workplace.id));
+        }
+        _knownTokens[workplace.id] = workplace.gitToken ?? '';
+        workplaces.add(workplace);
+      }
+      final activeId = map['activeId'] as String?;
+      if (legacyTokens) await _writeRegistry(workplaces, activeId);
+      return (activeId: activeId, workplaces: workplaces);
     } catch (e) {
       debugPrint('Error reading workplaces registry: $e');
       return (activeId: null, workplaces: <WorkplaceEntity>[]);
@@ -103,9 +124,28 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   }
 
   Future<void> _saveRegistry(List<WorkplaceEntity> workplaces, {String? activeId}) async {
+    for (final w in workplaces) {
+      final token = w.gitToken;
+      if (token != null && token.isNotEmpty) {
+        if (_knownTokens[w.id] != token) {
+          await _tokens.write(w.id, token);
+          _knownTokens[w.id] = token;
+        }
+      } else if (!w.isGitConnected && _knownTokens[w.id] != '') {
+        await _tokens.delete(w.id); // disconnected from Git: nothing may keep a token for it
+        _knownTokens[w.id] = '';
+      }
+    }
+    await _writeRegistry(workplaces, activeId ?? (await _readRegistry()).activeId);
+  }
+
+  /// The registry document: workplaces without their tokens.
+  Future<void> _writeRegistry(List<WorkplaceEntity> workplaces, String? activeId) async {
     final data = {
-      'activeId': activeId ?? (await _readRegistry()).activeId,
-      'workplaces': workplaces.map((w) => w.toJson()).toList(),
+      'activeId': activeId,
+      'workplaces': [
+        for (final w in workplaces) (w.toJson()..['gitToken'] = null),
+      ],
     };
     await _storage.writeRegistry(const JsonEncoder.withIndent('  ').convert(data));
   }
@@ -228,6 +268,8 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   Future<void> deleteWorkplace(String id) async {
     final workplaces = await getWorkplaces();
     final filtered = workplaces.where((w) => w.id != id).toList();
+    await _tokens.delete(id);
+    _knownTokens.remove(id);
     final activeId = (await _readRegistry()).activeId;
     final newActive = activeId == id ? filtered.firstOrNull?.id : activeId;
     await _saveRegistry(filtered, activeId: newActive);

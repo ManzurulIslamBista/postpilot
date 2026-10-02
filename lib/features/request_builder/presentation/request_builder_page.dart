@@ -1,3 +1,5 @@
+import 'widgets/variables/variable_text_form_field.dart';
+import 'view_models/variable_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
@@ -28,13 +30,20 @@ class RequestBuilderPage extends StatefulWidget {
 
 class _RequestBuilderPageState extends State<RequestBuilderPage> {
   late final RequestBuilderViewModel _viewModel;
+  late final VariableScope _variableScope;
+  final _responseFind = ResponseFindController();
 
   @override
   void initState() {
     super.initState();
     _viewModel = locator<RequestBuilderViewModel>();
+    _variableScope = locator<VariableScope>();
+    // Variables are layered per collection, which is known once the request has loaded.
+    _viewModel.addListener(_bindVariableScope);
     _viewModel.load(widget.requestId);
-    locator<ShellViewModel>().registerSender(widget.requestId, _viewModel.send);
+    locator<ShellViewModel>()
+      ..registerSender(widget.requestId, _viewModel.send)
+      ..registerBodySearch(widget.requestId, _responseFind.open);
   }
 
   @override
@@ -44,21 +53,36 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
       _viewModel.load(widget.requestId);
       locator<ShellViewModel>()
         ..unregisterSender(oldWidget.requestId, _viewModel.send)
-        ..registerSender(widget.requestId, _viewModel.send);
+        ..unregisterBodySearch(oldWidget.requestId, _responseFind.open)
+        ..registerSender(widget.requestId, _viewModel.send)
+        ..registerBodySearch(widget.requestId, _responseFind.open);
     }
+  }
+
+  void _bindVariableScope() {
+    final request = _viewModel.request;
+    if (request != null) _variableScope.bindCollection(request.collectionId);
   }
 
   @override
   void dispose() {
-    locator<ShellViewModel>().unregisterSender(widget.requestId, _viewModel.send);
+    locator<ShellViewModel>()
+      ..unregisterSender(widget.requestId, _viewModel.send)
+      ..unregisterBodySearch(widget.requestId, _responseFind.open);
+    _viewModel.removeListener(_bindVariableScope);
     _viewModel.dispose();
+    _variableScope.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<RequestBuilderViewModel>.value(
-      value: _viewModel,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<RequestBuilderViewModel>.value(value: _viewModel),
+        ChangeNotifierProvider<VariableScope>.value(value: _variableScope),
+        Provider<ResponseFindController>.value(value: _responseFind),
+      ],
       child: Consumer<RequestBuilderViewModel>(
         builder: (context, vm, _) {
           if (vm.isLoading || vm.request == null) {
@@ -264,7 +288,7 @@ class _UrlBarState extends State<_UrlBar> {
           Expanded(
             child: Focus(
               onFocusChange: (focused) => setState(() => _focused = focused),
-              child: TextFormField(
+              child: VariableTextFormField(
                 initialValue: request.url,
                 style: context.textStyles.body.copyWith(fontSize: 14),
                 decoration: const InputDecoration(
@@ -410,7 +434,12 @@ class _ResponsePane extends StatelessWidget {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: ResponseViewer(response: vm.response, requestId: request.id, requestName: request.name),
+            child: ResponseViewer(
+              response: vm.response,
+              requestId: request.id,
+              requestName: request.name,
+              findController: context.read<ResponseFindController>(),
+            ),
           ),
         ),
       ],

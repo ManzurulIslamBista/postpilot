@@ -90,6 +90,7 @@ class _ShellPageState extends State<ShellPage> {
       focusSearch: () => _focusSearch(shell),
       closeRequest: shell.closeRequest,
       openHistory: () => HistoryDialog.show(context),
+      findInResponse: shell.findInResponse,
       toggleSidebar: () {
         if (narrow) {
           final scaffold = _scaffoldKey.currentState;

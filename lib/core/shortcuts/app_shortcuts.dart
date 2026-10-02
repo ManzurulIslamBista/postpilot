@@ -9,7 +9,8 @@ enum AppShortcut {
   focusSearch(LogicalKeyboardKey.keyK, 'Search collections'),
   closeRequest(LogicalKeyboardKey.keyW, 'Close current request', browserReserved: true),
   openHistory(LogicalKeyboardKey.keyH, 'Open history', shift: true),
-  toggleSidebar(LogicalKeyboardKey.keyB, 'Show or hide the sidebar', browserReserved: true);
+  toggleSidebar(LogicalKeyboardKey.keyB, 'Show or hide the sidebar', browserReserved: true),
+  findInResponse(LogicalKeyboardKey.keyF, 'Find in the response', browserReserved: true);
 
   const AppShortcut(this.key, this.description, {this.shift = false, this.browserReserved = false});
 
@@ -27,13 +28,13 @@ enum AppShortcut {
   bool get _usesAlt => kIsWeb && browserReserved;
 
   SingleActivator get activator => SingleActivator(
-        key,
-        control: !_usesAlt && !_usesMeta,
-        meta: !_usesAlt && _usesMeta,
-        alt: _usesAlt,
-        shift: shift,
-        includeRepeats: false,
-      );
+    key,
+    control: !_usesAlt && !_usesMeta,
+    meta: !_usesAlt && _usesMeta,
+    alt: _usesAlt,
+    shift: shift,
+    includeRepeats: false,
+  );
 
   String get keyLabel =>
       [if (_usesAlt) 'Alt' else if (_usesMeta) 'Cmd' else 'Ctrl', if (shift) 'Shift', key.keyLabel].join('+');
@@ -48,6 +49,7 @@ final class ShortcutHandlers {
   final VoidCallback closeRequest;
   final VoidCallback openHistory;
   final VoidCallback toggleSidebar;
+  final VoidCallback findInResponse;
 
   const ShortcutHandlers({
     required this.sendRequest,
@@ -56,16 +58,18 @@ final class ShortcutHandlers {
     required this.closeRequest,
     required this.openHistory,
     required this.toggleSidebar,
+    required this.findInResponse,
   });
 
   VoidCallback handlerFor(AppShortcut shortcut) => switch (shortcut) {
-        AppShortcut.sendRequest => sendRequest,
-        AppShortcut.newRequest => newRequest,
-        AppShortcut.focusSearch => focusSearch,
-        AppShortcut.closeRequest => closeRequest,
-        AppShortcut.openHistory => openHistory,
-        AppShortcut.toggleSidebar => toggleSidebar,
-      };
+    AppShortcut.sendRequest => sendRequest,
+    AppShortcut.newRequest => newRequest,
+    AppShortcut.focusSearch => focusSearch,
+    AppShortcut.closeRequest => closeRequest,
+    AppShortcut.openHistory => openHistory,
+    AppShortcut.toggleSidebar => toggleSidebar,
+    AppShortcut.findInResponse => findInResponse,
+  };
 }
 
 class AppShortcuts extends StatelessWidget {

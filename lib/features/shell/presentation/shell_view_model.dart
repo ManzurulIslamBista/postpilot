@@ -15,6 +15,7 @@ final class ShellViewModel with ChangeNotifier {
   final Map<int, RequestSummaryEntity> _summaries = {};
   final Map<int, StreamSubscription<ApiRequestEntity?>> _subscriptions = {};
   final Map<int, VoidCallback> _senders = {};
+  final Map<int, VoidCallback> _bodySearches = {};
   int? _selectedRequestId;
 
   /// Focus target of the sidebar search field (Ctrl/Cmd+K).
@@ -77,6 +78,16 @@ final class ShellViewModel with ChangeNotifier {
   }
 
   void sendSelected() => _senders[_selectedRequestId]?.call();
+
+  /// Same per-tab registration for "find in the response" (Ctrl/Cmd+F): every
+  /// open tab keeps its own response, so the shortcut must reach the visible one.
+  void registerBodySearch(int requestId, VoidCallback open) => _bodySearches[requestId] = open;
+
+  void unregisterBodySearch(int requestId, VoidCallback open) {
+    if (_bodySearches[requestId] == open) _bodySearches.remove(requestId);
+  }
+
+  void findInResponse() => _bodySearches[_selectedRequestId]?.call();
 
   void _onRequestChanged(int id, ApiRequestEntity? request) {
     // A null row means the request was deleted (directly, or by a cascading

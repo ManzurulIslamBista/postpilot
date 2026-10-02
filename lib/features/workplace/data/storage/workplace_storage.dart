@@ -28,6 +28,11 @@ abstract interface class WorkplaceStorage {
   /// any previous one without ever leaving a half-written file behind.
   Future<void> writeWorkspace(String folderPath, String json);
 
+  /// The secrets of the workplace in [folderPath] (`workspace.local.json`), or
+  /// null when there are none. They stay on this device: nothing pushes this file.
+  Future<String?> readLocalSecrets(String folderPath);
+  Future<void> writeLocalSecrets(String folderPath, String json);
+
   /// The folder new workplaces are suggested under (no name appended).
   Future<String> defaultWorkplacesDirectory();
 

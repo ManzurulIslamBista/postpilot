@@ -1,7 +1,11 @@
+import '../entities/push_preview.dart';
 import '../entities/workplace_content.dart';
 import '../entities/workplace_entity.dart';
 
 abstract interface class WorkplaceRepository {
+  /// Whether secret values are kept in a device-only file instead of `workspace.json`.
+  bool get keepsSecretsLocal;
+
   /// Whether workplace folders are real directories on this device (false on
   /// the web, where a workplace is stored in the browser).
   bool get usesRealFolders;
@@ -52,7 +56,14 @@ abstract interface class WorkplaceRepository {
 
   /// Syncs (pushes or commits) the single JSON file to the connected Git repository
   /// using GitHub REST API and Personal Access Token (classic).
-  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage});
+  ///
+  /// Refused with `RemoteChangedException` when the repository changed since the last
+  /// sync, unless [overwrite].
+  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage, bool overwrite = false});
+
+  /// What a push would do, without doing it: the changes against the repository's copy
+  /// and a commit message written from them.
+  Future<PushPreview> previewPush(WorkplaceEntity workplace);
 
   /// Pulls the single JSON file from the connected Git repository and saves it locally.
   Future<WorkplaceContent> pullFromGit(WorkplaceEntity workplace);

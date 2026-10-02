@@ -11,6 +11,7 @@ import 'workplace_storage.dart';
 final class BrowserWorkplaceStorage implements WorkplaceStorage {
   static const _registryKey = 'postpilot.workplaces.registry';
   static const _filePrefix = 'postpilot.workplaces.file:';
+  static const _secretsPrefix = 'postpilot.workplaces.secrets:';
   static const _maxBytes = 4 * 1024 * 1024;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
@@ -40,6 +41,18 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
   Future<void> writeWorkspace(String folderPath, String json) => _write(_fileKey(folderPath), json);
 
   @override
+  Future<String?> readLocalSecrets(String folderPath) async => (await _prefs).getString(_secretsKey(folderPath));
+
+  @override
+  Future<void> writeLocalSecrets(String folderPath, String json) async {
+    try {
+      await _write(_secretsKey(folderPath), json);
+    } on WorkplaceException {
+      // Secrets are optional extras; a full browser store must not stop the workspace from saving.
+    }
+  }
+
+  @override
   Future<String> defaultWorkplacesDirectory() async => p.join('PostPilot', 'Workplaces');
 
   @override
@@ -51,6 +64,8 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
 
   @override
   Future<void> revealFolder(String folderPath) async {}
+
+  String _secretsKey(String folderPath) => '$_secretsPrefix${p.normalize(folderPath.trim()).toLowerCase()}';
 
   /// Case-insensitive, like the desktop file systems the same workspace may later move to.
   String _fileKey(String folderPath) => '$_filePrefix${p.normalize(folderPath.trim()).toLowerCase()}';

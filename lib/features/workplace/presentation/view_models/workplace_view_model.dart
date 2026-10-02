@@ -4,6 +4,7 @@ import '../../../../core/database/app_database.dart';
 import '../../../import_export/domain/services/backup_codec.dart';
 import '../../../import_export/domain/services/backup_service.dart';
 import '../../../shell/presentation/shell_view_model.dart';
+import '../../domain/entities/push_preview.dart';
 import '../../domain/entities/workplace_content.dart';
 import '../../domain/entities/workplace_entity.dart';
 import '../../domain/entities/workplace_exception.dart';
@@ -182,6 +183,8 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
   /// The secret-marked values (passwords, tokens) the workspace holds, as
   /// "Environment › name": everything a push to Git would publish in plain text.
   Future<List<String>> secretsInWorkspace() async {
+    // With secrets kept on this device, a push carries none of them: nothing to warn about.
+    if (repository.keepsSecretsLocal) return const [];
     final snapshot = await backupService.snapshot();
     return [
       for (final environment in snapshot.environments)
@@ -192,16 +195,40 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
     ];
   }
 
-  Future<void> syncWithGit({String? commitMessage}) async {
-    if (_activeWorkplace == null || _isBusy) return;
-    _begin('Syncing with Git repository…');
+  /// Set when the last push was refused because the repository had changes this
+  /// workplace had not pulled; the UI then offers "pull first" or "overwrite".
+  bool remoteChanged = false;
+
+  /// What a push would do, for the confirmation dialog. Null (with [errorMessage]) when the repository can't be read.
+  Future<PushPreview?> previewPush() async {
+    final active = _activeWorkplace;
+    if (active == null || _isBusy) return null;
+    _begin('Checking the repository…');
     try {
       await _persistActive();
-      await repository.syncWithGit(_activeWorkplace!, commitMessage: commitMessage);
+      return await repository.previewPush(active);
+    } catch (e) {
+      _errorMessage = 'Git check failed: ${_cleanError(e)}';
+      _statusMessage = null;
+      return null;
+    } finally {
+      _isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> syncWithGit({String? commitMessage, bool overwrite = false}) async {
+    if (_activeWorkplace == null || _isBusy) return;
+    _begin('Syncing with Git repository…');
+    remoteChanged = false;
+    try {
+      await _persistActive();
+      await repository.syncWithGit(_activeWorkplace!, commitMessage: commitMessage, overwrite: overwrite);
       _workplaces = await repository.getWorkplaces();
       _activeWorkplace = await repository.getActiveWorkplace();
       _statusMessage = 'Synced with Git successfully!';
     } catch (e) {
+      remoteChanged = e is RemoteChangedException;
       _errorMessage = 'Git sync failed: ${_cleanError(e)}';
       _statusMessage = null;
     } finally {

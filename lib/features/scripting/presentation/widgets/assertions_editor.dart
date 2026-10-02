@@ -84,7 +84,11 @@ class _AssertionRowState extends State<_AssertionRow> {
           child: TextFormField(
             initialValue: _local.path,
             decoration: InputDecoration(
-              hintText: type.isHeader ? 'Header name' : 'JSON path, e.g. data.items[0].id',
+              hintText: type.isHeader
+                  ? 'Header name'
+                  : type.isSchema
+                      ? 'JSON path (blank = whole body)'
+                      : 'JSON path, e.g. data.items[0].id',
               isDense: true,
             ),
             onChanged: (v) => _apply(path: v),
@@ -96,6 +100,8 @@ class _AssertionRowState extends State<_AssertionRow> {
           key: const ValueKey('expected'),
           child: TextFormField(
             initialValue: _local.expected,
+            minLines: type.isSchema ? 3 : 1,
+            maxLines: type.isSchema ? 8 : 1,
             decoration: InputDecoration(hintText: _expectedHint(type), isDense: true),
             onChanged: (v) => _apply(expected: v),
           ),
@@ -132,6 +138,7 @@ class _AssertionRowState extends State<_AssertionRow> {
         AssertionType.statusEquals => 'Status code, e.g. 200',
         AssertionType.bodyContains => 'Text to find',
         AssertionType.responseTimeBelowMs => 'Milliseconds, e.g. 500',
+        AssertionType.jsonSchema => 'JSON Schema, e.g. {"type":"object","required":["id"]}',
         _ => 'Expected value',
       };
 }

@@ -30,6 +30,24 @@ import '../../features/documentation/presentation/view_models/collection_docs_vi
 import '../../features/documentation/presentation/view_models/entity_docs_view_model.dart';
 import '../../features/documentation/presentation/view_models/tag_filter_view_model.dart';
 import '../../features/documentation/presentation/view_models/tags_view_model.dart';
+import '../../features/ai_assistant/data/ai_client.dart';
+import '../../features/ai_assistant/data/ai_settings_store.dart';
+import '../../features/dart_codegen/domain/usecases/build_api_layer_usecase.dart';
+import '../../features/graphql/presentation/graphql_explorer_view_model.dart';
+import '../../features/import_export/domain/usecases/refresh_openapi_usecase.dart';
+import '../../features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
+import '../../features/mock_server/presentation/mock_server_view_model.dart';
+import '../../features/odoo/data/odoo_client.dart';
+import '../../features/odoo/domain/usecases/create_odoo_workspace_usecase.dart';
+import '../../features/odoo/presentation/view_models/odoo_studio_view_model.dart';
+import '../../features/realtime/data/realtime_session.dart';
+import '../../features/realtime/presentation/realtime_view_model.dart';
+import '../../features/response_tools/domain/services/response_history.dart';
+import '../../features/templates/domain/usecases/add_starter_template_usecase.dart';
+import '../../features/tour/presentation/tour_dialog.dart';
+import '../../features/safety/data/safety_prefs.dart';
+import '../../features/safety/domain/services/production_guard.dart';
+import '../../features/dart_codegen/presentation/view_models/api_layer_view_model.dart';
 import '../../features/environments/data/repositories/environment_repository_impl.dart';
 import '../../features/environments/data/repositories/global_variable_repository_impl.dart';
 import '../../features/environments/domain/repositories/environment_repository.dart';
@@ -141,10 +159,61 @@ void setupDependencies({AppDatabase? database}) {
   _registerImportExport();
   _registerGitSync();
   _registerWorkplace();
+  _registerDevTools();
+}
+
+/// Developer tools: generators and helpers that sit beside the request builder.
+void _registerDevTools() {
+  locator.registerLazySingleton<BuildApiLayerUseCase>(
+    () => BuildApiLayerUseCase(locator<CollectionLoader>(), locator<ResponseExampleRepository>()),
+  );
+  locator.registerFactory<ApiLayerViewModel>(() => ApiLayerViewModel(locator<BuildApiLayerUseCase>()));
+  locator.registerLazySingleton<ResponseHistory>(ResponseHistory.new);
+  locator.registerLazySingleton<SafetyPrefs>(SafetyPrefs.new);
+  locator.registerLazySingleton<ProductionGuard>(
+    () => ProductionGuard(locator<EnvironmentRepository>(), locator<SafetyPrefs>()),
+  );
+  locator.registerLazySingleton<TourPrefs>(TourPrefs.new);
+  locator.registerLazySingleton<AiSettingsStore>(SecureAiSettingsStore.new);
+  locator.registerLazySingleton<AiClient>(() => AiClient(locator<ApiClient>(), locator<AiSettingsStore>()));
+  locator.registerLazySingleton<AddStarterTemplateUseCase>(
+    () => AddStarterTemplateUseCase(locator<ImportedCollectionWriter>(), locator<EnvironmentRepository>()),
+  );
+  locator.registerLazySingleton<RefreshOpenApiUseCase>(
+    () => RefreshOpenApiUseCase(locator<CollectionRepository>(), locator<RequestRepository>()),
+  );
+  locator.registerLazySingleton<BuildMockRoutesUseCase>(
+    () => BuildMockRoutesUseCase(locator<CollectionLoader>(), locator<ResponseExampleRepository>()),
+  );
+  // One for the whole session: the server keeps answering after its dialog closes.
+  locator.registerLazySingleton<MockServerViewModel>(() => MockServerViewModel(locator<BuildMockRoutesUseCase>()));
+  locator.registerFactory<GraphqlExplorerViewModel>(
+    () => GraphqlExplorerViewModel(locator<ApiClient>(), () => locator<BuildVariableResolverUseCase>()(0)),
+  );
+  locator.registerFactory<RealtimeViewModel>(
+    () => RealtimeViewModel(const RealtimeConnector(), () => locator<BuildVariableResolverUseCase>()(0)),
+  );
+  locator.registerLazySingleton<OdooClient>(() => OdooClient(locator<ApiClient>()));
+  locator.registerLazySingleton<CreateOdooWorkspaceUseCase>(
+    () => CreateOdooWorkspaceUseCase(
+      locator<EnvironmentRepository>(),
+      locator<CollectionRepository>(),
+      locator<RequestRepository>(),
+    ),
+  );
+  locator.registerFactory<OdooStudioViewModel>(
+    () => OdooStudioViewModel(
+      locator<OdooClient>(),
+      locator<EnvironmentRepository>(),
+      locator<CreateOdooWorkspaceUseCase>(),
+    ),
+  );
 }
 
 void _registerWorkplace() {
-  locator.registerLazySingleton<WorkplaceRepository>(() => WorkplaceRepositoryImpl());
+  locator.registerLazySingleton<WorkplaceRepository>(
+    () => WorkplaceRepositoryImpl(keepSecretsLocal: () => locator<SafetyPrefs>().keepSecretsLocal),
+  );
   locator.registerLazySingleton<WorkplaceViewModel>(
     () => WorkplaceViewModel(
       repository: locator<WorkplaceRepository>(),

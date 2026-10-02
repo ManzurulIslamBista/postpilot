@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
 import '../../../../core/widgets/method_badge.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
 import '../../../documentation/domain/entities/entity_kind.dart';
 import '../../../documentation/presentation/widgets/collection_docs_dialog.dart';
 import '../../../documentation/presentation/widgets/entity_description_dialog.dart';
@@ -13,6 +14,8 @@ import '../../../git_sync/presentation/widgets/git_sync_dialog.dart';
 import '../../../import_export/presentation/export_collection_dialog.dart';
 import '../../../import_export/presentation/export_postman_dialog.dart';
 import '../../../import_export/presentation/import_any_dialog.dart';
+import '../../../import_export/presentation/openapi_refresh_dialog.dart';
+import '../../../mock_server/presentation/mock_server_dialog.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../shell/presentation/shell_view_model.dart';
 import '../../../workplace/presentation/view_models/workplace_view_model.dart';
@@ -171,6 +174,10 @@ class _CollectionTile extends StatelessWidget {
               PopupMenuItem(value: 'docs', child: Text('Documentation…')),
               PopupMenuItem(value: 'git_sync', child: Text('Git sync…')),
               PopupMenuDivider(),
+              PopupMenuItem(value: 'openapi_refresh', child: Text('Update from OpenAPI…')),
+              PopupMenuItem(value: 'dart_api', child: Text('Generate Dart API layer…')),
+              PopupMenuItem(value: 'mock_server', child: Text('Mock server…')),
+              PopupMenuDivider(),
               PopupMenuItem(value: 'export', child: Text('Export as Postman JSON')),
               PopupMenuItem(value: 'export_openapi', child: Text('Export as OpenAPI')),
               PopupMenuItem(value: 'export_curl', child: Text('Export cURL script')),
@@ -209,6 +216,12 @@ class _CollectionTile extends StatelessWidget {
         await ImportAnyDialog.show(context, collectionId: collection.id);
       case 'run':
         await CollectionRunnerDialog.show(context, collectionId: collection.id);
+      case 'openapi_refresh':
+        await OpenApiRefreshDialog.show(context, collectionId: collection.id);
+      case 'dart_api':
+        await DartStudioDialog.show(context, collectionId: collection.id, initialTab: 1);
+      case 'mock_server':
+        await MockServerDialog.show(context, collectionId: collection.id);
       case 'variables':
         await CollectionVariablesDialog.show(context, collectionId: collection.id, collectionName: collection.name);
       case 'auth':

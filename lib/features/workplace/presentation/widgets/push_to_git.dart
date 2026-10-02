@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../view_models/workplace_view_model.dart';
+import 'push_preview_dialog.dart';
 
 /// Pushes the open workplace to its Git repository and reports the outcome.
 ///
@@ -20,7 +21,26 @@ Future<bool> pushWorkplaceToGit(BuildContext context, WorkplaceViewModel vm) asy
     if (confirmed != true) return false;
   }
 
-  await vm.syncWithGit();
+  // What would change, with a commit message written from it, and a warning if someone else pushed meanwhile.
+  final preview = await vm.previewPush();
+  if (!context.mounted) return false;
+  if (preview == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(vm.errorMessage ?? "Couldn't check the repository"), backgroundColor: context.colors.statusError),
+    );
+    return false;
+  }
+  final active = vm.activeWorkplace;
+  final decision = await PushPreviewDialog.show(
+    context,
+    preview: preview,
+    repository: _repositoryLabel(active?.gitRepoUrl),
+    branch: active?.gitBranch ?? 'main',
+  );
+  if (decision == null || !context.mounted) return false;
+  if (decision.action == PushAction.pullFirst) return pullWorkplaceFromGit(context, vm);
+
+  await vm.syncWithGit(commitMessage: decision.message.isEmpty ? null : decision.message, overwrite: decision.overwrite);
   if (context.mounted) {
     final error = vm.errorMessage;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -31,6 +51,12 @@ Future<bool> pushWorkplaceToGit(BuildContext context, WorkplaceViewModel vm) asy
     );
   }
   return true;
+}
+
+/// `https://github.com/acme/api.git` and `acme/api` both read "acme/api".
+String _repositoryLabel(String? url) {
+  if (url == null || url.isEmpty) return 'the repository';
+  return url.replaceFirst(RegExp(r'^https?://(www\.)?github\.com/'), '').replaceFirst(RegExp(r'^git@github\.com:'), '').replaceFirst(RegExp(r'\.git$'), '');
 }
 
 /// Pulls the open workplace from its Git repository and reports the outcome. A

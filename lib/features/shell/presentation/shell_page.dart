@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/layout/layout_prefs.dart';
@@ -8,7 +9,15 @@ import '../../../core/widgets/split_handle.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../collections/presentation/view_models/collections_view_model.dart';
 import '../../collections/presentation/widgets/collections_sidebar.dart';
+import '../../command_palette/presentation/command_palette_dialog.dart';
+import '../../command_palette/presentation/palette_items.dart';
+import '../../environments/presentation/view_models/environments_view_model.dart';
+import '../../../core/di/injector.dart';
 import '../../console/presentation/widgets/console_dialog.dart';
+import '../../mock_server/presentation/mock_server_dialog.dart';
+import '../../templates/presentation/templates_dialog.dart';
+import '../../tour/presentation/tour_dialog.dart';
+import '../../mock_server/presentation/mock_server_view_model.dart';
 import '../../cookies/presentation/widgets/cookies_dialog.dart';
 import '../../environments/presentation/widgets/environment_selector.dart';
 import '../../history/presentation/widgets/history_dialog.dart';
@@ -41,6 +50,21 @@ class _ShellPageState extends State<ShellPage> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
+  void initState() {
+    super.initState();
+    // The welcome tour opens by itself once, on the very first start.
+    if (locator.isRegistered<TourPrefs>()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final prefs = locator<TourPrefs>();
+        if (await prefs.shouldAutoShow() && mounted) {
+          await prefs.markSeen();
+          if (mounted) unawaited(TourDialog.show(context));
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -62,12 +86,13 @@ class _ShellPageState extends State<ShellPage> {
                       // shrink-wrapping its tabs and sitting in the middle.
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _TopBar(narrow: narrow),
+                        _TopBar(narrow: narrow, onOpenPalette: () => _openPalette(context)),
                         const RequestTabBar(),
                         Expanded(
                           child: _MainContent(
                             onNewRequest: () => _createRequest(context),
                             onImport: () => ImportAnyDialog.show(context),
+                            onTemplates: () => TemplatesDialog.show(context),
                           ),
                         ),
                       ],
@@ -91,6 +116,8 @@ class _ShellPageState extends State<ShellPage> {
       closeRequest: shell.closeRequest,
       openHistory: () => HistoryDialog.show(context),
       findInResponse: shell.findInResponse,
+      openCommandPalette: () => _openPalette(context),
+      reopenClosedTab: shell.reopenClosed,
       toggleSidebar: () {
         if (narrow) {
           final scaffold = _scaffoldKey.currentState;
@@ -99,6 +126,31 @@ class _ShellPageState extends State<ShellPage> {
           context.read<LayoutPrefs>().toggleSidebar();
         }
       },
+    );
+  }
+
+  /// Ctrl+Shift+P: tools, app actions and environments at once, every request loaded in the background.
+  void _openPalette(BuildContext context) {
+    final environments = context.read<EnvironmentsViewModel>();
+    CommandPaletteDialog.show(
+      context,
+      items: [
+        ...PaletteItems.tools(),
+        ...PaletteItems.app(
+          newRequest: () => _createRequest(context),
+          toggleSidebar: () {
+            final scaffold = _scaffoldKey.currentState;
+            if (scaffold != null && scaffold.hasDrawer) {
+              scaffold.isDrawerOpen ? scaffold.closeDrawer() : scaffold.openDrawer();
+            } else {
+              context.read<LayoutPrefs>().toggleSidebar();
+            }
+          },
+          openImport: () => ImportAnyDialog.show(context),
+        ),
+        ...PaletteItems.environments(environments),
+      ],
+      loadMore: PaletteItems.requests,
     );
   }
 
@@ -165,7 +217,8 @@ class _DesktopSidebar extends StatelessWidget {
 
 class _TopBar extends StatelessWidget {
   final bool narrow;
-  const _TopBar({required this.narrow});
+  final VoidCallback onOpenPalette;
+  const _TopBar({required this.narrow, required this.onOpenPalette});
 
   @override
   Widget build(BuildContext context) {
@@ -212,8 +265,8 @@ class _TopBar extends StatelessWidget {
             ),
           // Right-aligned while it fits; on a phone it scrolls instead of
           // overflowing, starting at the end so the environment picker stays in view.
-          const Expanded(
-            child: SingleChildScrollView(scrollDirection: Axis.horizontal, reverse: true, child: _TopBarActions()),
+          Expanded(
+            child: SingleChildScrollView(scrollDirection: Axis.horizontal, reverse: true, child: _TopBarActions(onOpenPalette: onOpenPalette)),
           ),
         ],
       ),
@@ -222,7 +275,8 @@ class _TopBar extends StatelessWidget {
 }
 
 class _TopBarActions extends StatelessWidget {
-  const _TopBarActions();
+  final VoidCallback onOpenPalette;
+  const _TopBarActions({required this.onOpenPalette});
 
   @override
   Widget build(BuildContext context) {
@@ -258,6 +312,29 @@ class _TopBarActions extends StatelessWidget {
               onPressed: () => workplaceVm.revealWorkplaceFolder(),
             ),
         ],
+        if (locator.isRegistered<MockServerViewModel>())
+          ListenableBuilder(
+            listenable: locator<MockServerViewModel>(),
+            builder: (context, _) {
+              final mock = locator<MockServerViewModel>();
+              if (!mock.isRunning) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  avatar: Icon(Icons.circle, size: 9, color: context.colors.statusSuccess),
+                  label: Text('Mock :${mock.port}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  tooltip: 'Mock server is running: open it',
+                  onPressed: () => MockServerDialog.show(context),
+                ),
+              );
+            },
+          ),
+        IconButton(
+          icon: const Icon(Icons.manage_search, size: 21),
+          tooltip: 'Command palette (${AppShortcut.commandPalette.keyLabel})',
+          onPressed: onOpenPalette,
+        ),
         const _MoreMenu(),
         IconButton(
           icon: const Icon(Icons.history, size: 20),
@@ -326,14 +403,15 @@ class _MoreMenu extends StatelessWidget {
 class _MainContent extends StatelessWidget {
   final VoidCallback onNewRequest;
   final VoidCallback onImport;
-  const _MainContent({required this.onNewRequest, required this.onImport});
+  final VoidCallback onTemplates;
+  const _MainContent({required this.onNewRequest, required this.onImport, required this.onTemplates});
 
   @override
   Widget build(BuildContext context) {
     final shell = context.watch<ShellViewModel>();
     final selectedId = shell.selectedRequestId;
     if (selectedId == null) {
-      return EmptyWorkspace(onNewRequest: onNewRequest, onImport: onImport);
+      return EmptyWorkspace(onNewRequest: onNewRequest, onImport: onImport, onTemplates: onTemplates);
     }
     // One builder per open tab, kept alive off-screen so each tab holds on to
     // its own response and in-progress send across tab switches. The key sits

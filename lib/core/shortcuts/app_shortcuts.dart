@@ -10,7 +10,9 @@ enum AppShortcut {
   closeRequest(LogicalKeyboardKey.keyW, 'Close current request', browserReserved: true),
   openHistory(LogicalKeyboardKey.keyH, 'Open history', shift: true),
   toggleSidebar(LogicalKeyboardKey.keyB, 'Show or hide the sidebar', browserReserved: true),
-  findInResponse(LogicalKeyboardKey.keyF, 'Find in the response', browserReserved: true);
+  findInResponse(LogicalKeyboardKey.keyF, 'Find in the response', browserReserved: true),
+  commandPalette(LogicalKeyboardKey.keyP, 'Command palette: tools, requests, environments', shift: true, browserReserved: true),
+  reopenClosedTab(LogicalKeyboardKey.keyT, 'Reopen the last closed request', shift: true, browserReserved: true);
 
   const AppShortcut(this.key, this.description, {this.shift = false, this.browserReserved = false});
 
@@ -51,6 +53,10 @@ final class ShortcutHandlers {
   final VoidCallback toggleSidebar;
   final VoidCallback findInResponse;
 
+  /// Optional so a screen that has no palette (or a test) need not provide one.
+  final VoidCallback? openCommandPalette;
+  final VoidCallback? reopenClosedTab;
+
   const ShortcutHandlers({
     required this.sendRequest,
     required this.newRequest,
@@ -59,6 +65,8 @@ final class ShortcutHandlers {
     required this.openHistory,
     required this.toggleSidebar,
     required this.findInResponse,
+    this.openCommandPalette,
+    this.reopenClosedTab,
   });
 
   VoidCallback handlerFor(AppShortcut shortcut) => switch (shortcut) {
@@ -69,6 +77,8 @@ final class ShortcutHandlers {
     AppShortcut.openHistory => openHistory,
     AppShortcut.toggleSidebar => toggleSidebar,
     AppShortcut.findInResponse => findInResponse,
+    AppShortcut.commandPalette => openCommandPalette ?? () {},
+    AppShortcut.reopenClosedTab => reopenClosedTab ?? () {},
   };
 }
 

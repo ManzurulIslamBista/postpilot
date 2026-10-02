@@ -11,6 +11,23 @@ import 'package:postpilot/core/database/app_database.dart';
 import 'package:postpilot/core/di/injector.dart';
 import 'package:postpilot/core/layout/layout_prefs.dart';
 import 'package:postpilot/core/network/api_client.dart';
+import 'package:postpilot/features/ai_assistant/data/ai_client.dart';
+import 'package:postpilot/features/ai_assistant/data/ai_settings_store.dart';
+import 'package:postpilot/features/dart_codegen/domain/usecases/build_api_layer_usecase.dart';
+import 'package:postpilot/features/dart_codegen/presentation/view_models/api_layer_view_model.dart';
+import 'package:postpilot/features/graphql/presentation/graphql_explorer_view_model.dart';
+import 'package:postpilot/features/import_export/domain/usecases/refresh_openapi_usecase.dart';
+import 'package:postpilot/features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
+import 'package:postpilot/features/mock_server/presentation/mock_server_view_model.dart';
+import 'package:postpilot/features/odoo/data/odoo_client.dart';
+import 'package:postpilot/features/odoo/domain/usecases/create_odoo_workspace_usecase.dart';
+import 'package:postpilot/features/odoo/presentation/view_models/odoo_studio_view_model.dart';
+import 'package:postpilot/features/realtime/presentation/realtime_view_model.dart';
+import 'package:postpilot/features/response_tools/domain/services/response_history.dart';
+import 'package:postpilot/features/safety/data/safety_prefs.dart';
+import 'package:postpilot/features/safety/domain/services/production_guard.dart';
+import 'package:postpilot/features/templates/domain/usecases/add_starter_template_usecase.dart';
+import 'package:postpilot/features/tour/presentation/tour_dialog.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
@@ -212,6 +229,24 @@ final _wirings = <_Wiring>[
   // workplace
   _wire<WorkplaceRepository>(),
   _wire<WorkplaceViewModel>(),
+  // developer tools
+  _wire<BuildApiLayerUseCase>(),
+  _wire<ApiLayerViewModel>(),
+  _wire<ResponseHistory>(),
+  _wire<SafetyPrefs>(),
+  _wire<ProductionGuard>(),
+  _wire<TourPrefs>(),
+  _wire<AiSettingsStore>(),
+  _wire<AiClient>(),
+  _wire<AddStarterTemplateUseCase>(),
+  _wire<RefreshOpenApiUseCase>(),
+  _wire<BuildMockRoutesUseCase>(),
+  _wire<MockServerViewModel>(),
+  _wire<GraphqlExplorerViewModel>(),
+  _wire<RealtimeViewModel>(),
+  _wire<OdooClient>(),
+  _wire<CreateOdooWorkspaceUseCase>(),
+  _wire<OdooStudioViewModel>(),
 ];
 
 final _registration = RegExp(r'\bregister(?:Lazy)?(?:Singleton|Factory|FactoryParam)<(\w+)');

@@ -1,4 +1,6 @@
+import 'package:postpilot/features/workplace/domain/entities/push_preview.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_content.dart';
+import 'package:postpilot/features/workplace/domain/services/workspace_diff.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_entity.dart';
 import 'package:postpilot/features/workplace/domain/repositories/workplace_repository.dart';
 
@@ -25,6 +27,9 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
   final String? _initialGitRepoUrl;
 
   FakeWorkplaceRepository({this._usesRealFolders = true, this._canPickFolder = false, String? gitRepoUrl}) : _initialGitRepoUrl = gitRepoUrl;
+
+  @override
+  bool get keepsSecretsLocal => false;
 
   @override
   bool get usesRealFolders => _usesRealFolders;
@@ -98,7 +103,22 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
       _contents[workplace.id] = content;
 
   @override
-  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage}) async => syncCalls++;
+  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage, bool overwrite = false}) async {
+    syncCalls++;
+    lastCommitMessage = commitMessage;
+    lastOverwrite = overwrite;
+    final error = syncError;
+    if (error != null) throw error;
+  }
+
+  /// What the next [previewPush] answers; by default nothing differs.
+  PushPreview previewResult = const PushPreview(remoteExists: true, remoteChanged: false, changes: WorkspaceChangeSummary([]), suggestedMessage: 'Update workspace from PostPilot');
+  Object? syncError;
+  String? lastCommitMessage;
+  bool lastOverwrite = false;
+
+  @override
+  Future<PushPreview> previewPush(WorkplaceEntity workplace) async => previewResult;
 
   @override
   Future<WorkplaceContent> pullFromGit(WorkplaceEntity workplace) async {

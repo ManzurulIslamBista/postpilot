@@ -24,6 +24,10 @@ final class WorkplaceContent {
     final wpJson = workplace.toJson();
     // Security: Never serialize git token to workspace.json (prevents GitHub secret scanning rejection and credential leaks)
     wpJson['gitToken'] = null;
+    // Per-device sync bookkeeping: it changes on every push, so keeping it in the shared file would make
+    // every sync look like a change (and carry one machine's state to another).
+    wpJson['lastSyncedAt'] = null;
+    wpJson['lastSyncedSha'] = null;
     snapshotJson['workplace'] = wpJson;
     return const JsonEncoder.withIndent('  ').convert(snapshotJson);
   }

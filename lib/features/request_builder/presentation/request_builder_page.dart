@@ -3,11 +3,15 @@ import 'view_models/variable_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
+import '../domain/entities/api_request_entity.dart';
 import '../../../core/layout/layout_prefs.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/resizable_split.dart';
 import '../../documentation/presentation/widgets/request_docs_tab.dart';
+import '../../odoo/presentation/widgets/odoo_error_banner.dart';
+import '../../safety/domain/services/production_guard.dart';
+import '../../safety/presentation/production_confirm_dialog.dart';
 import '../../scripting/presentation/widgets/request_tests_tab.dart';
 import '../../scripting/presentation/widgets/script_results_view.dart';
 import '../../settings/presentation/widgets/request_settings_tab.dart';
@@ -40,6 +44,7 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
     _variableScope = locator<VariableScope>();
     // Variables are layered per collection, which is known once the request has loaded.
     _viewModel.addListener(_bindVariableScope);
+    _viewModel.confirmSend = _confirmSend;
     _viewModel.load(widget.requestId);
     locator<ShellViewModel>()
       ..registerSender(widget.requestId, _viewModel.send)
@@ -57,6 +62,15 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
         ..registerSender(widget.requestId, _viewModel.send)
         ..registerBodySearch(widget.requestId, _responseFind.open);
     }
+  }
+
+  /// The production lock: asks before a data-changing request goes out while a production environment is active.
+  Future<bool> _confirmSend(ApiRequestEntity request) async {
+    if (!locator.isRegistered<ProductionGuard>()) return true;
+    final guard = locator<ProductionGuard>();
+    final warning = await guard.checkSend(request.method, request.name);
+    if (warning == null || !mounted) return true;
+    return confirmProductionSend(context, warning, onSilence: () => guard.silenceForSession(warning.environmentName));
   }
 
   void _bindVariableScope() {
@@ -259,6 +273,7 @@ class _UrlBar extends StatefulWidget {
 
 class _UrlBarState extends State<_UrlBar> {
   bool _focused = false;
+  late int _seenUrlRevision = widget.vm.urlRevision;
 
   @override
   Widget build(BuildContext context) {
@@ -266,6 +281,16 @@ class _UrlBarState extends State<_UrlBar> {
     final vm = widget.vm;
     final request = vm.request!;
     final layout = context.select<LayoutPrefs, ResponseLayout>((p) => p.responseLayout);
+    if (vm.urlRevision != _seenUrlRevision) {
+      _seenUrlRevision = vm.urlRevision;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('cURL command applied: method, URL, headers, body and auth were filled in')),
+          );
+        }
+      });
+    }
     return AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
@@ -289,6 +314,7 @@ class _UrlBarState extends State<_UrlBar> {
             child: Focus(
               onFocusChange: (focused) => setState(() => _focused = focused),
               child: VariableTextFormField(
+                key: ValueKey('url-${vm.urlRevision}'),
                 initialValue: request.url,
                 style: context.textStyles.body.copyWith(fontSize: 14),
                 decoration: const InputDecoration(
@@ -430,6 +456,7 @@ class _ResponsePane extends StatelessWidget {
                     ],
                   ),
           ),
+        if (vm.response != null) OdooErrorBanner(response: vm.response!),
         if (vm.lastScriptResult != null) ScriptResultsView(result: vm.lastScriptResult!),
         Expanded(
           child: Padding(

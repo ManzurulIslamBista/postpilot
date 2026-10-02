@@ -2,7 +2,10 @@ import 'variables/variable_text_controller.dart';
 import 'variables/variable_text_form_field.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/enums/body_type.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../graphql/presentation/graphql_explorer_dialog.dart';
+import '../view_models/request_builder_view_model.dart';
 import '../../domain/entities/request_body.dart';
 import 'json_body_format.dart';
 import 'key_value_editor.dart';
@@ -29,6 +32,9 @@ class _BodyEditorState extends State<BodyEditor> {
   late final _rawController = VariableTextEditingController(text: widget.body.rawText);
   final _rawFocus = FocusNode();
   String? _jsonError;
+
+  /// Bumped when the schema explorer replaces the query, so the fields show the new text.
+  int _graphqlRevision = 0;
 
   @override
   void didUpdateWidget(covariant BodyEditor oldWidget) {
@@ -159,16 +165,49 @@ class _BodyEditorState extends State<BodyEditor> {
     };
   }
 
+  /// Opens the schema explorer for this request's endpoint; "Use in request" fills the query and variables.
+  void _exploreSchema() {
+    String url = '';
+    var headers = '';
+    try {
+      final request = context.read<RequestBuilderViewModel>().request;
+      url = request?.url ?? '';
+      headers = [for (final h in request?.headers ?? const []) if (h.enabled && h.key.isNotEmpty) '${h.key}: ${h.value}'].join('\n');
+    } on ProviderNotFoundException {
+      // Used outside a request page: the explorer simply starts empty.
+    }
+    GraphqlExplorerDialog.show(
+      context,
+      initialUrl: url,
+      initialHeaders: headers,
+      onUse: (query, variables) {
+        widget.onChanged(widget.body.copyWith(graphqlQuery: query, graphqlVariables: variables));
+        setState(() => _graphqlRevision++);
+      },
+    );
+  }
+
   Widget _graphqlEditor(BuildContext context) {
     final body = widget.body;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Query', style: context.textStyles.caption),
-        const SizedBox(height: 4),
+        Row(
+          children: [
+            Text('Query', style: context.textStyles.caption),
+            const Spacer(),
+            TextButton.icon(
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              onPressed: _exploreSchema,
+              icon: const Icon(Icons.hexagon_outlined, size: 15),
+              label: const Text('Explore schema'),
+            ),
+          ],
+        ),
         Expanded(
           flex: 2,
           child: VariableTextFormField(
+            key: ValueKey('gq-$_graphqlRevision'),
             initialValue: body.graphqlQuery,
             maxLines: null,
             expands: true,
@@ -183,6 +222,7 @@ class _BodyEditorState extends State<BodyEditor> {
         const SizedBox(height: 4),
         Expanded(
           child: VariableTextFormField(
+            key: ValueKey('gv-$_graphqlRevision'),
             initialValue: body.graphqlVariables,
             maxLines: null,
             expands: true,

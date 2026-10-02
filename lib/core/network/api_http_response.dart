@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show listEquals;
 import '../constants/app_constants.dart';
 
 final class ApiHttpResponse {
@@ -115,7 +114,7 @@ final class ProxyConfig {
       other.port == port &&
       other.username == username &&
       other.password == password &&
-      listEquals(other.bypass, bypass);
+      _sameItems(other.bypass, bypass);
 
   @override
   int get hashCode => Object.hash(mode, host, port, username, password, Object.hashAll(bypass));
@@ -165,4 +164,15 @@ final class ApiRequestSpec {
     this.cancelToken,
     this.options = const ApiRequestOptions(),
   });
+}
+
+/// Element-wise list equality. Written out so this file, which the command-line
+/// build also uses, needs nothing from Flutter.
+bool _sameItems(List<String> a, List<String> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

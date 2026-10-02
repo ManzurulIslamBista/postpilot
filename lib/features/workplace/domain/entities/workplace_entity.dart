@@ -9,6 +9,10 @@ final class WorkplaceEntity {
   final DateTime updatedAt;
   final DateTime? lastSyncedAt;
 
+  /// Blob sha of `workspace.json` in the repository as of the last push or pull:
+  /// if the repository's sha differs when pushing, someone else changed it meanwhile.
+  final String? lastSyncedSha;
+
   const WorkplaceEntity({
     required this.id,
     required this.name,
@@ -19,6 +23,7 @@ final class WorkplaceEntity {
     required this.createdAt,
     required this.updatedAt,
     this.lastSyncedAt,
+    this.lastSyncedSha,
   });
 
   bool get isGitConnected => gitRepoUrl != null && gitRepoUrl!.trim().isNotEmpty;
@@ -33,6 +38,7 @@ final class WorkplaceEntity {
     Object? gitToken = _sentinel,
     DateTime? updatedAt,
     Object? lastSyncedAt = _sentinel,
+    Object? lastSyncedSha = _sentinel,
   }) =>
       WorkplaceEntity(
         id: id,
@@ -44,6 +50,7 @@ final class WorkplaceEntity {
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
         lastSyncedAt: lastSyncedAt == _sentinel ? this.lastSyncedAt : lastSyncedAt as DateTime?,
+        lastSyncedSha: lastSyncedSha == _sentinel ? this.lastSyncedSha : lastSyncedSha as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -56,6 +63,7 @@ final class WorkplaceEntity {
         'createdAt': createdAt.toUtc().toIso8601String(),
         'updatedAt': updatedAt.toUtc().toIso8601String(),
         'lastSyncedAt': lastSyncedAt?.toUtc().toIso8601String(),
+        'lastSyncedSha': lastSyncedSha,
       };
 
   factory WorkplaceEntity.fromJson(Map<String, dynamic> json) => WorkplaceEntity(
@@ -68,5 +76,6 @@ final class WorkplaceEntity {
         createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
         updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? '') ?? DateTime.now(),
         lastSyncedAt: json['lastSyncedAt'] != null ? DateTime.tryParse(json['lastSyncedAt'].toString()) : null,
+        lastSyncedSha: json['lastSyncedSha'] as String?,
       );
 }

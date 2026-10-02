@@ -12,6 +12,7 @@ import 'workplace_storage.dart';
 final class FileWorkplaceStorage implements WorkplaceStorage {
   static const registryFileName = 'workplaces_registry.json';
   static const workspaceFileName = 'workspace.json';
+  static const localSecretsFileName = 'workspace.local.json';
 
   final Directory? _registryDirectory;
   final String? _defaultWorkplacesDirectory;
@@ -61,6 +62,23 @@ final class FileWorkplaceStorage implements WorkplaceStorage {
         'Could not write to "$folderPath"${reason == null || reason.isEmpty ? '' : ': $reason'}. '
         'Check that the path is valid and you have permission to write there.',
       );
+    }
+  }
+
+  @override
+  Future<String?> readLocalSecrets(String folderPath) async {
+    final file = File(p.join(folderPath, localSecretsFileName));
+    return await file.exists() ? file.readAsString() : null;
+  }
+
+  @override
+  Future<void> writeLocalSecrets(String folderPath, String json) async {
+    final file = File(p.join(folderPath, localSecretsFileName));
+    try {
+      await Directory(folderPath).create(recursive: true);
+      await _writeAtomically(file, json);
+    } on FileSystemException {
+      // The secrets file is a convenience: failing to write it must not stop the workspace from saving.
     }
   }
 

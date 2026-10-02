@@ -25,6 +25,10 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
+; Tells Explorer the app's icon may have changed: Setup then refreshes the shell icon cache,
+; so an update does not leave the previous icon on the taskbar, desktop or Start menu.
+ChangesAssociations=yes
+
 ; Set privileges to lowest so the installer does not trigger the scary UAC Administrator elevation warning!
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog

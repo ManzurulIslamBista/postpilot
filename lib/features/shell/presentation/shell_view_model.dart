@@ -18,10 +18,21 @@ final class ShellViewModel with ChangeNotifier {
   final Map<int, VoidCallback> _bodySearches = {};
   int? _selectedRequestId;
 
+  /// Pinned tabs sit first, show a pin instead of a close button and survive
+  /// "Close others" / "Close all".
+  final Set<int> _pinned = {};
+
+  /// Requests whose tab was closed on purpose, newest last, for Ctrl+Shift+T.
+  final List<int> _recentlyClosed = [];
+  static const _recentlyClosedLimit = 15;
+
   /// Focus target of the sidebar search field (Ctrl/Cmd+K).
   final FocusNode searchFocusNode = FocusNode();
 
-  /// Open tabs, in the order they were opened.
+  bool isPinned(int id) => _pinned.contains(id);
+  bool get canReopenClosed => _recentlyClosed.isNotEmpty;
+
+  /// Open tabs: pinned ones first, then in the order they were opened.
   List<int> get openRequestIds => List.unmodifiable(_openRequestIds);
 
   /// The active tab, or null when nothing is open.
@@ -51,17 +62,76 @@ final class ShellViewModel with ChangeNotifier {
 
   /// Closes the tab for [id] (the active one when omitted). If it was active,
   /// the tab that slides into its slot — or the last one — becomes active.
-  void closeRequest([int? id]) {
-    final target = id ?? _selectedRequestId;
+  void closeRequest([int? id]) => _close(id ?? _selectedRequestId, remember: true);
+
+  void _close(int? target, {required bool remember}) {
     if (target == null) return;
     final index = _openRequestIds.indexOf(target);
     if (index == -1) return;
 
+    if (remember) {
+      _recentlyClosed
+        ..remove(target)
+        ..add(target);
+      if (_recentlyClosed.length > _recentlyClosedLimit) _recentlyClosed.removeAt(0);
+    }
+    _pinned.remove(target);
     _openRequestIds.removeAt(index);
     _summaries.remove(target);
     _subscriptions.remove(target)?.cancel();
     if (_selectedRequestId == target) {
       _selectedRequestId = _openRequestIds.isEmpty ? null : _openRequestIds[index.clamp(0, _openRequestIds.length - 1)];
+    }
+    notifyListeners();
+  }
+
+  /// Pins [id] to the front, or unpins it (it stays where it is).
+  void togglePin(int id) {
+    if (!_openRequestIds.contains(id)) return;
+    if (_pinned.remove(id)) {
+      notifyListeners();
+      return;
+    }
+    _pinned.add(id);
+    _openRequestIds.remove(id);
+    _openRequestIds.insert(_pinned.where((p) => p != id && _openRequestIds.contains(p)).length, id);
+    notifyListeners();
+  }
+
+  /// Closes every unpinned tab except [keep].
+  void closeOthers(int keep) {
+    for (final id in List<int>.of(_openRequestIds)) {
+      if (id != keep && !_pinned.contains(id)) _close(id, remember: true);
+    }
+    if (_openRequestIds.contains(keep)) _selectedRequestId = keep;
+    notifyListeners();
+  }
+
+  /// Closes the unpinned tabs to the right of [id].
+  void closeToRight(int id) {
+    final index = _openRequestIds.indexOf(id);
+    if (index == -1) return;
+    for (final other in _openRequestIds.sublist(index + 1)) {
+      if (!_pinned.contains(other)) _close(other, remember: true);
+    }
+  }
+
+  /// Closes every unpinned tab.
+  void closeAll() {
+    for (final id in List<int>.of(_openRequestIds)) {
+      if (!_pinned.contains(id)) _close(id, remember: true);
+    }
+  }
+
+  /// Ctrl+Shift+T: opens the most recently closed request that still exists.
+  Future<void> reopenClosed() async {
+    while (_recentlyClosed.isNotEmpty) {
+      final id = _recentlyClosed.removeLast();
+      if (_openRequestIds.contains(id)) continue;
+      if (await _requestRepository.findById(id) != null) {
+        selectRequest(id);
+        return;
+      }
     }
     notifyListeners();
   }
@@ -93,7 +163,8 @@ final class ShellViewModel with ChangeNotifier {
     // A null row means the request was deleted (directly, or by a cascading
     // folder/collection delete), so its tab has nothing left to show.
     if (request == null) {
-      closeRequest(id);
+      _recentlyClosed.remove(id);
+      _close(id, remember: false);
       return;
     }
     final current = _summaries[id];

@@ -84,6 +84,26 @@ Choose the optimized package for your operating system and hardware architecture
 ### 📦 Import & Export
 - Import and export collections seamlessly (Postman collection format and OpenAPI/Swagger compatible).
 
+### 🧰 Developer Tools (press `Ctrl+Shift+P`)
+One command palette finds every tool, request (by name, URL or body) and environment.
+- **Response tools** (the wand beside a response): JSON tree with one-click "use as variable" / "add test", table and CSV, JWT and timestamp decoding, compare with the previous response, JSON Schema check (also available as a saved test), network timing, **Dart models**, an optional AI helper (your own Anthropic key) and a secret-masked bug report.
+- **Dart Studio**: classes from JSON (plain, `json_serializable`, `freezed`; several samples are merged so optional fields are detected) and a whole API layer (Dio data source, DTOs, repository, use cases) generated from a collection.
+- **Odoo Studio** (Odoo 19+ External JSON-2 API): connect and save as an environment, ready-made requests per model, model/field explorer, visual domain builder, migration of old XML-RPC/JSON-RPC calls, readable Odoo errors, and Dart classes from `fields_get`.
+- **Mock server** (serves saved examples as a live API), **Realtime** (WebSocket and Server-Sent Events), **GraphQL explorer** (introspection to ready-to-run queries), **Device helper** (`10.0.2.2`, LAN address and QR code, `adb reverse`), **starter templates** and a quick tour.
+- **Safety**: a Production environment turns red and asks before POST/PUT/PATCH/DELETE; secret values stay in `workspace.local.json` on your device, never in the `workspace.json` that Git carries.
+- **Git**: every push shows what changed with a commit message written for you, and warns instead of silently overwriting a teammate's push. A collection can be updated from a newer OpenAPI spec without touching your edits.
+
+### 🖥️ Command line and AI agents
+Run a workspace in CI, or expose it to an AI agent, with plain Dart (no UI):
+
+```bash
+dart run bin/postpilot.dart run workspace.json --env Staging --report junit --out report.xml
+dart run bin/postpilot.dart list workspace.json
+dart run bin/postpilot.dart mcp workspace.json --env Staging     # Model Context Protocol over stdio
+```
+
+Exit code `0` all passed, `1` a request or test failed, `2` usage error. Secrets are never in the shared file: pass them as `POSTPILOT_VAR_<name>` environment variables in CI (or keep `workspace.local.json` beside the file). Add the MCP server to an agent such as Claude Code with `claude mcp add postpilot -- dart run bin/postpilot.dart mcp workspace.json --env Staging`.
+
 ---
 
 ## 🏗️ Architecture & Tech Stack

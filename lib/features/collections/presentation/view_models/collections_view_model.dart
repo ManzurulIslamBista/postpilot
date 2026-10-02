@@ -42,6 +42,17 @@ final class CollectionsViewModel with ChangeNotifier {
   bool isCollectionExpanded(CollectionEntity collection) =>
       isExpanded(collection.id) || (isFiltering && _hasMatchingDescendant(collection.id, null));
 
+  /// Opens [collectionId] in the sidebar if it is closed (a no-op when it is already open).
+  void expandCollection(int collectionId) {
+    if (!expandedCollectionIds.contains(collectionId)) toggleExpand(collectionId);
+  }
+
+  /// The first request of [collectionId] (root first), e.g. to open a freshly added template.
+  Future<int?> firstRequestId(int collectionId) async {
+    final requests = await _requestRepository.watchByCollection(collectionId).first;
+    return requests.firstOrNull?.id;
+  }
+
   void toggleExpand(int collectionId) {
     if (!expandedCollectionIds.add(collectionId)) {
       expandedCollectionIds.remove(collectionId);

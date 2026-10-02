@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
+import '../../../safety/domain/services/production_detector.dart';
+import '../../../safety/domain/services/production_guard.dart';
+import '../../../safety/presentation/production_confirm_dialog.dart';
 import '../../../request_builder/domain/services/collection_run_report.dart';
 import '../../../request_builder/domain/services/collection_runner_service.dart';
 import '../view_models/collection_runner_view_model.dart';
@@ -42,8 +45,17 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
     super.dispose();
   }
 
-  void _run() {
+  Future<void> _run() async {
     if (!_viewModel.canRun) return;
+    // The production lock: a run sends every request, so ask once up front.
+    final guard = locator.isRegistered<ProductionGuard>() ? locator<ProductionGuard>() : null;
+    final writes = _viewModel.requests.where((r) => ProductionDetector.changesData(r.method)).length;
+    final warning = await guard?.checkRun(writes, 'this collection');
+    if (warning != null) {
+      if (!mounted) return;
+      final ok = await confirmProductionSend(context, warning, onSilence: () => guard?.silenceForSession(warning.environmentName));
+      if (!ok || !mounted) return;
+    }
     _viewModel.start(widget.collectionId);
     setState(() => _showSetup = false);
   }

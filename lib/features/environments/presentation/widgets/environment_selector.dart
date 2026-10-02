@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../safety/data/safety_prefs.dart';
+import '../../../safety/domain/services/production_detector.dart';
 import '../../domain/entities/environment_entity.dart';
 import '../view_models/environments_view_model.dart';
 import 'environments_manager_dialog.dart';
@@ -19,6 +22,13 @@ class EnvironmentSelector extends StatelessWidget {
 
     final colors = context.colors;
     final hasActive = active != null;
+    // A production environment is drawn in red, so it is never mistaken for a safe one.
+    final prefs = locator.isRegistered<SafetyPrefs>() ? locator<SafetyPrefs>() : null;
+    final isProd = hasActive &&
+        prefs != null &&
+        prefs.confirmProductionWrites &&
+        ProductionDetector.isProduction(active.name, extraWords: prefs.extraWords);
+    final tint = isProd ? colors.statusError : colors.statusSuccess;
     // A pill: a status dot (lit while an environment is active), the picker,
     // and the manage button, so the control reads as one unit in the top bar.
     return Container(
@@ -26,7 +36,7 @@ class EnvironmentSelector extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: hasActive ? colors.statusSuccess.withValues(alpha: 0.55) : colors.border),
+        border: Border.all(color: hasActive ? tint.withValues(alpha: isProd ? 0.8 : 0.55) : colors.border, width: isProd ? 1.4 : 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -37,12 +47,19 @@ class EnvironmentSelector extends StatelessWidget {
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: hasActive ? colors.statusSuccess : colors.secondaryText.withValues(alpha: 0.5),
+              color: hasActive ? tint : colors.secondaryText.withValues(alpha: 0.5),
               boxShadow: hasActive
-                  ? [BoxShadow(color: colors.statusSuccess.withValues(alpha: 0.5), blurRadius: 6)]
+                  ? [BoxShadow(color: tint.withValues(alpha: 0.5), blurRadius: 6)]
                   : null,
             ),
           ),
+          if (isProd)
+            Container(
+              margin: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(color: colors.statusError, borderRadius: BorderRadius.circular(4)),
+              child: const Text('PROD', style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
+            ),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 140),
             child: DropdownButton<int>(

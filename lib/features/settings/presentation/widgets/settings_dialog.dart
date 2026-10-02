@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../view_models/settings_view_model.dart';
+import '../../../safety/presentation/safety_settings_pane.dart';
 import 'appearance_settings_pane.dart';
 import 'data_settings_pane.dart';
 import 'general_settings_pane.dart';
@@ -12,6 +13,7 @@ enum _Section {
   general('General', Icons.tune),
   appearance('Appearance', Icons.palette_outlined),
   proxy('Proxy', Icons.lan_outlined),
+  safety('Safety', Icons.shield_outlined),
   data('Data', Icons.storage_outlined);
 
   const _Section(this.label, this.icon);
@@ -125,6 +127,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
               _Section.general => GeneralSettingsPane(viewModel: viewModel, isWeb: widget.isWeb),
               _Section.appearance => AppearanceSettingsPane(viewModel: viewModel),
               _Section.proxy => ProxySettingsPane(viewModel: viewModel, isWeb: widget.isWeb),
+              _Section.safety => const SafetySettingsPane(),
               _Section.data => DataSettingsPane(
                   viewModel: viewModel,
                   onOpenBackup: widget.onOpenBackup,

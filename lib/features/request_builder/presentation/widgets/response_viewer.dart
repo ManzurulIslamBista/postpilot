@@ -9,6 +9,8 @@ import '../../../../core/widgets/status_chip.dart';
 import '../../../../core/utils/file_download.dart';
 import '../../domain/entities/api_response_entity.dart';
 import '../../domain/entities/response_example_entity.dart';
+import '../../../response_tools/domain/services/response_history.dart';
+import '../../../response_tools/presentation/widgets/response_tools_dialog.dart';
 import '../view_models/response_examples_view_model.dart';
 import 'response_body_formatter.dart';
 import 'response_body_view.dart';
@@ -59,12 +61,13 @@ class ResponseViewer extends StatefulWidget {
   State<ResponseViewer> createState() => _ResponseViewerState();
 }
 
-class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProviderStateMixin {
+class _ResponseViewerState extends State<ResponseViewer> {
   static const _searchDebounce = Duration(milliseconds: 250);
 
   late final ResponseExamplesViewModel _examplesViewModel;
-  // Not a DefaultTabController: Ctrl/Cmd+F has to switch to the Body tab itself.
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  // Picked up from the DefaultTabController below (the examples list switches
+  // tabs through it too); Ctrl/Cmd+F uses it to return to the Body tab.
+  TabController? _tabs;
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   Timer? _searchTimer;
@@ -86,6 +89,7 @@ class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProvid
     super.initState();
     _examplesViewModel = locator<ResponseExamplesViewModel>()..watch(widget.requestId);
     _liveFormatter = _formatterFor(widget.response);
+    _remember(widget.response);
     widget.findController?._open = _openSearch;
   }
 
@@ -98,6 +102,7 @@ class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProvid
     }
     if (widget.response != oldWidget.response) {
       _liveFormatter = _formatterFor(widget.response);
+      _remember(widget.response);
       _selectedExample = null;
       _exampleFormatter = null;
       _currentMatch = 0;
@@ -110,13 +115,19 @@ class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProvid
     }
   }
 
+  /// Keeps each response for "Compare" in the response tools.
+  void _remember(ApiResponseEntity? response) {
+    if (response != null && locator.isRegistered<ResponseHistory>()) {
+      locator<ResponseHistory>().record(widget.requestId, response);
+    }
+  }
+
   @override
   void dispose() {
     if (widget.findController?._open == _openSearch) widget.findController?._open = null;
     _searchTimer?.cancel();
     _searchController.dispose();
     _searchFocus.dispose();
-    _tabs.dispose();
     _examplesViewModel.dispose();
     super.dispose();
   }
@@ -134,21 +145,28 @@ class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProvid
           final example = _currentExample(vm.examples);
           final formatter = example == null ? _liveFormatter : _exampleFormatter;
           final headers = example?.headers ?? widget.response?.headers;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(example, vm.examples.length),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabs,
+          return DefaultTabController(
+            length: 3,
+            child: Builder(
+              builder: (context) {
+                _tabs = DefaultTabController.of(context);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildBodyTab(context, formatter, example: example),
-                    _buildHeadersTab(context, headers),
-                    ResponseExamplesTab(selectedId: example?.id, onSelect: _selectExample),
+                    _buildHeader(example, vm.examples.length),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _buildBodyTab(context, formatter, example: example),
+                          _buildHeadersTab(context, headers),
+                          ResponseExamplesTab(selectedId: example?.id, onSelect: _selectExample),
+                        ],
+                      ),
+                    ),
                   ],
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           );
         },
       ),
@@ -160,7 +178,6 @@ class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProvid
   /// otherwise.
   Widget _buildHeader(ResponseExampleEntity? example, int exampleCount) {
     TabBar tabs({required bool divider}) => TabBar(
-      controller: _tabs,
       isScrollable: true,
       tabAlignment: TabAlignment.start,
       // On one line the row draws the divider itself, under the chips as well.
@@ -245,6 +262,18 @@ class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProvid
                         ? () => _saveAsExample(context, response, body)
                         : null,
                   ),
+                IconButton(
+                  icon: const Icon(Icons.auto_fix_high, size: 18),
+                  tooltip: 'Response tools',
+                  onPressed: !viewingExample && response != null && formatter.isTextual
+                      ? () => ResponseToolsDialog.show(
+                            context,
+                            requestId: widget.requestId,
+                            requestName: widget.requestName ?? 'Response',
+                            response: response,
+                          )
+                      : null,
+                ),
               ];
               if (isImage) return Row(children: [const Spacer(), ...actions]);
               final search = _buildSearchField(context, matches.length, current);
@@ -402,7 +431,8 @@ class _ResponseViewerState extends State<ResponseViewer> with SingleTickerProvid
 
   /// Ctrl/Cmd+F: show the body search and put the caret in it, ready to type.
   void _openSearch() {
-    if (_tabs.index != 0) _tabs.index = 0;
+    final tabs = _tabs;
+    if (tabs != null && tabs.index != 0) tabs.index = 0;
     // The rendered preview has no text to search; Pretty does.
     if (_mode == ResponseBodyMode.preview) setState(() => _mode = ResponseBodyMode.pretty);
     _focusSearchWhenReady(10);

@@ -6,7 +6,8 @@ enum AssertionType {
   jsonPathExists,
   headerEquals,
   headerExists,
-  responseTimeBelowMs;
+  responseTimeBelowMs,
+  jsonSchema;
 
   String get label => switch (this) {
         AssertionType.statusEquals => 'Status equals',
@@ -17,16 +18,21 @@ enum AssertionType {
         AssertionType.headerEquals => 'Header equals',
         AssertionType.headerExists => 'Header exists',
         AssertionType.responseTimeBelowMs => 'Response time below',
+        AssertionType.jsonSchema => 'Matches JSON Schema',
       };
 
   bool get isHeader => this == AssertionType.headerEquals || this == AssertionType.headerExists;
+
+  /// The expected value is a whole JSON Schema document, not a short value.
+  bool get isSchema => this == AssertionType.jsonSchema;
 
   /// Whether [AssertionEntity.path] (a JSON path or header name) applies.
   bool get usesPath => switch (this) {
         AssertionType.jsonPathEquals ||
         AssertionType.jsonPathExists ||
         AssertionType.headerEquals ||
-        AssertionType.headerExists =>
+        AssertionType.headerExists ||
+        AssertionType.jsonSchema =>
           true,
         _ => false,
       };
@@ -69,5 +75,6 @@ final class AssertionEntity {
         AssertionType.headerEquals => 'Header $path equals $expected',
         AssertionType.headerExists => 'Header $path exists',
         AssertionType.responseTimeBelowMs => 'Response time below $expected ms',
+        AssertionType.jsonSchema => path.trim().isEmpty ? 'Body matches the JSON Schema' : '$path matches the JSON Schema',
       };
 }

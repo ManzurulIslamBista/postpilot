@@ -146,6 +146,29 @@ bool Win32Window::Create(const std::wstring& title,
 
   UpdateTheme(window);
 
+  // The window class only carries the default 32px frame. Hand the window the
+  // frames that match its display scaling, so the taskbar button, Alt+Tab and
+  // the title bar draw the app icon sharply instead of a stretched copy.
+  {
+    HINSTANCE instance = GetModuleHandle(nullptr);
+    HANDLE big_icon =
+        LoadImage(instance, MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON,
+                  Scale(32, scale_factor), Scale(32, scale_factor),
+                  LR_DEFAULTCOLOR);
+    HANDLE small_icon =
+        LoadImage(instance, MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON,
+                  Scale(16, scale_factor), Scale(16, scale_factor),
+                  LR_DEFAULTCOLOR);
+    if (big_icon) {
+      SendMessage(window, WM_SETICON, ICON_BIG,
+                  reinterpret_cast<LPARAM>(big_icon));
+    }
+    if (small_icon) {
+      SendMessage(window, WM_SETICON, ICON_SMALL,
+                  reinterpret_cast<LPARAM>(small_icon));
+    }
+  }
+
   return OnCreate();
 }
 

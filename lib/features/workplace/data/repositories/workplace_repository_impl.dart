@@ -5,8 +5,11 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import '../../domain/entities/workplace_content.dart';
 import '../../domain/entities/workplace_entity.dart';
+import '../../domain/entities/push_preview.dart';
 import '../../domain/entities/workplace_exception.dart';
 import '../../domain/repositories/workplace_repository.dart';
+import '../../domain/services/secret_splitter.dart';
+import '../../domain/services/workspace_diff.dart';
 import '../storage/workplace_storage.dart';
 import '../storage/workplace_storage_factory.dart';
 import '../storage/workplace_token_store.dart';
@@ -18,13 +21,17 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   final Dio _dio;
   final WorkplaceStorage _storage;
   final WorkplaceTokenStore _tokens;
+  final bool Function() _keepSecretsLocal;
 
   /// What the token store is known to hold per workplace id ('' = no token), so the registry,
   /// which is saved on every autosave, does not rewrite the keychain each time.
   final _knownTokens = <String, String>{};
 
-  WorkplaceRepositoryImpl({Dio? dio, WorkplaceStorage? storage, WorkplaceTokenStore? tokens})
-    : _dio =
+  /// [keepSecretsLocal] decides, at every save, whether secret values go to the
+  /// device-only `workspace.local.json` instead of `workspace.json` (which is what Git carries).
+  WorkplaceRepositoryImpl({Dio? dio, WorkplaceStorage? storage, WorkplaceTokenStore? tokens, bool Function()? keepSecretsLocal})
+    : _keepSecretsLocal = keepSecretsLocal ?? (() => false),
+      _dio =
           dio ??
           Dio(
             BaseOptions(
@@ -37,6 +44,9 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
       _tokens = tokens ?? SecureWorkplaceTokenStore();
 
   static const _remoteFileName = 'workspace.json';
+
+  @override
+  bool get keepsSecretsLocal => _keepSecretsLocal();
 
   @override
   bool get usesRealFolders => _storage.usesRealFolders;
@@ -237,15 +247,17 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
       );
     }
 
+    String? sha;
     try {
-      final content = await _pullFromRemoteGit(workplace);
-      await _storage.writeWorkspace(workplace.folderPath, content.toJsonString());
+      final pulled = await _pullFromRemoteGit(workplace);
+      sha = pulled.sha;
+      await _writeWorkspaceFile(workplace.folderPath, pulled.content.toJsonString());
     } on _RemoteWorkspaceMissing {
       final empty = WorkplaceContent.empty(workplace).toJsonString();
       await _storage.writeWorkspace(workplace.folderPath, empty);
-      await _pushToRemoteGit(workplace, empty, message: 'Initial commit from PostPilot');
+      sha = await _pushToRemoteGit(workplace, empty, message: 'Initial commit from PostPilot');
     }
-    return workplace.copyWith(lastSyncedAt: DateTime.now());
+    return workplace.copyWith(lastSyncedAt: DateTime.now(), lastSyncedSha: sha);
   }
 
   @override
@@ -285,13 +297,44 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
       await _storage.writeWorkspace(workplace.folderPath, initial.toJsonString());
       return initial;
     }
-    return _parseContent(text, workplace);
+    final local = SecretSplitter.decodeLocal(await _storage.readLocalSecrets(workplace.folderPath));
+    return _parseContent(_mergeLocalSecrets(text, local), workplace);
   }
 
   @override
   Future<void> saveWorkplaceContent(WorkplaceEntity workplace, WorkplaceContent content) async {
-    await _storage.writeWorkspace(workplace.folderPath, content.toJsonString());
+    await _writeWorkspaceFile(workplace.folderPath, content.toJsonString());
     await updateWorkplace(workplace.copyWith(updatedAt: DateTime.now()));
+  }
+
+  /// Fills the secrets that `workspace.json` leaves blank from this device's `workspace.local.json`.
+  String _mergeLocalSecrets(String text, Map<String, String> local) {
+    if (local.isEmpty) return text;
+    try {
+      final map = jsonDecode(text) as Map<String, dynamic>;
+      return const JsonEncoder.withIndent('  ').convert(SecretSplitter.merge(map, local));
+    } catch (_) {
+      return text; // Not ours to repair: the caller reports an unreadable file.
+    }
+  }
+
+  /// Writes the workspace. With "keep secrets on this device" on, secret values
+  /// go to `workspace.local.json` and the shared file holds blanks.
+  Future<void> _writeWorkspaceFile(String folder, String text) async {
+    if (!_keepSecretsLocal()) {
+      await _storage.writeWorkspace(folder, text);
+      return;
+    }
+    final Map<String, dynamic> map;
+    try {
+      map = jsonDecode(text) as Map<String, dynamic>;
+    } catch (_) {
+      await _storage.writeWorkspace(folder, text);
+      return;
+    }
+    final split = SecretSplitter.split(map);
+    await _storage.writeWorkspace(folder, const JsonEncoder.withIndent('  ').convert(split.publicDoc));
+    await _storage.writeLocalSecrets(folder, SecretSplitter.encodeLocal(split.secrets));
   }
 
   WorkplaceContent _parseContent(String text, WorkplaceEntity workplace) {
@@ -308,17 +351,37 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   // --- Git ----------------------------------------------------------------
 
   @override
-  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage}) async {
+  Future<PushPreview> previewPush(WorkplaceEntity workplace) async {
+    if (!workplace.isGitConnected || workplace.gitToken == null) {
+      throw const WorkplaceException('This workplace is not connected to a Git repository or has no token.');
+    }
+    final local = await _storage.readWorkspace(workplace.folderPath);
+    final remote = await _fetchRemoteFile(workplace);
+    final changes = WorkspaceDiff.compare(remote?.text, local);
+    final remoteChanged = remote != null && workplace.lastSyncedSha != null && remote.sha != workplace.lastSyncedSha;
+    return PushPreview(
+      remoteExists: remote != null,
+      remoteChanged: remoteChanged,
+      changes: changes,
+      suggestedMessage: changes.commitMessage(),
+    );
+  }
+
+  @override
+  Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage, bool overwrite = false}) async {
     if (!workplace.isGitConnected || workplace.gitToken == null) {
       throw const WorkplaceException('This workplace is not connected to a Git repository or has no token.');
     }
     final content = await loadWorkplaceContent(workplace);
-    await _pushToRemoteGit(
+    // The file as saved, not the merged content: with secrets kept local the file is what is safe to share.
+    final raw = await _storage.readWorkspace(workplace.folderPath);
+    final sha = await _pushToRemoteGit(
       workplace,
-      content.toJsonString(),
+      raw ?? content.toJsonString(),
       message: commitMessage ?? 'Update workplace data from PostPilot',
+      overwrite: overwrite,
     );
-    await updateWorkplace(workplace.copyWith(lastSyncedAt: DateTime.now()));
+    await updateWorkplace(workplace.copyWith(lastSyncedAt: DateTime.now(), lastSyncedSha: sha ?? workplace.lastSyncedSha));
   }
 
   @override
@@ -326,10 +389,14 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     if (!workplace.isGitConnected || workplace.gitToken == null) {
       throw const WorkplaceException('This workplace is not connected to a Git repository or has no token.');
     }
-    final content = await _pullFromRemoteGit(workplace);
-    await _storage.writeWorkspace(workplace.folderPath, content.toJsonString());
-    await updateWorkplace(workplace.copyWith(lastSyncedAt: DateTime.now()));
-    return content;
+    final pulled = await _pullFromRemoteGit(workplace);
+    // The repository's copy has blank secrets; this device's own secrets are put back before it is used.
+    final local = SecretSplitter.decodeLocal(await _storage.readLocalSecrets(workplace.folderPath));
+    final mergedText = _mergeLocalSecrets(pulled.content.toJsonString(), local);
+    final merged = _parseContent(mergedText, workplace);
+    await _writeWorkspaceFile(workplace.folderPath, mergedText);
+    await updateWorkplace(workplace.copyWith(lastSyncedAt: DateTime.now(), lastSyncedSha: pulled.sha));
+    return merged;
   }
 
   Map<String, String> _authHeaders(String token) => {
@@ -348,7 +415,8 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     throw const WorkplaceException('Invalid GitHub repository. Use "owner/repo" or "https://github.com/owner/repo".');
   }
 
-  Future<WorkplaceContent> _pullFromRemoteGit(WorkplaceEntity workplace) async {
+  /// The repository's `workspace.json` text and blob sha, or null when the branch has none yet.
+  Future<({String text, String? sha})?> _fetchRemoteFile(WorkplaceEntity workplace) async {
     final repoInfo = _parseRepo(workplace.gitRepoUrl!);
     final branch = workplace.gitBranch;
     final token = workplace.gitToken!;
@@ -357,24 +425,30 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
 
     try {
       final res = await _dio.get(path, options: Options(headers: _authHeaders(token)));
-
       if (res.statusCode == 200 && res.data is Map) {
         final encoding = res.data['encoding'] as String?;
         final contentRaw = res.data['content'] as String;
-        final jsonStr = encoding == 'base64'
+        final text = encoding == 'base64'
             ? utf8.decode(base64Decode(contentRaw.replaceAll(RegExp(r'\s'), '')))
             : contentRaw;
-        return _parseContent(jsonStr, workplace);
+        return (text: text, sha: res.data['sha'] as String?);
       }
       throw const WorkplaceException('Unexpected response format from GitHub.');
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        throw _RemoteWorkspaceMissing(
-          'No remote "$_remoteFileName" found on branch "$branch" in repository "${repoInfo.owner}/${repoInfo.repo}". Sync (push) first to create it.',
-        );
-      }
+      if (e.response?.statusCode == 404) return null;
       throw _formatGitDioError(e, repoInfo: repoInfo, branch: branch, operation: 'pulling from Git');
     }
+  }
+
+  Future<({WorkplaceContent content, String? sha})> _pullFromRemoteGit(WorkplaceEntity workplace) async {
+    final remote = await _fetchRemoteFile(workplace);
+    if (remote == null) {
+      final repoInfo = _parseRepo(workplace.gitRepoUrl!);
+      throw _RemoteWorkspaceMissing(
+        'No remote "$_remoteFileName" found on branch "${workplace.gitBranch}" in repository "${repoInfo.owner}/${repoInfo.repo}". Sync (push) first to create it.',
+      );
+    }
+    return (content: _parseContent(remote.text, workplace), sha: remote.sha);
   }
 
   Future<void> _ensureBranchExists({
@@ -417,7 +491,17 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     }
   }
 
-  Future<void> _pushToRemoteGit(WorkplaceEntity workplace, String jsonContent, {required String message}) async {
+  /// Pushes [jsonContent] as `workspace.json` and returns the file's new blob sha.
+  ///
+  /// Unless [overwrite], a repository whose file differs from the one this
+  /// workplace last synced with is refused: someone else pushed meanwhile, and
+  /// writing over it would silently throw their work away.
+  Future<String?> _pushToRemoteGit(
+    WorkplaceEntity workplace,
+    String jsonContent, {
+    required String message,
+    bool overwrite = false,
+  }) async {
     final repoInfo = _parseRepo(workplace.gitRepoUrl!);
     final branch = workplace.gitBranch;
     final token = workplace.gitToken!;
@@ -438,23 +522,30 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
       }
     }
 
-    Future<void> put(String? sha) => _dio.put(
-      url,
-      data: {'message': message, 'content': base64Encode(utf8.encode(jsonContent)), 'branch': branch, 'sha': ?sha},
-      options: Options(headers: headers),
-    );
+    Future<String?> put(String? sha) async {
+      final res = await _dio.put(
+        url,
+        data: {'message': message, 'content': base64Encode(utf8.encode(jsonContent)), 'branch': branch, 'sha': ?sha},
+        options: Options(headers: headers),
+      );
+      final content = res.data is Map ? res.data['content'] : null;
+      return content is Map ? content['sha'] as String? : null;
+    }
 
     final sha = await currentSha();
+    if (!overwrite && workplace.lastSyncedSha != null && sha != null && sha != workplace.lastSyncedSha) {
+      throw const RemoteChangedException();
+    }
     try {
-      await put(sha);
+      return await put(sha);
     } on DioException catch (e) {
       // 409 Conflict: the remote file changed since we read its SHA; retry once with the latest.
       if (e.response?.statusCode == 409) {
         final latest = await currentSha();
         if (latest != null && latest != sha) {
+          if (!overwrite && workplace.lastSyncedSha != null) throw const RemoteChangedException();
           try {
-            await put(latest);
-            return;
+            return await put(latest);
           } on DioException catch (retryError) {
             throw _formatGitDioError(
               retryError,

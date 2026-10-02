@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../../../../core/utils/variable_resolver.dart';
 import '../../../request_builder/domain/entities/api_response_entity.dart';
+import '../../../response_tools/domain/services/json_schema_tools.dart';
 import '../entities/assertion_entity.dart';
 import '../entities/assertion_result.dart';
 import 'response_reader.dart';
@@ -36,6 +37,7 @@ final class AssertionEvaluator {
       AssertionType.headerEquals => _headerEquals(reader, assertion.path, expected),
       AssertionType.headerExists => _headerExists(reader, assertion.path),
       AssertionType.responseTimeBelowMs => _responseTimeBelow(reader, expected),
+      AssertionType.jsonSchema => _matchesSchema(reader, assertion.path, expected),
     };
     // Named after what the user wrote, not the resolved values: a failed
     // check's name is shown in the runner and exported, and `{{token}}` must
@@ -83,6 +85,23 @@ final class AssertionEvaluator {
   (bool, String) _headerExists(ResponseReader reader, String name) {
     final value = reader.header(name);
     return (value != null, value ?? 'Missing');
+  }
+
+  /// [expected] is a JSON Schema document; [path] narrows the check to part of
+  /// the body (blank = the whole body). The first few violations are the "actual".
+  (bool, String) _matchesSchema(ResponseReader reader, String path, String expected) {
+    if (expected.isEmpty) return (false, 'No schema');
+    if (!reader.isJson) return (false, 'Body is not valid JSON');
+    final Object? schema;
+    try {
+      schema = jsonDecode(expected);
+    } on FormatException {
+      return (false, 'The schema is not valid JSON');
+    }
+    if (schema is! Map<String, dynamic>) return (false, 'The schema must be a JSON object');
+    final value = path.trim().isEmpty ? reader.jsonPath(r'$') : reader.jsonPath(path);
+    final violations = JsonSchemaTools.validate(schema, value, limit: 5);
+    return (violations.isEmpty, violations.isEmpty ? 'Matches' : violations.join('; '));
   }
 
   (bool, String) _responseTimeBelow(ResponseReader reader, String expected) {

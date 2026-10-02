@@ -5,7 +5,10 @@ import 'package:postpilot/core/database/app_database.dart';
 import 'package:postpilot/core/theme/app_theme.dart';
 import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
 import 'package:postpilot/features/environments/domain/entities/environment_entity.dart';
+import 'package:postpilot/core/widgets/gradient_button.dart';
+import 'package:postpilot/features/workplace/domain/entities/push_preview.dart';
 import 'package:postpilot/features/workplace/domain/entities/workplace_exception.dart';
+import 'package:postpilot/features/workplace/domain/services/workspace_diff.dart';
 import 'package:postpilot/features/workplace/presentation/view_models/workplace_view_model.dart';
 import 'package:postpilot/features/workplace/presentation/widgets/add_workplace_dialog.dart';
 import 'package:postpilot/features/workplace/presentation/widgets/workplace_sidebar_header.dart';
@@ -213,6 +216,13 @@ void main() {
     await tester.pumpAndSettle();
     await vm.init();
     await tester.pumpAndSettle();
+    // Pushing now shows a preview first; by default there is something to push.
+    repository.previewResult = const PushPreview(
+      remoteExists: true,
+      remoteChanged: false,
+      changes: WorkspaceChangeSummary([WorkspaceChange(WorkspaceChangeKind.added, 'Request', 'Get pet', container: 'Pets')]),
+      suggestedMessage: 'Add 1 request in Pets',
+    );
   }
 
   Future<void> chooseFromMenu(WidgetTester tester, String item) async {
@@ -222,13 +232,58 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// The push preview dialog that follows "Sync with Git": it has changes to push, and Push confirms it.
+  Future<void> confirmPushPreview(WidgetTester tester) async {
+    expect(find.text('WHAT CHANGES IN THE REPOSITORY'), findsOneWidget);
+    await tester.tap(find.widgetWithText(GradientButton, 'Push'));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('pushing is not interrupted when the workspace holds no secret values', (tester) async {
     await openGitWorkplace(tester);
 
     await chooseFromMenu(tester, 'Sync with Git');
 
     expect(find.text('Push secret values to Git?'), findsNothing);
+    await confirmPushPreview(tester);
     expect(repository.syncCalls, 1);
+    expect(repository.lastCommitMessage, 'Add 1 request in Pets', reason: 'the commit message is written from the changes');
+    expect(repository.lastOverwrite, isFalse);
+  });
+
+  testWidgets('a repository that changed since the last sync blocks the push until overwrite is chosen', (tester) async {
+    await openGitWorkplace(tester);
+    repository.previewResult = const PushPreview(
+      remoteExists: true,
+      remoteChanged: true,
+      changes: WorkspaceChangeSummary([WorkspaceChange(WorkspaceChangeKind.changed, 'Request', 'Get pet', container: 'Pets')]),
+      suggestedMessage: 'Change 1 request in Pets',
+    );
+
+    await chooseFromMenu(tester, 'Sync with Git');
+
+    expect(find.text('The repository has changes you do not have'), findsOneWidget);
+    expect(tester.widget<GradientButton>(find.widgetWithText(GradientButton, 'Overwrite and push')).onPressed, isNull);
+    await tester.tap(find.text('Overwrite their changes with mine'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(GradientButton, 'Overwrite and push'));
+    await tester.pumpAndSettle();
+
+    expect(repository.syncCalls, 1);
+    expect(repository.lastOverwrite, isTrue);
+  });
+
+  testWidgets('with nothing to push, the dialog says so and cannot push', (tester) async {
+    await openGitWorkplace(tester);
+    repository.previewResult = const PushPreview(remoteExists: true, remoteChanged: false, changes: WorkspaceChangeSummary([]), suggestedMessage: 'x');
+
+    await chooseFromMenu(tester, 'Sync with Git');
+
+    expect(find.text('Nothing to push'), findsOneWidget);
+    expect(tester.widget<GradientButton>(find.widgetWithText(GradientButton, 'Push')).onPressed, isNull);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(repository.syncCalls, 0);
   });
 
   testWidgets('pushing a workspace with secret values asks first, and Cancel pushes nothing', (tester) async {
@@ -294,6 +349,7 @@ void main() {
     await chooseFromMenu(tester, 'Sync with Git');
     await tester.tap(find.text('Push anyway'));
     await tester.pumpAndSettle();
+    await confirmPushPreview(tester);
 
     expect(repository.syncCalls, 1);
     expect(find.text('Synced successfully with Git repository!'), findsOneWidget);

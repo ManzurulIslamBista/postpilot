@@ -11,6 +11,8 @@ import '../../domain/entities/request_auth.dart';
 import '../../domain/entities/request_body.dart';
 import '../../domain/repositories/request_repository.dart';
 import '../../domain/services/code_generators/code_generator.dart';
+import '../../domain/services/importers/curl_parser.dart';
+import '../../../../core/enums/body_type.dart';
 import '../../domain/usecases/generate_code_snippet_usecase.dart';
 import '../../domain/usecases/send_request_usecase.dart';
 import '../../../scripting/domain/entities/script_run_result.dart';
@@ -30,12 +32,20 @@ final class RequestBuilderViewModel with ChangeNotifier {
   );
 
   ApiRequestEntity? request;
+
+  /// Bumped when the URL was replaced from outside the URL field (a pasted cURL
+  /// command), so the field can show the new text.
+  int urlRevision = 0;
   ApiResponseEntity? response;
   ScriptRunResult? lastScriptResult;
   bool isLoading = false;
   bool isSending = false;
   String? errorMessage;
   String? errorDetail;
+
+  /// Asked before a send leaves the app; returning false cancels it. The page
+  /// sets this (the production lock lives there) so the view model stays free of dialogs.
+  Future<bool> Function(ApiRequestEntity request)? confirmSend;
 
   StreamSubscription<ApiRequestEntity?>? _requestSubscription;
   ApiCancelToken? _cancelToken;
@@ -58,6 +68,9 @@ final class RequestBuilderViewModel with ChangeNotifier {
   Future<void> send() async {
     final current = request;
     if (current == null || isSending) return;
+    final confirm = confirmSend;
+    if (confirm != null && !await confirm(current)) return;
+    if (_disposed || isSending) return;
 
     final cancelToken = _cancelToken = ApiCancelToken();
     isSending = true;
@@ -124,7 +137,34 @@ final class RequestBuilderViewModel with ChangeNotifier {
 
   void updateName(String name) => _update((r) => r.copyWith(name: name));
   void updateMethod(HttpMethod method) => _update((r) => r.copyWith(method: method));
-  void updateUrl(String url) => _update((r) => r.copyWith(url: url));
+  void updateUrl(String url) {
+    if (applyPastedCurl(url)) return;
+    _update((r) => r.copyWith(url: url));
+  }
+
+  /// Smart paste: a `curl ...` command pasted into the URL field fills the
+  /// whole request (method, URL, headers, body, auth) instead of becoming a
+  /// nonsense URL. Returns whether [text] was one.
+  bool applyPastedCurl(String text) {
+    final trimmed = text.trimLeft();
+    if (!RegExp(r'^curl\s', caseSensitive: false).hasMatch(trimmed)) return false;
+    final parsed = CurlParser.parse(trimmed);
+    if (parsed == null || parsed.url.isEmpty) return false;
+    final raw = parsed.body;
+    final looksJson = raw != null && (raw.trimLeft().startsWith('{') || raw.trimLeft().startsWith('['));
+    _update((r) => r.copyWith(
+          method: parsed.method,
+          url: parsed.url,
+          headers: parsed.headers,
+          body: raw == null
+              ? r.body
+              : RequestBody(type: BodyType.raw, rawContentType: looksJson ? RawContentType.json : RawContentType.text, rawText: raw),
+          auth: parsed.auth,
+        ));
+    urlRevision++;
+    notifyListeners();
+    return true;
+  }
   void updateHeaders(List<KeyValueItem> headers) => _update((r) => r.copyWith(headers: headers));
   void updateQueryParams(List<KeyValueItem> params) => _update((r) => r.copyWith(queryParams: params));
   void updateBody(RequestBody body) => _update((r) => r.copyWith(body: body));

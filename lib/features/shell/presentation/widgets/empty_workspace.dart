@@ -10,7 +10,10 @@ class EmptyWorkspace extends StatelessWidget {
   final VoidCallback onNewRequest;
   final VoidCallback onImport;
 
-  const EmptyWorkspace({super.key, required this.onNewRequest, required this.onImport});
+  /// Opens the starter-template gallery; the button is left out when null.
+  final VoidCallback? onTemplates;
+
+  const EmptyWorkspace({super.key, required this.onNewRequest, required this.onImport, this.onTemplates});
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +55,13 @@ class EmptyWorkspace extends StatelessWidget {
                     label: const Text('Import'),
                     style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14)),
                   ),
+                  if (onTemplates != null)
+                    OutlinedButton.icon(
+                      onPressed: onTemplates,
+                      icon: const Icon(Icons.auto_awesome_mosaic_outlined, size: 18),
+                      label: const Text('Templates'),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14)),
+                    ),
                 ],
               ),
               const SizedBox(height: 28),

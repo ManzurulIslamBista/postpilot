@@ -111,8 +111,8 @@ void main() {
   setUp(_calls.clear);
 
   group('layout', () {
-    _dialogTest('lists the four sections and opens on General with the defaults', (tester, harness) async {
-      for (final section in ['General', 'Appearance', 'Proxy', 'Data']) {
+    _dialogTest('lists the five sections and opens on General with the defaults', (tester, harness) async {
+      for (final section in ['General', 'Appearance', 'Proxy', 'Safety', 'Data']) {
         expect(find.text(section), findsWidgets, reason: section);
       }
       expect(find.text('Request timeout'), findsOneWidget);
@@ -139,7 +139,7 @@ void main() {
     });
 
     _dialogTest('a narrow screen swaps the section list for chips, and they still navigate', (tester, harness) async {
-      expect(find.byType(ChoiceChip), findsNWidgets(4));
+      expect(find.byType(ChoiceChip), findsNWidgets(5));
       expect(find.byType(ListTile), findsNothing);
 
       await _tap(tester, find.widgetWithText(ChoiceChip, 'Proxy'));
@@ -150,7 +150,7 @@ void main() {
     }, surface: const Size(420, 800));
 
     _dialogTest('every section fits a phone-width screen without overflowing', (tester, harness) async {
-      for (final section in ['Appearance', 'Data', 'General']) {
+      for (final section in ['Appearance', 'Safety', 'Data', 'General']) {
         await _tap(tester, find.widgetWithText(ChoiceChip, section));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: section);
@@ -166,7 +166,7 @@ void main() {
 
     _dialogTest('a wide screen keeps the section list beside the settings', (tester, harness) async {
       expect(find.byType(ChoiceChip), findsNothing);
-      expect(find.byType(ListTile), findsNWidgets(4));
+      expect(find.byType(ListTile), findsNWidgets(5));
     });
 
     _dialogTest('the close button closes it', (tester, harness) async {

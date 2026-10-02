@@ -43,6 +43,39 @@ class _RequestTabBarState extends State<RequestTabBar> {
     });
   }
 
+  Future<void> _showMenu(BuildContext context, ShellViewModel shell, int id, Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final pinned = shell.isPinned(id);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(position & const Size(1, 1), Offset.zero & overlay.size),
+      items: [
+        PopupMenuItem(value: 'pin', child: _MenuRow(pinned ? Icons.push_pin : Icons.push_pin_outlined, pinned ? 'Unpin tab' : 'Pin tab')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'close', child: _MenuRow(Icons.close, 'Close')),
+        const PopupMenuItem(value: 'others', child: _MenuRow(Icons.tab_unselected, 'Close others')),
+        const PopupMenuItem(value: 'right', child: _MenuRow(Icons.keyboard_double_arrow_right, 'Close tabs to the right')),
+        const PopupMenuItem(value: 'all', child: _MenuRow(Icons.clear_all, 'Close all')),
+        const PopupMenuDivider(),
+        PopupMenuItem(enabled: shell.canReopenClosed, value: 'reopen', child: const _MenuRow(Icons.restore_page_outlined, 'Reopen closed tab')),
+      ],
+    );
+    switch (action) {
+      case 'pin':
+        shell.togglePin(id);
+      case 'close':
+        shell.closeRequest(id);
+      case 'others':
+        shell.closeOthers(id);
+      case 'right':
+        shell.closeToRight(id);
+      case 'all':
+        shell.closeAll();
+      case 'reopen':
+        await shell.reopenClosed();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final shell = context.watch<ShellViewModel>();
@@ -70,8 +103,10 @@ class _RequestTabBarState extends State<RequestTabBar> {
                     key: ValueKey(id),
                     summary: shell.tabSummary(id),
                     isActive: id == shell.selectedRequestId,
+                    isPinned: shell.isPinned(id),
                     onSelect: () => shell.selectRequest(id),
                     onClose: () => shell.closeRequest(id),
+                    onContextMenu: (position) => _showMenu(context, shell, id, position),
                   ),
               ],
             ),
@@ -82,18 +117,34 @@ class _RequestTabBarState extends State<RequestTabBar> {
   }
 }
 
+class _MenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _MenuRow(this.icon, this.label);
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [Icon(icon, size: 17), const SizedBox(width: 12), Text(label)],
+      );
+}
+
 class _RequestTab extends StatefulWidget {
   final RequestSummaryEntity? summary;
   final bool isActive;
+  final bool isPinned;
   final VoidCallback onSelect;
   final VoidCallback onClose;
+  final void Function(Offset position) onContextMenu;
 
   const _RequestTab({
     super.key,
     required this.summary,
     required this.isActive,
+    required this.isPinned,
     required this.onSelect,
     required this.onClose,
+    required this.onContextMenu,
   });
 
   @override
@@ -129,7 +180,10 @@ class _RequestTabState extends State<_RequestTab> {
     final summary = widget.summary;
     final active = widget.isActive;
     return GestureDetector(
-      onTertiaryTapUp: (_) => widget.onClose(),
+      onTertiaryTapUp: (_) {
+        if (!widget.isPinned) widget.onClose();
+      },
+      onSecondaryTapUp: (d) => widget.onContextMenu(d.globalPosition),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -171,11 +225,11 @@ class _RequestTabState extends State<_RequestTab> {
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 14),
-                      tooltip: 'Close',
+                      icon: Icon(widget.isPinned ? Icons.push_pin : Icons.close, size: 14),
+                      tooltip: widget.isPinned ? 'Pinned: right-click to unpin' : 'Close',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-                      onPressed: widget.onClose,
+                      onPressed: widget.isPinned ? null : widget.onClose,
                     ),
                   ],
                 ),

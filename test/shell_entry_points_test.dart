@@ -3,9 +3,11 @@
 // and dialogs actually read.
 import 'dart:async';
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:postpilot/app.dart';
+import 'package:postpilot/core/database/app_database.dart';
 import 'package:postpilot/core/di/injector.dart';
 import 'package:postpilot/core/shortcuts/app_shortcuts.dart';
 import 'package:postpilot/core/usecases/usecase.dart';
@@ -44,10 +46,12 @@ import 'package:postpilot/features/import_export/presentation/view_models/import
 import 'package:postpilot/features/settings/presentation/view_models/settings_view_model.dart';
 import 'package:postpilot/features/settings/presentation/widgets/settings_dialog.dart';
 import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
+import 'package:postpilot/features/workplace/presentation/view_models/workplace_view_model.dart';
 
 import 'documentation/support/fakes.dart';
 import 'git_sync/fakes/fake_credentials_store.dart';
 import 'settings/fakes/fake_settings_repositories.dart';
+import 'support/fake_workplace_repository.dart';
 import 'support/in_memory_import_export_fakes.dart';
 
 /// A use case nobody is waiting for: a dialog that opens it just shows progress.
@@ -106,6 +110,7 @@ final class _LinkedCollections implements GitLinkRepository {
 void main() {
   late FakeTagRepository tags;
   late FakeDocumentationRepository docs;
+  late AppDatabase workplaceDatabase;
 
   setUp(() async {
     await locator.reset();
@@ -125,9 +130,21 @@ void main() {
     });
     final environments = InMemoryDb();
     final tagFilter = TagFilterViewModel(tags, collections, requests);
+    final shell = ShellViewModel(requests);
+    // PostPilotApp provides a WorkplaceViewModel to the whole tree. Never initialised
+    // here, so no database query is made and the sidebar header shows "No Workplace".
+    workplaceDatabase = AppDatabase.forTesting(NativeDatabase.memory());
 
     locator
-      ..registerSingleton<ShellViewModel>(ShellViewModel(requests))
+      ..registerSingleton<ShellViewModel>(shell)
+      ..registerSingleton<WorkplaceViewModel>(
+        WorkplaceViewModel(
+          repository: FakeWorkplaceRepository(),
+          backupService: environments.backupService,
+          database: workplaceDatabase,
+          shellViewModel: shell,
+        ),
+      )
       ..registerSingleton<CollectionsViewModel>(CollectionsViewModel(collections, requests, requestIdFilter: tagFilter))
       ..registerSingleton<EnvironmentsViewModel>(
         EnvironmentsViewModel(environments.environmentRepository, environments.globalVariableRepository),
@@ -154,6 +171,8 @@ void main() {
   });
 
   tearDown(() async {
+    locator<WorkplaceViewModel>().dispose();
+    await workplaceDatabase.close();
     locator<CollectionsViewModel>().dispose();
     locator<EnvironmentsViewModel>().dispose();
     locator<HistoryViewModel>().dispose();

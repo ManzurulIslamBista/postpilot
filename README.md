@@ -7,13 +7,28 @@
 ![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
 ![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)
+[![Build & Release](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml)
 
 **A modern, lightweight, developer-first API client and Postman alternative built with Flutter.**  
 Designed for speed, offline-first reliability, Git-based version control, and real-time team collaboration.
 
-[Features](#-key-features) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [Database & Backend](#-database--backend-setup) • [Contributing](#-contributing)
+[Downloads](#-download-latest-release) • [Features](#-key-features) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [Contributing](#-contributing)
 
 </div>
+
+---
+
+## 📥 Download Latest Release
+
+Download the latest version built directly from the `main` branch:
+
+| Platform | Format | Direct Download Link |
+| :--- | :--- | :--- |
+| 🪟 **Windows** | Setup Installer (`.exe`) | [**Download PostPilot-Windows-Setup.exe**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-Windows-Setup.exe) |
+| 🪟 **Windows** | Portable Archive (`.zip`) | [**Download PostPilot-Windows-Portable.zip**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-Windows-Portable.zip) |
+| 🍏 **macOS** | Disk Image (`.dmg`) | [**Download PostPilot-macOS.dmg**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-macOS.dmg) |
+| 🍏 **macOS** | Application Archive (`.zip`) | [**Download PostPilot-macOS.zip**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-macOS.zip) |
+| 🤖 **Android** | Installable Package (`.apk`) | [**Download PostPilot-Android.apk**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot-Android.apk) |
 
 ---
 

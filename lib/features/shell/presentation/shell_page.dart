@@ -175,11 +175,12 @@ class _TopBarActions extends StatelessWidget {
             ),
             const SizedBox(width: 6),
           ],
-          IconButton(
-            icon: const Icon(Icons.folder_open_outlined, size: 19),
-            tooltip: 'Reveal workplace in Finder (${activeWp.name})',
-            onPressed: () => workplaceVm.revealInFinder(),
-          ),
+          if (workplaceVm.canRevealFolder)
+            IconButton(
+              icon: const Icon(Icons.folder_open_outlined, size: 19),
+              tooltip: 'Show workplace in ${workplaceVm.fileManagerName} (${activeWp.name})',
+              onPressed: () => workplaceVm.revealWorkplaceFolder(),
+            ),
         ],
         const _MoreMenu(),
         IconButton(

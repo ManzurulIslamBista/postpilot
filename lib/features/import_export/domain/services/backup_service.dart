@@ -67,6 +67,9 @@ final class BackupService {
     this._tagRepository,
   );
 
+  /// The workspace as data rather than text, for callers that persist it themselves.
+  Future<BackupSnapshot> snapshot() => _readSnapshot();
+
   Future<BackupExport> export() async {
     final snapshot = await _readSnapshot();
     return BackupExport(

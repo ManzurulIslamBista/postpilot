@@ -2,6 +2,19 @@ import '../entities/workplace_content.dart';
 import '../entities/workplace_entity.dart';
 
 abstract interface class WorkplaceRepository {
+  /// Whether workplace folders are real directories on this device (false on
+  /// the web, where a workplace is stored in the browser).
+  bool get usesRealFolders;
+
+  /// Whether [pickFolder] can show a native folder chooser on this platform.
+  bool get canPickFolder;
+
+  /// Whether [revealFolder] can open a folder in the system file manager.
+  bool get canRevealFolder;
+
+  /// "Finder", "File Explorer" or "file manager", for labels.
+  String get fileManagerName;
+
   /// Returns all registered workplaces.
   Future<List<WorkplaceEntity>> getWorkplaces();
 
@@ -11,8 +24,12 @@ abstract interface class WorkplaceRepository {
   /// Sets the active workplace ID.
   Future<void> setActiveWorkplace(String id);
 
-  /// Creates and registers a new workplace, initializing its local folder
-  /// and single `workspace.json` file.
+  /// Registers a new workplace and makes it active.
+  ///
+  /// If the folder already holds a `workspace.json` it is opened as it is, never
+  /// overwritten; otherwise an empty one is created (or, for a Git-connected
+  /// workplace, the repository's copy is pulled). Throws a `WorkplaceException`
+  /// with a displayable message when the folder or repository can't be used.
   Future<WorkplaceEntity> createWorkplace({
     required String name,
     required String folderPath,
@@ -24,7 +41,7 @@ abstract interface class WorkplaceRepository {
   /// Updates workplace metadata (such as git settings or folder).
   Future<void> updateWorkplace(WorkplaceEntity workplace);
 
-  /// Removes a workplace from the registry.
+  /// Removes a workplace from the registry. Its files are left in place.
   Future<void> deleteWorkplace(String id);
 
   /// Loads the entire single JSON file (`workspace.json`) from the workplace folder.
@@ -40,9 +57,12 @@ abstract interface class WorkplaceRepository {
   /// Pulls the single JSON file from the connected Git repository and saves it locally.
   Future<WorkplaceContent> pullFromGit(WorkplaceEntity workplace);
 
-  /// Returns the default folder path on this PC for a workplace.
+  /// Returns the default folder path for a workplace on this device.
   Future<String> getDefaultWorkplacesDirectory({String? workplaceName});
 
-  /// Opens the native macOS folder selection dialog.
+  /// Opens the native folder chooser; null when cancelled or unavailable.
   Future<String?> pickFolder({String? initialPath});
+
+  /// Opens a workplace folder in the system file manager (no-op where unsupported).
+  Future<void> revealFolder(String folderPath);
 }

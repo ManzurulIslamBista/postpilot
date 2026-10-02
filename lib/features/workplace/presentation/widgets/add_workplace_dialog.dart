@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../domain/entities/workplace_exception.dart';
 import '../view_models/workplace_view_model.dart';
 
 const _classicTokenUrl = 'https://github.com/settings/tokens/new?scopes=repo,read:user,user:email&description=PostPilot';
@@ -51,11 +52,15 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
   Future<void> _updateDefaultFolder(String name) async {
     if (_isFolderManuallyEdited) return;
     final vm = context.read<WorkplaceViewModel>();
-    final defaultPath = await vm.getDefaultWorkplacesDirectory(workplaceName: name.isEmpty ? 'My Workplace' : name);
-    if (!_isFolderManuallyEdited && mounted) {
-      setState(() {
-        _folderController.text = defaultPath;
-      });
+    try {
+      final defaultPath = await vm.getDefaultWorkplacesDirectory(workplaceName: name.isEmpty ? 'My Workplace' : name);
+      if (!_isFolderManuallyEdited && mounted) {
+        setState(() {
+          _folderController.text = defaultPath;
+        });
+      }
+    } catch (_) {
+      // No suggestion available: the user can still type or browse for a folder.
     }
   }
 
@@ -122,8 +127,9 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = 'Error: $e';
+        _error = e is WorkplaceException ? e.message : 'Error: $e';
         _isSubmitting = false;
       });
     }
@@ -133,6 +139,8 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final textStyles = context.textStyles;
+    final vm = context.read<WorkplaceViewModel>();
+    final realFolders = vm.usesRealFolders;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -217,7 +225,7 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text('Workplace Folder on PC',
+                            child: Text(realFolders ? 'Workplace Folder on PC' : 'Workplace Storage (this browser)',
                                 style: textStyles.body.copyWith(fontWeight: FontWeight.w600)),
                           ),
                           Text(
@@ -235,28 +243,34 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                             child: TextField(
                               controller: _folderController,
                               style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                              decoration: const InputDecoration(
-                                hintText: '/Users/.../Documents/PostPilot/Workplaces/...',
+                              decoration: InputDecoration(
+                                hintText: realFolders ? 'Full path of the workplace folder' : 'Name to store it under',
                                 isDense: true,
-                                prefixIcon: Icon(Icons.folder_outlined, size: 18),
+                                prefixIcon: const Icon(Icons.folder_outlined, size: 18),
                               ),
                               onChanged: (_) => setState(() => _isFolderManuallyEdited = true),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _browseFolder,
-                            icon: const Icon(Icons.folder_open, size: 16),
-                            label: const Text('Browse…'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          if (vm.canBrowseFolders) ...[
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: _isSubmitting ? null : _browseFolder,
+                              icon: const Icon(Icons.folder_open, size: 16),
+                              label: const Text('Browse…'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'PostPilot will save all data inside this folder as a single "workspace.json" file.',
+                        realFolders
+                            ? 'PostPilot saves all data in this folder as a single "workspace.json" file. '
+                                'If the folder already contains one, it is opened as it is.'
+                            : 'The web version has no file access, so this workplace is saved in your browser. '
+                                'Use the desktop app to keep it as a real workspace.json file in a folder.',
                         style: textStyles.caption.copyWith(color: colors.secondaryText),
                       ),
                       const SizedBox(height: 20),
@@ -264,7 +278,8 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                       // Git Repository Connection Card
                       Material(
                         color: colors.sidebarBackground.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(10),
+                        // Not also `borderRadius:` — Material asserts (in debug builds only) that
+                        // it is given a shape or a radius, never both, which crashed this dialog.
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                           side: BorderSide(color: colors.border),

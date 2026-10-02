@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../domain/entities/workplace_entity.dart';
+import '../../domain/entities/workplace_exception.dart';
 import '../view_models/workplace_view_model.dart';
 
 const _classicTokenUrl = 'https://github.com/settings/tokens/new?scopes=repo,read:user,user:email&description=PostPilot';
@@ -52,16 +53,31 @@ class _WorkplaceSettingsDialogState extends State<WorkplaceSettingsDialog> {
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 
+  String? _error;
+
   Future<void> _save() async {
     final vm = context.read<WorkplaceViewModel>();
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = 'Enter a name for the workplace.');
+      return;
+    }
+    if (_connectGit && _gitRepoController.text.trim().isNotEmpty && _gitTokenController.text.trim().isEmpty) {
+      setState(() => _error = 'Enter a GitHub personal access token to connect the repository.');
+      return;
+    }
     final updated = widget.workplace.copyWith(
-      name: _nameController.text.trim(),
+      name: name,
       gitRepoUrl: _connectGit && _gitRepoController.text.trim().isNotEmpty ? _gitRepoController.text.trim() : null,
       gitBranch: _connectGit && _gitBranchController.text.trim().isNotEmpty ? _gitBranchController.text.trim() : 'main',
       gitToken: _connectGit && _gitTokenController.text.trim().isNotEmpty ? _gitTokenController.text.trim() : null,
     );
-    await vm.updateWorkplace(updated);
-    if (mounted) Navigator.of(context).pop();
+    try {
+      await vm.updateWorkplace(updated);
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) setState(() => _error = e is WorkplaceException ? e.message : 'Error: $e');
+    }
   }
 
   Future<void> _delete() async {
@@ -137,7 +153,7 @@ class _WorkplaceSettingsDialogState extends State<WorkplaceSettingsDialog> {
                       ),
                       const SizedBox(height: 16),
 
-                      Text('Folder on PC', style: textStyles.body.copyWith(fontWeight: FontWeight.w600)),
+                      Text(context.read<WorkplaceViewModel>().usesRealFolders ? 'Folder on PC' : 'Stored in this browser', style: textStyles.body.copyWith(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.all(10),
@@ -156,22 +172,28 @@ class _WorkplaceSettingsDialogState extends State<WorkplaceSettingsDialog> {
                                 style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                               ),
                             ),
-                            TextButton.icon(
-                              onPressed: () => context.read<WorkplaceViewModel>().revealInFinder(),
-                              icon: const Icon(Icons.open_in_new, size: 14),
-                              label: const Text('Open'),
-                            ),
+                            if (context.read<WorkplaceViewModel>().canRevealFolder)
+                              TextButton.icon(
+                                onPressed: () => context.read<WorkplaceViewModel>().revealWorkplaceFolder(),
+                                icon: const Icon(Icons.open_in_new, size: 14),
+                                label: const Text('Open'),
+                              ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 20),
 
                       // Git connection
-                      SwitchListTile(
-                        value: _connectGit,
-                        onChanged: (val) => setState(() => _connectGit = val),
-                        title: const Text('Connected Git Repository'),
-                        subtitle: const Text('Sync single workspace.json with GitHub'),
+                      // Its own Material: ListTile paints on the nearest one, which the
+                      // coloured Container above would hide (a debug-build assertion).
+                      Material(
+                        type: MaterialType.transparency,
+                        child: SwitchListTile(
+                          value: _connectGit,
+                          onChanged: (val) => setState(() => _connectGit = val),
+                          title: const Text('Connected Git Repository'),
+                          subtitle: const Text('Sync single workspace.json with GitHub'),
+                        ),
                       ),
                       if (_connectGit) ...[
                         const SizedBox(height: 10),
@@ -245,6 +267,12 @@ class _WorkplaceSettingsDialogState extends State<WorkplaceSettingsDialog> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (_error != null) ...[
+                      Expanded(
+                        child: Text(_error!, style: TextStyle(color: colors.statusError, fontSize: 12)),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
                     OutlinedButton(
                       onPressed: () => Navigator.of(context).pop(),
                       child: const Text('Cancel'),

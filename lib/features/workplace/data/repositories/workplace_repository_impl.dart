@@ -1,142 +1,116 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../domain/entities/workplace_content.dart';
 import '../../domain/entities/workplace_entity.dart';
+import '../../domain/entities/workplace_exception.dart';
 import '../../domain/repositories/workplace_repository.dart';
-import '../../presentation/services/native_mac_picker.dart';
+import '../storage/workplace_storage.dart';
+import '../storage/workplace_storage_factory.dart';
 
+/// The repository holds no file-system code of its own: all reads and writes go
+/// through a [WorkplaceStorage], real files on desktop/mobile and browser
+/// storage on the web. Tests pass a storage pointed at a temp directory.
 final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   final Dio _dio;
-  static const _workplaceFileName = 'workspace.json';
-  static const _registryFileName = 'workplaces_registry.json';
+  final WorkplaceStorage _storage;
 
-  WorkplaceRepositoryImpl({Dio? dio}) : _dio = dio ?? Dio();
+  WorkplaceRepositoryImpl({Dio? dio, WorkplaceStorage? storage})
+      : _dio = dio ??
+            Dio(BaseOptions(
+              connectTimeout: const Duration(seconds: 15),
+              sendTimeout: const Duration(seconds: 30),
+              receiveTimeout: const Duration(seconds: 30),
+            )),
+        _storage = storage ?? createPlatformWorkplaceStorage();
 
-  File? _cachedRegistryFile;
+  static const _remoteFileName = 'workspace.json';
 
-  Future<File> _getRegistryFile() async {
-    if (_cachedRegistryFile != null) return _cachedRegistryFile!;
-    Directory dir;
-    try {
-      dir = await getApplicationSupportDirectory();
-    } catch (_) {
-      final home = Platform.environment['HOME'] ?? '.';
-      dir = Directory(p.join(home, '.postpilot'));
-    }
-    if (!dir.existsSync()) {
-      dir.createSync(recursive: true);
-    }
-    final file = File(p.join(dir.path, _registryFileName));
-    _cachedRegistryFile = file;
-    return file;
-  }
+  @override
+  bool get usesRealFolders => _storage.usesRealFolders;
+
+  @override
+  bool get canPickFolder => _storage.canPickFolder;
+
+  @override
+  bool get canRevealFolder => _storage.canRevealFolder;
+
+  @override
+  String get fileManagerName => _storage.fileManagerName;
 
   @override
   Future<String> getDefaultWorkplacesDirectory({String? workplaceName}) async {
-    String baseDir;
-    try {
-      final docs = await getApplicationDocumentsDirectory();
-      baseDir = p.join(docs.path, 'PostPilot', 'Workplaces');
-    } catch (_) {
-      final home = Platform.environment['HOME'] ?? '.';
-      baseDir = p.join(home, 'Documents', 'PostPilot', 'Workplaces');
-    }
-
-    if (workplaceName != null && workplaceName.trim().isNotEmpty) {
-      final safeName = workplaceName
-          .trim()
-          .replaceAll(RegExp(r'[^a-zA-Z0-9_\-\s]'), '')
-          .replaceAll(RegExp(r'\s+'), '_');
-      return p.join(baseDir, safeName.isEmpty ? 'New_Workplace' : safeName);
-    }
-    return baseDir;
+    final baseDir = await _storage.defaultWorkplacesDirectory();
+    if (workplaceName == null || workplaceName.trim().isEmpty) return baseDir;
+    final safeName = workplaceName
+        .trim()
+        // \p{M}: vowel signs and other combining marks (Bengali, Hindi, accents) belong to the letters.
+        .replaceAll(RegExp(r'[^\p{L}\p{M}\p{N}_\-\s]', unicode: true), '')
+        .replaceAll(RegExp(r'\s+'), '_');
+    return p.join(baseDir, safeName.isEmpty ? 'New_Workplace' : safeName);
   }
 
   @override
-  Future<String?> pickFolder({String? initialPath}) => NativeMacPicker.pickFolder(initialPath: initialPath);
+  Future<String?> pickFolder({String? initialPath}) => _storage.pickFolder(initialPath: initialPath);
+
+  @override
+  Future<void> revealFolder(String folderPath) => _storage.revealFolder(folderPath);
+
+  // --- Registry -----------------------------------------------------------
 
   @override
   Future<List<WorkplaceEntity>> getWorkplaces() async {
-    final file = await _getRegistryFile();
-    if (!file.existsSync()) {
-      // First run: create a default workplace if none exists
-      final defaultWp = await _createInitialDefaultWorkplace();
-      return [defaultWp];
-    }
-    try {
-      final text = await file.readAsString();
-      final map = jsonDecode(text) as Map<String, dynamic>;
-      final list = map['workplaces'] as List? ?? [];
-      final workplaces = list
-          .map((item) => WorkplaceEntity.fromJson(item as Map<String, dynamic>))
-          .toList();
-      if (workplaces.isEmpty) {
-        final defaultWp = await _createInitialDefaultWorkplace();
-        return [defaultWp];
-      }
-      return workplaces;
-    } catch (e) {
-      debugPrint('Error reading workplaces registry: $e');
-      final defaultWp = await _createInitialDefaultWorkplace();
-      return [defaultWp];
-    }
+    final registry = await _readRegistry();
+    if (registry.workplaces.isNotEmpty) return registry.workplaces;
+    return [await _createInitialDefaultWorkplace()];
   }
 
   Future<WorkplaceEntity> _createInitialDefaultWorkplace() async {
-    final defaultFolder = await getDefaultWorkplacesDirectory(workplaceName: 'My Workplace');
     final workplace = WorkplaceEntity(
       id: const Uuid().v4(),
       name: 'My Workplace',
-      folderPath: defaultFolder,
+      folderPath: await getDefaultWorkplacesDirectory(workplaceName: 'My Workplace'),
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
-    await _saveRegistry([workplace], activeId: workplace.id);
-
-    // Initialize the single workspace.json file
-    final dir = Directory(workplace.folderPath);
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    final jsonFile = File(p.join(workplace.folderPath, _workplaceFileName));
-    if (!jsonFile.existsSync()) {
-      final content = WorkplaceContent.empty(workplace);
-      await jsonFile.writeAsString(content.toJsonString());
+    // Created on disk first: a registry entry must never point at a missing file.
+    if (await _storage.readWorkspace(workplace.folderPath) == null) {
+      await _storage.writeWorkspace(workplace.folderPath, WorkplaceContent.empty(workplace).toJsonString());
     }
+    await _saveRegistry([workplace], activeId: workplace.id);
     return workplace;
   }
 
-  Future<void> _saveRegistry(List<WorkplaceEntity> workplaces, {String? activeId}) async {
-    final file = await _getRegistryFile();
-    final currentActive = activeId ?? await _readActiveId();
-    final data = {
-      'activeId': currentActive,
-      'workplaces': workplaces.map((w) => w.toJson()).toList(),
-    };
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
+  Future<({String? activeId, List<WorkplaceEntity> workplaces})> _readRegistry() async {
+    final text = await _storage.readRegistry();
+    if (text == null) return (activeId: null, workplaces: <WorkplaceEntity>[]);
+    try {
+      final map = jsonDecode(text) as Map<String, dynamic>;
+      final list = map['workplaces'] as List? ?? [];
+      return (
+        activeId: map['activeId'] as String?,
+        workplaces: [for (final item in list) WorkplaceEntity.fromJson(item as Map<String, dynamic>)],
+      );
+    } catch (e) {
+      debugPrint('Error reading workplaces registry: $e');
+      return (activeId: null, workplaces: <WorkplaceEntity>[]);
+    }
   }
 
-  Future<String?> _readActiveId() async {
-    final file = await _getRegistryFile();
-    if (!file.existsSync()) return null;
-    try {
-      final text = await file.readAsString();
-      final map = jsonDecode(text) as Map<String, dynamic>;
-      return map['activeId'] as String?;
-    } catch (_) {
-      return null;
-    }
+  Future<void> _saveRegistry(List<WorkplaceEntity> workplaces, {String? activeId}) async {
+    final data = {
+      'activeId': activeId ?? (await _readRegistry()).activeId,
+      'workplaces': workplaces.map((w) => w.toJson()).toList(),
+    };
+    await _storage.writeRegistry(const JsonEncoder.withIndent('  ').convert(data));
   }
 
   @override
   Future<WorkplaceEntity?> getActiveWorkplace() async {
     final workplaces = await getWorkplaces();
-    if (workplaces.isEmpty) return null;
-    final activeId = await _readActiveId();
-    if (activeId == null) return workplaces.first;
+    final activeId = (await _readRegistry()).activeId;
     return workplaces.firstWhere((w) => w.id == activeId, orElse: () => workplaces.first);
   }
 
@@ -154,65 +128,82 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     String? gitBranch,
     String? gitToken,
   }) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) throw const WorkplaceException('Enter a name for the workplace.');
+    final folder = folderPath.trim();
+    final folderError = _storage.validateFolderPath(folder);
+    if (folderError != null) throw WorkplaceException(folderError);
+
+    final repoUrl = _blankToNull(gitRepoUrl);
+    final token = _blankToNull(gitToken);
+    if (repoUrl != null && token == null) {
+      throw const WorkplaceException('Enter a GitHub personal access token to connect the repository.');
+    }
+
     final workplaces = await getWorkplaces();
-    final id = const Uuid().v4();
+    final clash = workplaces.where((w) => _sameFolder(w.folderPath, folder)).firstOrNull;
+    if (clash != null) {
+      throw WorkplaceException('The workplace "${clash.name}" already uses this folder. Choose a different folder.');
+    }
+
     var workplace = WorkplaceEntity(
-      id: id,
-      name: name.trim(),
-      folderPath: folderPath.trim(),
-      gitRepoUrl: gitRepoUrl?.trim().isNotEmpty == true ? gitRepoUrl!.trim() : null,
-      gitBranch: gitBranch?.trim().isNotEmpty == true ? gitBranch!.trim() : 'main',
-      gitToken: gitToken?.trim().isNotEmpty == true ? gitToken!.trim() : null,
+      id: const Uuid().v4(),
+      name: trimmedName,
+      folderPath: folder,
+      gitRepoUrl: repoUrl,
+      gitBranch: _blankToNull(gitBranch) ?? 'main',
+      gitToken: token,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
 
-    // 1. Ensure folder exists on PC
-    final dir = Directory(workplace.folderPath);
-    if (!dir.existsSync()) {
-      dir.createSync(recursive: true);
-    }
-
-    // 2. Check if git repo connection is requested
-    final jsonFile = File(p.join(workplace.folderPath, _workplaceFileName));
-    WorkplaceContent initialContent;
-
-    if (workplace.isGitConnected && workplace.gitToken != null) {
-      try {
-        // Try pulling remote workspace.json if it already exists
-        initialContent = await _pullFromRemoteGit(workplace);
-        await jsonFile.writeAsString(initialContent.toJsonString());
-        workplace = workplace.copyWith(lastSyncedAt: DateTime.now());
-      } catch (e) {
-        debugPrint('Remote Git workspace.json not found or empty, creating local initial file: $e');
-        initialContent = WorkplaceContent.empty(workplace);
-        await jsonFile.writeAsString(initialContent.toJsonString());
-        // Try initial push to remote repo
-        try {
-          await _pushToRemoteGit(workplace, initialContent.toJsonString(), message: 'Initial commit from PostPilot');
-          workplace = workplace.copyWith(lastSyncedAt: DateTime.now());
-        } catch (pushErr) {
-          debugPrint('Initial push notice: $pushErr');
-        }
-      }
+    final existing = await _storage.readWorkspace(folder);
+    if (existing != null) {
+      // Opening a folder that already is a workspace: keep it exactly as it is.
+      _parseContent(existing, workplace);
+    } else if (workplace.isGitConnected) {
+      workplace = await _initFromGit(workplace);
     } else {
-      // Local folder only
-      if (!jsonFile.existsSync()) {
-        initialContent = WorkplaceContent.empty(workplace);
-        await jsonFile.writeAsString(initialContent.toJsonString());
-      }
+      await _storage.writeWorkspace(folder, WorkplaceContent.empty(workplace).toJsonString());
     }
 
-    // 3. Register workplace and make it active
-    final updated = [...workplaces, workplace];
-    await _saveRegistry(updated, activeId: workplace.id);
+    await _saveRegistry([...workplaces, workplace], activeId: workplace.id);
     return workplace;
+  }
+
+  /// A new Git-connected workplace starts from the repository's copy; if the
+  /// repository has none yet, from an empty workspace that is pushed as its first commit.
+  /// Anything else wrong (bad token, unknown repository, no network) is reported
+  /// rather than silently creating a workplace that can never sync.
+  Future<WorkplaceEntity> _initFromGit(WorkplaceEntity workplace) async {
+    final repoInfo = _parseRepo(workplace.gitRepoUrl!);
+    final token = workplace.gitToken!;
+    try {
+      await _dio.get(
+        'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}',
+        options: Options(headers: _authHeaders(token)),
+      );
+    } on DioException catch (e) {
+      throw _formatGitDioError(e, repoInfo: repoInfo, branch: workplace.gitBranch, operation: 'connecting to the repository');
+    }
+
+    try {
+      final content = await _pullFromRemoteGit(workplace);
+      await _storage.writeWorkspace(workplace.folderPath, content.toJsonString());
+    } on _RemoteWorkspaceMissing {
+      final empty = WorkplaceContent.empty(workplace).toJsonString();
+      await _storage.writeWorkspace(workplace.folderPath, empty);
+      await _pushToRemoteGit(workplace, empty, message: 'Initial commit from PostPilot');
+    }
+    return workplace.copyWith(lastSyncedAt: DateTime.now());
   }
 
   @override
   Future<void> updateWorkplace(WorkplaceEntity workplace) async {
-    final workplaces = await getWorkplaces();
-    final updated = workplaces.map((w) => w.id == workplace.id ? workplace.copyWith(updatedAt: DateTime.now()) : w).toList();
+    final registry = await _readRegistry();
+    final updated = [
+      for (final w in registry.workplaces) w.id == workplace.id ? workplace.copyWith(updatedAt: DateTime.now()) : w,
+    ];
     await _saveRegistry(updated);
   }
 
@@ -220,104 +211,105 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
   Future<void> deleteWorkplace(String id) async {
     final workplaces = await getWorkplaces();
     final filtered = workplaces.where((w) => w.id != id).toList();
-    final activeId = await _readActiveId();
-    final newActive = activeId == id ? (filtered.isNotEmpty ? filtered.first.id : null) : activeId;
+    final activeId = (await _readRegistry()).activeId;
+    final newActive = activeId == id ? filtered.firstOrNull?.id : activeId;
     await _saveRegistry(filtered, activeId: newActive);
   }
 
+  // --- workspace.json -----------------------------------------------------
+
   @override
   Future<WorkplaceContent> loadWorkplaceContent(WorkplaceEntity workplace) async {
-    final file = File(p.join(workplace.folderPath, _workplaceFileName));
-    if (!file.existsSync()) {
+    final text = await _storage.readWorkspace(workplace.folderPath);
+    if (text == null) {
       final initial = WorkplaceContent.empty(workplace);
-      await file.writeAsString(initial.toJsonString());
+      await _storage.writeWorkspace(workplace.folderPath, initial.toJsonString());
       return initial;
     }
-    final contentStr = await file.readAsString();
-    return WorkplaceContent.fromJsonString(contentStr, fallbackWorkplace: workplace);
+    return _parseContent(text, workplace);
   }
 
   @override
   Future<void> saveWorkplaceContent(WorkplaceEntity workplace, WorkplaceContent content) async {
-    final dir = Directory(workplace.folderPath);
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    final file = File(p.join(workplace.folderPath, _workplaceFileName));
-    final jsonStr = content.toJsonString();
-    await file.writeAsString(jsonStr);
-
-    // If git connected, auto-sync or notify
+    await _storage.writeWorkspace(workplace.folderPath, content.toJsonString());
     await updateWorkplace(workplace.copyWith(updatedAt: DateTime.now()));
   }
+
+  WorkplaceContent _parseContent(String text, WorkplaceEntity workplace) {
+    try {
+      return WorkplaceContent.fromJsonString(text, fallbackWorkplace: workplace);
+    } catch (e) {
+      throw WorkplaceException(
+        'The workspace.json in "${workplace.folderPath}" is not a valid PostPilot workspace ($e). '
+        'Nothing was changed.',
+      );
+    }
+  }
+
+  // --- Git ----------------------------------------------------------------
 
   @override
   Future<void> syncWithGit(WorkplaceEntity workplace, {String? commitMessage}) async {
     if (!workplace.isGitConnected || workplace.gitToken == null) {
-      throw Exception('This workplace is not connected to a Git repository or has no token.');
+      throw const WorkplaceException('This workplace is not connected to a Git repository or has no token.');
     }
     final content = await loadWorkplaceContent(workplace);
-    final jsonStr = content.toJsonString();
-    await _pushToRemoteGit(workplace, jsonStr, message: commitMessage ?? 'Update workplace data from PostPilot');
+    await _pushToRemoteGit(workplace, content.toJsonString(), message: commitMessage ?? 'Update workplace data from PostPilot');
     await updateWorkplace(workplace.copyWith(lastSyncedAt: DateTime.now()));
   }
 
   @override
   Future<WorkplaceContent> pullFromGit(WorkplaceEntity workplace) async {
     if (!workplace.isGitConnected || workplace.gitToken == null) {
-      throw Exception('This workplace is not connected to a Git repository or has no token.');
+      throw const WorkplaceException('This workplace is not connected to a Git repository or has no token.');
     }
     final content = await _pullFromRemoteGit(workplace);
-    final file = File(p.join(workplace.folderPath, _workplaceFileName));
-    await file.writeAsString(content.toJsonString());
+    await _storage.writeWorkspace(workplace.folderPath, content.toJsonString());
     await updateWorkplace(workplace.copyWith(lastSyncedAt: DateTime.now()));
     return content;
   }
 
-  // --- GitHub REST API Git Operations with Tokens (classic) ---
+  Map<String, String> _authHeaders(String token) => {
+        'Authorization': 'token $token',
+        'Accept': 'application/vnd.github.v3+json',
+      };
 
   ({String owner, String repo}) _parseRepo(String url) {
-    var cleaned = url.trim().replaceFirst(RegExp(r'\.git$'), '');
-    cleaned = cleaned.replaceFirst(RegExp(r'^https?://github\.com/'), '');
+    var cleaned = url.trim();
+    cleaned = cleaned.replaceFirst(RegExp(r'^https?://(www\.)?github\.com/'), '');
     cleaned = cleaned.replaceFirst(RegExp(r'^git@github\.com:'), '');
-    final parts = cleaned.split('/');
+    final parts = cleaned.split('/').where((s) => s.isNotEmpty).toList();
     if (parts.length >= 2) {
-      return (owner: parts[0], repo: parts[1]);
+      return (owner: parts[0], repo: parts[1].replaceFirst(RegExp(r'\.git$'), ''));
     }
-    throw Exception('Invalid GitHub repository format. Expected "owner/repo" or "https://github.com/owner/repo"');
+    throw const WorkplaceException(
+      'Invalid GitHub repository. Use "owner/repo" or "https://github.com/owner/repo".',
+    );
   }
 
   Future<WorkplaceContent> _pullFromRemoteGit(WorkplaceEntity workplace) async {
     final repoInfo = _parseRepo(workplace.gitRepoUrl!);
     final branch = workplace.gitBranch;
     final token = workplace.gitToken!;
-    final path = 'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/$_workplaceFileName?ref=$branch';
+    final path =
+        'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/$_remoteFileName?ref=${Uri.encodeQueryComponent(branch)}';
 
     try {
-      final res = await _dio.get(
-        path,
-        options: Options(
-          headers: {
-            'Authorization': 'token $token',
-            'Accept': 'application/vnd.github.v3+json',
-          },
-        ),
-      );
+      final res = await _dio.get(path, options: Options(headers: _authHeaders(token)));
 
       if (res.statusCode == 200 && res.data is Map) {
         final encoding = res.data['encoding'] as String?;
         final contentRaw = res.data['content'] as String;
-        String jsonStr;
-        if (encoding == 'base64') {
-          jsonStr = utf8.decode(base64Decode(contentRaw.replaceAll(RegExp(r'\s'), '')));
-        } else {
-          jsonStr = contentRaw;
-        }
-        return WorkplaceContent.fromJsonString(jsonStr, fallbackWorkplace: workplace);
+        final jsonStr = encoding == 'base64'
+            ? utf8.decode(base64Decode(contentRaw.replaceAll(RegExp(r'\s'), '')))
+            : contentRaw;
+        return _parseContent(jsonStr, workplace);
       }
-      throw Exception('Unexpected response format from GitHub');
+      throw const WorkplaceException('Unexpected response format from GitHub.');
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
-        throw Exception(
-          'No remote "$_workplaceFileName" found on branch "$branch" in repository "${repoInfo.owner}/${repoInfo.repo}". Sync (push) first to create it.',
+        throw _RemoteWorkspaceMissing(
+          'No remote "$_remoteFileName" found on branch "$branch" in repository "${repoInfo.owner}/${repoInfo.repo}". Sync (push) first to create it.',
         );
       }
       throw _formatGitDioError(e, repoInfo: repoInfo, branch: branch, operation: 'pulling from Git');
@@ -329,17 +321,12 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     required String branch,
     required String token,
   }) async {
-    final branchUrl = 'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/branches/$branch';
-    final authHeader = {
-      'Authorization': 'token $token',
-      'Accept': 'application/vnd.github.v3+json',
-    };
+    final authHeader = _authHeaders(token);
+    final repoUrl = 'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}';
 
     try {
-      final res = await _dio.get(branchUrl, options: Options(headers: authHeader));
-      if (res.statusCode == 200) {
-        return; // Target branch already exists
-      }
+      await _dio.get('$repoUrl/branches/${Uri.encodeComponent(branch)}', options: Options(headers: authHeader));
+      return; // Target branch already exists
     } on DioException catch (e) {
       if (e.response?.statusCode != 404) {
         throw _formatGitDioError(e, repoInfo: repoInfo, branch: branch, operation: 'verifying branch');
@@ -348,30 +335,18 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
 
     // Branch 404 Not Found: auto-create it from repository's default branch
     try {
-      // 1. Get default branch name
-      final repoRes = await _dio.get(
-        'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}',
-        options: Options(headers: authHeader),
-      );
+      final repoRes = await _dio.get(repoUrl, options: Options(headers: authHeader));
       final defaultBranch = (repoRes.data is Map ? repoRes.data['default_branch'] : null) as String? ?? 'main';
 
-      // 2. Get latest commit SHA on default branch
-      final refRes = await _dio.get(
-        'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/git/ref/heads/$defaultBranch',
-        options: Options(headers: authHeader),
-      );
+      final refRes = await _dio.get('$repoUrl/git/ref/heads/$defaultBranch', options: Options(headers: authHeader));
       final defaultSha = (refRes.data is Map && refRes.data['object'] is Map)
           ? refRes.data['object']['sha'] as String?
           : null;
 
       if (defaultSha != null) {
-        // 3. Create the new branch reference
         await _dio.post(
-          'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/git/refs',
-          data: {
-            'ref': 'refs/heads/$branch',
-            'sha': defaultSha,
-          },
+          '$repoUrl/git/refs',
+          data: {'ref': 'refs/heads/$branch', 'sha': defaultSha},
           options: Options(headers: authHeader),
         );
         debugPrint('PostPilot: Auto-created remote branch "$branch" from "$defaultBranch"');
@@ -385,95 +360,55 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     final repoInfo = _parseRepo(workplace.gitRepoUrl!);
     final branch = workplace.gitBranch;
     final token = workplace.gitToken!;
+    final headers = _authHeaders(token);
 
-    // 1. Ensure remote branch exists (auto-create from default branch if needed)
     await _ensureBranchExists(repoInfo: repoInfo, branch: branch, token: token);
 
-    final url = 'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/$_workplaceFileName';
+    final url = 'https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/$_remoteFileName';
+    final ref = Uri.encodeQueryComponent(branch);
 
-    // 2. Get current SHA if file already exists on this branch
-    String? currentSha;
-    try {
-      final getRes = await _dio.get(
-        '$url?ref=$branch',
-        options: Options(
-          headers: {
-            'Authorization': 'token $token',
-            'Accept': 'application/vnd.github.v3+json',
-          },
-        ),
-      );
-      if (getRes.statusCode == 200 && getRes.data is Map) {
-        currentSha = getRes.data['sha'] as String?;
-      }
-    } on DioException catch (e) {
-      if (e.response?.statusCode != 404) {
+    Future<String?> currentSha() async {
+      try {
+        final res = await _dio.get('$url?ref=$ref', options: Options(headers: headers));
+        return res.data is Map ? res.data['sha'] as String? : null;
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) return null;
         throw _formatGitDioError(e, repoInfo: repoInfo, branch: branch, operation: 'fetching remote file');
       }
-    } catch (_) {}
+    }
 
-    // 3. Commit & push file
-    try {
-      final putRes = await _dio.put(
-        url,
-        data: {
-          'message': message,
-          'content': base64Encode(utf8.encode(jsonContent)),
-          'branch': branch,
-          'sha': ?currentSha,
-        },
-        options: Options(
-          headers: {
-            'Authorization': 'token $token',
-            'Accept': 'application/vnd.github.v3+json',
+    Future<void> put(String? sha) => _dio.put(
+          url,
+          data: {
+            'message': message,
+            'content': base64Encode(utf8.encode(jsonContent)),
+            'branch': branch,
+            'sha': ?sha,
           },
-        ),
-      );
+          options: Options(headers: headers),
+        );
 
-      if (putRes.statusCode != 200 && putRes.statusCode != 201) {
-        throw Exception('GitHub responded with HTTP ${putRes.statusCode}');
-      }
+    final sha = await currentSha();
+    try {
+      await put(sha);
     } on DioException catch (e) {
-      // 409 Conflict: SHA mismatch if someone else pushed to remote; retry with updated SHA
+      // 409 Conflict: the remote file changed since we read its SHA; retry once with the latest.
       if (e.response?.statusCode == 409) {
-        try {
-          final retryGet = await _dio.get(
-            '$url?ref=$branch',
-            options: Options(
-              headers: {
-                'Authorization': 'token $token',
-                'Accept': 'application/vnd.github.v3+json',
-              },
-            ),
-          );
-          if (retryGet.statusCode == 200 && retryGet.data is Map) {
-            final latestSha = retryGet.data['sha'] as String?;
-            if (latestSha != null && latestSha != currentSha) {
-              await _dio.put(
-                url,
-                data: {
-                  'message': message,
-                  'content': base64Encode(utf8.encode(jsonContent)),
-                  'branch': branch,
-                  'sha': latestSha,
-                },
-                options: Options(
-                  headers: {
-                    'Authorization': 'token $token',
-                    'Accept': 'application/vnd.github.v3+json',
-                  },
-                ),
-              );
-              return;
-            }
+        final latest = await currentSha();
+        if (latest != null && latest != sha) {
+          try {
+            await put(latest);
+            return;
+          } on DioException catch (retryError) {
+            throw _formatGitDioError(retryError, repoInfo: repoInfo, branch: branch, operation: 'pushing workplace to Git');
           }
-        } catch (_) {}
+        }
       }
       throw _formatGitDioError(e, repoInfo: repoInfo, branch: branch, operation: 'pushing workplace to Git');
     }
   }
 
-  Exception _formatGitDioError(
+  WorkplaceException _formatGitDioError(
     DioException e, {
     required ({String owner, String repo}) repoInfo,
     required String branch,
@@ -483,33 +418,49 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository {
     final responseMsg = e.response?.data is Map ? e.response?.data['message'] as String? : null;
 
     if (status == 401) {
-      return Exception('GitHub Authentication failed: Personal Access Token (classic) is invalid or expired.');
+      return const WorkplaceException('GitHub Authentication failed: Personal Access Token (classic) is invalid or expired.');
     }
     if (status == 403) {
-      return Exception(
+      return WorkplaceException(
         'GitHub Access Denied: Token lacks permission for repository "${repoInfo.owner}/${repoInfo.repo}". Ensure your token has "repo" scope.',
       );
     }
     if (status == 404) {
-      return Exception(
+      return WorkplaceException(
         'GitHub Not Found: Repository "${repoInfo.owner}/${repoInfo.repo}" or branch "$branch" was not found, or token has insufficient permissions.',
       );
     }
     if (status == 409) {
       if (responseMsg != null && (responseMsg.contains('Secret detected') || responseMsg.contains('Repository rule violations'))) {
-        return Exception('GitHub Security Block: A secret or token was detected in the payload and blocked by GitHub Push Protection.');
+        return const WorkplaceException(
+          'GitHub Security Block: A secret or token was detected in the payload and blocked by GitHub Push Protection.',
+        );
       }
-      return Exception('GitHub Conflict: Remote file has changed. Pull changes before pushing.');
+      return const WorkplaceException('GitHub Conflict: Remote file has changed. Pull changes before pushing.');
     }
     if (status == 422) {
-      return Exception('GitHub Validation error: ${responseMsg ?? "Invalid branch or commit state."}');
+      return WorkplaceException('GitHub Validation error: ${responseMsg ?? "Invalid branch or commit state."}');
     }
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
         e.type == DioExceptionType.connectionError) {
-      return Exception('Network error: Unable to reach GitHub. Please verify your internet connection.');
+      return const WorkplaceException('Network error: Unable to reach GitHub. Please verify your internet connection.');
     }
-    return Exception('GitHub error ($status) during $operation: ${responseMsg ?? e.message}');
+    return WorkplaceException('GitHub error ($status) during $operation: ${responseMsg ?? e.message}');
   }
+
+  // --- helpers ------------------------------------------------------------
+
+  String? _blankToNull(String? value) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
+
+  bool _sameFolder(String a, String b) => p.normalize(a.trim()).toLowerCase() == p.normalize(b.trim()).toLowerCase();
+}
+
+/// The repository answered, but has no `workspace.json` on the branch yet.
+final class _RemoteWorkspaceMissing extends WorkplaceException {
+  const _RemoteWorkspaceMissing(super.message);
 }

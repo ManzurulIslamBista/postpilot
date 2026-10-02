@@ -76,20 +76,51 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
 
+  /// Empties everything a workplace owns (collections, folders, requests and
+  /// all that hangs off them, environments, globals). `entity_docs`,
+  /// `entity_tags` and `entity_uids` key their rows by `(kind, id)` without a
+  /// foreign key, so deleting the entities does not remove them; they are
+  /// cleared explicitly or the next workplace would show the last one's tags.
   Future<void> clearWorkplaceData() async {
     await transaction(() async {
       await delete(responseExamples).go();
       await delete(requestScripts).go();
+      await delete(requestSettingEntries).go();
       await delete(requests).go();
       await delete(folders).go();
       await delete(collectionVariables).go();
       await delete(collectionAuth).go();
+      await delete(gitBaseEntries).go();
+      await delete(gitLinks).go();
       await delete(collections).go();
       await delete(environmentVariables).go();
       await delete(environments).go();
       await delete(globalVariables).go();
+      await delete(entityDocs).go();
+      await delete(entityTags).go();
+      await delete(entityUids).go();
     });
   }
+
+  /// Emits whenever a table [clearWorkplaceData] empties changes, which is
+  /// exactly when the workplace's `workspace.json` is out of date.
+  Stream<void> workplaceDataChanges() => tableUpdates(
+        TableUpdateQuery.onAllTables([
+          collections,
+          folders,
+          requests,
+          environments,
+          environmentVariables,
+          globalVariables,
+          collectionVariables,
+          collectionAuth,
+          requestScripts,
+          responseExamples,
+          requestSettingEntries,
+          entityDocs,
+          entityTags,
+        ]),
+      );
 
   @override
   int get schemaVersion => 4;

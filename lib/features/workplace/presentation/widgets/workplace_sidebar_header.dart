@@ -86,25 +86,27 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                 children: [
                   Icon(Icons.add_circle_outline, size: 16),
                   SizedBox(width: 8),
-                  Text('Add Workplace…'),
+                  Flexible(child: Text('Add Workplace…', overflow: TextOverflow.ellipsis)),
                 ],
               ),
             ),
           );
 
           if (active != null) {
-            items.add(
-              const PopupMenuItem<String>(
-                value: 'reveal_in_finder',
-                child: Row(
-                  children: [
-                    Icon(Icons.folder_open, size: 16),
-                    SizedBox(width: 8),
-                    Text('Reveal in Finder'),
-                  ],
+            if (vm.canRevealFolder) {
+              items.add(
+                PopupMenuItem<String>(
+                  value: 'reveal_in_finder',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.folder_open, size: 16),
+                      const SizedBox(width: 8),
+                      Flexible(child: Text('Show in ${vm.fileManagerName}', overflow: TextOverflow.ellipsis)),
+                    ],
+                  ),
                 ),
-              ),
-            );
+              );
+            }
 
             if (active.isGitConnected) {
               items.add(
@@ -114,7 +116,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                     children: [
                       Icon(Icons.sync, size: 16),
                       SizedBox(width: 8),
-                      Text('Sync with Git'),
+                      Flexible(child: Text('Sync with Git', overflow: TextOverflow.ellipsis)),
                     ],
                   ),
                 ),
@@ -126,7 +128,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                     children: [
                       Icon(Icons.cloud_download_outlined, size: 16),
                       SizedBox(width: 8),
-                      Text('Pull from Git'),
+                      Flexible(child: Text('Pull from Git', overflow: TextOverflow.ellipsis)),
                     ],
                   ),
                 ),
@@ -140,7 +142,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                   children: [
                     Icon(Icons.settings_outlined, size: 16),
                     SizedBox(width: 8),
-                    Text('Workplace Settings…'),
+                    Flexible(child: Text('Workplace Settings…', overflow: TextOverflow.ellipsis)),
                   ],
                 ),
               ),
@@ -229,7 +231,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
     } else if (action == 'add_workplace') {
       await AddWorkplaceDialog.show(context);
     } else if (action == 'reveal_in_finder') {
-      await vm.revealInFinder();
+      await vm.revealWorkplaceFolder();
     } else if (action == 'sync_git') {
       await vm.syncWithGit();
       if (context.mounted) {

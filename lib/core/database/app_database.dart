@@ -1,5 +1,5 @@
 import 'package:drift/drift.dart';
-import 'package:drift_flutter/drift_flutter.dart';
+import 'connection/app_connection.dart';
 import 'tables/collections_table.dart';
 import 'tables/requests_table.dart';
 import 'tables/environments_table.dart';
@@ -166,13 +166,7 @@ class AppDatabase extends _$AppDatabase {
         beforeOpen: (details) => customStatement('PRAGMA foreign_keys = ON'),
       );
 
-  // On web, sqlite3.wasm and drift_worker.js live in web/ (see web/drift_worker.dart
-  // for the worker source — recompile it with `dart compile js` if it changes).
-  static QueryExecutor _openConnection() => driftDatabase(
-        name: 'postpilot',
-        web: DriftWebOptions(
-          sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-          driftWorker: Uri.parse('drift_worker.js'),
-        ),
-      );
+  // The platform's connection lives in connection/: a SQLite file natively, and on
+  // the web SQLite-in-WebAssembly (sqlite3.wasm and drift_worker.js live in web/).
+  static QueryExecutor _openConnection() => openAppConnection();
 }

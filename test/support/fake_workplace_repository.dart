@@ -10,16 +10,14 @@ final class FakeWorkplaceRepository implements WorkplaceRepository {
   final Map<String, WorkplaceContent> _contents = {};
   String? _activeId;
 
-  /// What the "platform" can do: desktop-like by default, the web when [usesRealFolders] is false.
+  /// What the "platform" can do: desktop-like by default, the web when `usesRealFolders` is false.
   final bool _usesRealFolders;
   final bool _canPickFolder;
 
   /// Thrown by the next [createWorkplace], to see how the UI reports a failure.
   Object? createError;
 
-  FakeWorkplaceRepository({bool usesRealFolders = true, bool canPickFolder = false})
-      : _usesRealFolders = usesRealFolders,
-        _canPickFolder = canPickFolder;
+  FakeWorkplaceRepository({this._usesRealFolders = true, this._canPickFolder = false});
 
   @override
   bool get usesRealFolders => _usesRealFolders;

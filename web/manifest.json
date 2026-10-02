@@ -1,12 +1,12 @@
 {
-    "name": "postpilot",
-    "short_name": "postpilot",
+    "name": "PostPilot",
+    "short_name": "PostPilot",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#0D0F14",
+    "theme_color": "#0D0F14",
+    "description": "Design, send and test APIs - on desktop and mobile.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

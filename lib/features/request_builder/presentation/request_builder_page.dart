@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
+import '../../../core/layout/layout_prefs.dart';
 import '../../../core/theme/context_theme_extensions.dart';
+import '../../../core/widgets/gradient_button.dart';
+import '../../../core/widgets/resizable_split.dart';
 import '../../documentation/presentation/widgets/request_docs_tab.dart';
 import '../../scripting/presentation/widgets/request_tests_tab.dart';
 import '../../scripting/presentation/widgets/script_results_view.dart';
@@ -68,100 +71,241 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
   }
 }
 
+/// Below this width the response goes under the request whatever the saved
+/// preference says: two columns that narrow squeeze both editors unusably.
+const _sideBySideMinWidth = 920.0;
+
 class _RequestBuilderBody extends StatelessWidget {
   final RequestBuilderViewModel vm;
   const _RequestBuilderBody({required this.vm});
 
   @override
   Widget build(BuildContext context) {
-    final request = vm.request!;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final canSplitSideways = constraints.maxWidth >= _sideBySideMinWidth;
+          return Column(
             children: [
-              MethodDropdown(value: request.method, onChanged: vm.updateMethod),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextFormField(
-                  initialValue: request.url,
-                  decoration: const InputDecoration(hintText: 'https://api.example.com/{{path}}', isDense: true),
-                  onChanged: vm.updateUrl,
-                  onFieldSubmitted: (_) => vm.send(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.code, size: 18),
-                tooltip: 'Generate code',
-                onPressed: () => CodeSnippetDialog.show(context, vm),
-              ),
-              const SizedBox(width: 4),
-              if (vm.isSending)
-                OutlinedButton.icon(
-                  onPressed: vm.cancelSend,
-                  icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                  label: const Text('Cancel'),
-                )
-              else
-                FilledButton(onPressed: vm.send, child: const Text('Send')),
+              _UrlBar(vm: vm, canChooseLayout: canSplitSideways),
+              const SizedBox(height: 12),
+              Expanded(child: _SplitArea(vm: vm, canSplitSideways: canSplitSideways)),
             ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Request editor and response viewer as two floating panels with a drag
+/// handle between them. Side by side or stacked per [LayoutPrefs].
+class _SplitArea extends StatelessWidget {
+  final RequestBuilderViewModel vm;
+  final bool canSplitSideways;
+  const _SplitArea({required this.vm, required this.canSplitSideways});
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = context.watch<LayoutPrefs>();
+    final sideways = canSplitSideways && prefs.responseLayout == ResponseLayout.right;
+    return ResizableSplit(
+      axis: sideways ? Axis.horizontal : Axis.vertical,
+      fraction: prefs.requestFraction,
+      minFirst: sideways ? 340 : 190,
+      minSecond: sideways ? 320 : 190,
+      onFractionChanged: prefs.setRequestFraction,
+      onDragEnd: prefs.commit,
+      onReset: prefs.resetRequestFraction,
+      first: _Panel(child: _RequestPane(vm: vm)),
+      second: _Panel(child: _ResponsePane(vm: vm)),
+    );
+  }
+}
+
+/// A rounded, bordered surface that lifts a pane off the backdrop.
+class _Panel extends StatelessWidget {
+  final Widget child;
+  const _Panel({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.border),
+        boxShadow: [BoxShadow(color: colors.shadow, blurRadius: 14, offset: const Offset(0, 4))],
+      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(11), child: child),
+    );
+  }
+}
+
+/// Method + URL + Send as one rounded bar that lights up while the URL is focused.
+class _UrlBar extends StatefulWidget {
+  final RequestBuilderViewModel vm;
+  final bool canChooseLayout;
+  const _UrlBar({required this.vm, required this.canChooseLayout});
+
+  @override
+  State<_UrlBar> createState() => _UrlBarState();
+}
+
+class _UrlBarState extends State<_UrlBar> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final vm = widget.vm;
+    final request = vm.request!;
+    final layout = context.select<LayoutPrefs, ResponseLayout>((p) => p.responseLayout);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _focused ? colors.mainAccent : colors.border, width: _focused ? 1.4 : 1),
+        boxShadow: [
+          BoxShadow(
+            color: _focused ? colors.glow : colors.shadow,
+            blurRadius: _focused ? 16 : 10,
+            offset: const Offset(0, 3),
           ),
-        ),
-        Expanded(
-          child: DefaultTabController(
-            length: 7,
-            child: Column(
-              children: [
-                const TabBar(
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  tabs: [
-                    Tab(text: 'Params'),
-                    Tab(text: 'Headers'),
-                    Tab(text: 'Body'),
-                    Tab(text: 'Auth'),
-                    Tab(text: 'Tests'),
-                    Tab(text: 'Settings'),
-                    Tab(text: 'Docs'),
-                  ],
+        ],
+      ),
+      child: Row(
+        children: [
+          MethodDropdown(value: request.method, onChanged: vm.updateMethod),
+          Container(width: 1, height: 22, margin: const EdgeInsets.symmetric(horizontal: 6), color: colors.border),
+          Expanded(
+            child: Focus(
+              onFocusChange: (focused) => setState(() => _focused = focused),
+              child: TextFormField(
+                initialValue: request.url,
+                style: context.textStyles.body.copyWith(fontSize: 14),
+                decoration: const InputDecoration(
+                  hintText: 'https://api.example.com/{{path}}',
+                  isDense: true,
+                  filled: false,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 10),
                 ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _scrollable(KeyValueEditor(items: request.queryParams, onChanged: vm.updateQueryParams)),
-                      _scrollable(KeyValueEditor(items: request.headers, onChanged: vm.updateHeaders)),
-                      _padded(BodyEditor(body: request.body, onChanged: vm.updateBody)),
-                      _scrollable(AuthEditor(auth: request.auth, collectionId: request.collectionId, onChanged: vm.updateAuth)),
-                      _scrollable(RequestTestsTab(requestId: request.id)),
-                      _scrollable(RequestSettingsTab(requestId: request.id)),
-                      _scrollable(RequestDocsTab(requestId: request.id)),
-                    ],
-                  ),
-                ),
+                onChanged: vm.updateUrl,
+                onFieldSubmitted: (_) => vm.send(),
+              ),
+            ),
+          ),
+          if (widget.canChooseLayout)
+            IconButton(
+              icon: Icon(layout == ResponseLayout.right ? Icons.view_agenda_outlined : Icons.vertical_split_outlined, size: 18),
+              tooltip: layout == ResponseLayout.right ? 'Show response below' : 'Show response on the right',
+              onPressed: context.read<LayoutPrefs>().toggleResponseLayout,
+            ),
+          IconButton(
+            icon: const Icon(Icons.code, size: 18),
+            tooltip: 'Generate code',
+            onPressed: () => CodeSnippetDialog.show(context, vm),
+          ),
+          const SizedBox(width: 4),
+          if (vm.isSending)
+            OutlinedButton.icon(
+              onPressed: vm.cancelSend,
+              icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+              label: const Text('Cancel'),
+            )
+          else
+            GradientButton(label: 'Send', icon: Icons.send_rounded, onPressed: vm.send),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestPane extends StatelessWidget {
+  final RequestBuilderViewModel vm;
+  const _RequestPane({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    final request = vm.request!;
+    return DefaultTabController(
+      length: 7,
+      child: Column(
+        children: [
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: [
+                Tab(text: 'Params'),
+                Tab(text: 'Headers'),
+                Tab(text: 'Body'),
+                Tab(text: 'Auth'),
+                Tab(text: 'Tests'),
+                Tab(text: 'Settings'),
+                Tab(text: 'Docs'),
               ],
             ),
           ),
-        ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _scrollable(KeyValueEditor(items: request.queryParams, onChanged: vm.updateQueryParams)),
+                _scrollable(KeyValueEditor(items: request.headers, onChanged: vm.updateHeaders)),
+                _padded(BodyEditor(body: request.body, onChanged: vm.updateBody)),
+                _scrollable(AuthEditor(auth: request.auth, collectionId: request.collectionId, onChanged: vm.updateAuth)),
+                _scrollable(RequestTestsTab(requestId: request.id)),
+                _scrollable(RequestSettingsTab(requestId: request.id)),
+                _scrollable(RequestDocsTab(requestId: request.id)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _padded(Widget child) => Padding(padding: const EdgeInsets.all(12), child: child);
+
+  Widget _scrollable(Widget child) => SingleChildScrollView(padding: const EdgeInsets.all(12), child: child);
+}
+
+class _ResponsePane extends StatelessWidget {
+  final RequestBuilderViewModel vm;
+  const _ResponsePane({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    final request = vm.request!;
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         if (vm.errorMessage != null)
           Container(
-            width: double.infinity,
-            color: context.colors.statusError.withValues(alpha: 0.1),
+            color: colors.statusError.withValues(alpha: 0.1),
             child: vm.errorDetail == null
                 ? Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Text(vm.errorMessage!, style: TextStyle(color: context.colors.statusError)),
+                    child: Text(vm.errorMessage!, style: TextStyle(color: colors.statusError)),
                   )
                 : ExpansionTile(
                     tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                    title: Text(vm.errorMessage!, style: TextStyle(color: context.colors.statusError)),
+                    title: Text(vm.errorMessage!, style: TextStyle(color: colors.statusError)),
                     children: [
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: Text(vm.errorDetail!, style: TextStyle(color: context.colors.statusError)),
+                          child: Text(vm.errorDetail!, style: TextStyle(color: colors.statusError)),
                         ),
                       ),
                     ],
@@ -169,18 +313,12 @@ class _RequestBuilderBody extends StatelessWidget {
           ),
         if (vm.lastScriptResult != null) ScriptResultsView(result: vm.lastScriptResult!),
         Expanded(
-          child: Container(
+          child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(border: Border(top: BorderSide(color: context.colors.border))),
             child: ResponseViewer(response: vm.response, requestId: request.id, requestName: request.name),
           ),
         ),
       ],
     );
   }
-
-  Widget _padded(Widget child) => Padding(padding: const EdgeInsets.all(12), child: child);
-
-  Widget _scrollable(Widget child) =>
-      SingleChildScrollView(padding: const EdgeInsets.all(12), child: child);
 }

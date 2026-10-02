@@ -1,3 +1,4 @@
+import '../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
@@ -56,7 +57,7 @@ class _ImportPostmanDialogState extends State<ImportPostmanDialog> {
                 TextField(
                   controller: _controller,
                   maxLines: 10,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 12),
                   decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '{ "info": { "name": "..." }, "item": [...] }'),
                   onChanged: (_) => setState(() {}),
                 ),

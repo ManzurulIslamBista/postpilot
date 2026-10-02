@@ -1,3 +1,4 @@
+import '../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -71,7 +72,7 @@ class _ExportPostmanDialogState extends State<ExportPostmanDialog> {
                         : vm.exportedJson == null
                             ? const Center(child: CircularProgressIndicator())
                             : SingleChildScrollView(
-                                child: SelectableText(vm.exportedJson!, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                                child: SelectableText(vm.exportedJson!, style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 12)),
                               ),
                   ),
                 ],

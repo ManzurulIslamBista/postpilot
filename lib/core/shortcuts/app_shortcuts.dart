@@ -8,7 +8,8 @@ enum AppShortcut {
   newRequest(LogicalKeyboardKey.keyN, 'New request', browserReserved: true),
   focusSearch(LogicalKeyboardKey.keyK, 'Search collections'),
   closeRequest(LogicalKeyboardKey.keyW, 'Close current request', browserReserved: true),
-  openHistory(LogicalKeyboardKey.keyH, 'Open history', shift: true);
+  openHistory(LogicalKeyboardKey.keyH, 'Open history', shift: true),
+  toggleSidebar(LogicalKeyboardKey.keyB, 'Show or hide the sidebar', browserReserved: true);
 
   const AppShortcut(this.key, this.description, {this.shift = false, this.browserReserved = false});
 
@@ -46,6 +47,7 @@ final class ShortcutHandlers {
   final VoidCallback focusSearch;
   final VoidCallback closeRequest;
   final VoidCallback openHistory;
+  final VoidCallback toggleSidebar;
 
   const ShortcutHandlers({
     required this.sendRequest,
@@ -53,6 +55,7 @@ final class ShortcutHandlers {
     required this.focusSearch,
     required this.closeRequest,
     required this.openHistory,
+    required this.toggleSidebar,
   });
 
   VoidCallback handlerFor(AppShortcut shortcut) => switch (shortcut) {
@@ -61,6 +64,7 @@ final class ShortcutHandlers {
         AppShortcut.focusSearch => focusSearch,
         AppShortcut.closeRequest => closeRequest,
         AppShortcut.openHistory => openHistory,
+        AppShortcut.toggleSidebar => toggleSidebar,
       };
 }
 

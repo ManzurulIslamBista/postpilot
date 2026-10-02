@@ -1,3 +1,4 @@
+import '../../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -164,7 +165,7 @@ class AuthEditor extends StatelessWidget {
         TextFormField(
           initialValue: auth.jwtPayload,
           maxLines: 4,
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 13),
           decoration: const InputDecoration(labelText: 'Payload (JSON)'),
           onChanged: (v) => onChanged(auth.copyWith(jwtPayload: v)),
         ),

@@ -1,3 +1,4 @@
+import '../layout/layout_prefs.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:get_it/get_it.dart';
@@ -301,6 +302,7 @@ void _registerCookies() {
 }
 
 void _registerShell() {
+  locator.registerLazySingleton<LayoutPrefs>(LayoutPrefs.new);
   locator.registerLazySingleton<ShellViewModel>(
     () => ShellViewModel(locator<RequestRepository>()),
   );

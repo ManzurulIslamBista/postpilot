@@ -1,3 +1,4 @@
+import '../../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -169,7 +170,7 @@ class _WorkplaceSettingsDialogState extends State<WorkplaceSettingsDialog> {
                             Expanded(
                               child: Text(
                                 widget.workplace.folderPath,
-                                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                                style: const TextStyle(fontSize: 12, fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback),
                               ),
                             ),
                             if (context.read<WorkplaceViewModel>().canRevealFolder)

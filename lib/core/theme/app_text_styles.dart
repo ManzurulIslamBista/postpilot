@@ -1,5 +1,18 @@
 import 'package:flutter/material.dart';
 
+/// Font stacks, in preference order. Every desktop OS ships one of these, so
+/// nothing has to be bundled or downloaded; the web build falls through to the
+/// last entries.
+abstract final class AppFonts {
+  static const uiFamily = 'Segoe UI';
+  static const uiFallback = ['SF Pro Text', 'Inter', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'];
+
+  /// There is no generic "monospace" family on Windows/macOS, so code text
+  /// needs a concrete name or it silently renders in the proportional UI font.
+  static const monoFamily = 'Cascadia Mono';
+  static const monoFallback = ['Consolas', 'SF Mono', 'Menlo', 'Roboto Mono', 'Courier New', 'monospace'];
+}
+
 @immutable
 class AppTextStyles extends ThemeExtension<AppTextStyles> {
   final TextStyle heading;
@@ -15,10 +28,15 @@ class AppTextStyles extends ThemeExtension<AppTextStyles> {
   });
 
   static const _base = AppTextStyles(
-    heading: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-    body: TextStyle(fontSize: 14, fontWeight: FontWeight.w400),
+    heading: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: -0.1),
+    body: TextStyle(fontSize: 13, fontWeight: FontWeight.w400),
     caption: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
-    mono: TextStyle(fontSize: 13, fontFamily: 'monospace'),
+    mono: TextStyle(
+      fontSize: 12.5,
+      height: 1.45,
+      fontFamily: AppFonts.monoFamily,
+      fontFamilyFallback: AppFonts.monoFallback,
+    ),
   );
 
   static AppTextStyles forColor(Color color) => AppTextStyles(

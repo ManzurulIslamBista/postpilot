@@ -79,7 +79,7 @@ final class _App {
   final AppDatabase database;
   final _Repos repos;
   final ShellViewModel shell;
-  final WorkplaceViewModel vm;
+  WorkplaceViewModel vm;
 
   _App._(this.database, this.repos, this.shell, this.vm);
 
@@ -102,6 +102,31 @@ final class _App {
       [for (final c in await repos.collectionRepository.watchCollections().first) c.name];
 
   Future<List<String>> environmentNames() async => [for (final e in await repos.environmentRepository.watchAll().first) e.name];
+
+  Future<String?> activeEnvironmentName() async {
+    for (final e in await repos.environmentRepository.watchAll().first) {
+      if (e.isActive) return e.name;
+    }
+    return null;
+  }
+
+  Future<Map<String, int>> collectionIds() async => {
+        for (final c in await repos.collectionRepository.watchCollections().first) c.name: c.id,
+      };
+
+  /// A new view model over this same database: the app restarting without the
+  /// database being wiped (as on every reload of the web build).
+  WorkplaceViewModel restartedViewModel(WorkplaceRepositoryImpl repository) {
+    vm.dispose();
+    return WorkplaceViewModel(
+      repository: repository,
+      backupService: repos.backupService,
+      database: database,
+      shellViewModel: shell,
+      autosaveDelay: const Duration(milliseconds: 30),
+      settleDelay: const Duration(milliseconds: 20),
+    );
+  }
 
   Future<void> close() async {
     await vm.saveCurrentWorkplace(); // lets a save already under way finish before the files go
@@ -193,6 +218,61 @@ void main() {
 
     expect(app.vm.errorMessage, isNull);
     expect(await app.collectionNames(), ['Edited after start']);
+  });
+
+  test('a restart over the same database keeps row ids and the active environment', () async {
+    await app.vm.init();
+    await app.repos.collectionRepository.createCollection('Shop');
+    final testing = await app.repos.environmentRepository.create('Testing');
+    await app.repos.environmentRepository.setActive(testing);
+    await waitFor(() => namesInFile(app.vm.activeWorkplace!).contains('Shop'), reason: 'autosave');
+    await app.vm.saveCurrentWorkplace();
+    final idsBefore = await app.collectionIds();
+
+    app.vm = app.restartedViewModel(repository);
+    await app.vm.init();
+
+    expect(app.vm.errorMessage, isNull);
+    expect(await app.activeEnvironmentName(), 'Testing', reason: 'reloading must not forget the chosen environment');
+    expect(await app.collectionIds(), idsBefore, reason: 'the database was not rebuilt from the file');
+  });
+
+  test('after the database was rebuilt from the file, the next restart no longer rebuilds it', () async {
+    await app.vm.init();
+    await app.repos.collectionRepository.createCollection('Shop');
+    await app.repos.environmentRepository.create('Testing');
+    await waitFor(() => namesInFile(app.vm.activeWorkplace!).contains('Shop'), reason: 'autosave');
+    await app.close();
+
+    // A fresh database is rebuilt from the file at start...
+    app = _App(repository);
+    await app.vm.init();
+    expect(await app.collectionNames(), ['Shop']);
+    final testing = (await app.repos.environmentRepository.watchAll().first).single.id;
+    await app.repos.environmentRepository.setActive(testing);
+    final idsAfterRebuild = await app.collectionIds();
+
+    // ...and that rebuild wrote its new ids back, so this restart finds them equal.
+    app.vm = app.restartedViewModel(repository);
+    await app.vm.init();
+
+    expect(await app.activeEnvironmentName(), 'Testing');
+    expect(await app.collectionIds(), idsAfterRebuild);
+  });
+
+  test('a file changed from outside still replaces the database at start', () async {
+    await app.vm.init();
+    await app.repos.collectionRepository.createCollection('Before');
+    await waitFor(() => namesInFile(app.vm.activeWorkplace!).contains('Before'), reason: 'autosave');
+    await app.vm.saveCurrentWorkplace();
+    final workplace = app.vm.activeWorkplace!;
+    final snapshot = BackupSnapshot(exportedAt: DateTime.utc(2026, 1, 1), collections: const [BackupCollection(name: 'From a git pull')]);
+    File(p.join(workplace.folderPath, 'workspace.json')).writeAsStringSync(BackupCodec.encode(snapshot));
+
+    app.vm = app.restartedViewModel(repository);
+    await app.vm.init();
+
+    expect(await app.collectionNames(), ['From a git pull']);
   });
 
   test('swapping the database never autosaves the half-emptied state over a workplace file', () async {

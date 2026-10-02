@@ -1,3 +1,4 @@
+import '../../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -242,7 +243,7 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                           Expanded(
                             child: TextField(
                               controller: _folderController,
-                              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                              style: const TextStyle(fontSize: 12, fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback),
                               decoration: InputDecoration(
                                 hintText: realFolders ? 'Full path of the workplace folder' : 'Name to store it under',
                                 isDense: true,
@@ -301,7 +302,7 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                               subtitle: Text(
                                 _connectGit
                                     ? 'Syncs single workspace.json directly with GitHub'
-                                    : 'Optional: if unchecked, PostPilot uses the local PC folder only',
+                                    : 'Optional: if unchecked, the workplace stays on this device only',
                                 style: textStyles.caption.copyWith(color: colors.secondaryText),
                               ),
                               controlAffinity: ListTileControlAffinity.trailing,
@@ -383,7 +384,7 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                                     TextField(
                                       controller: _gitTokenController,
                                       obscureText: _obscureToken,
-                                      style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+                                      style: const TextStyle(fontSize: 13, fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback),
                                       decoration: InputDecoration(
                                         hintText: 'ghp_...',
                                         isDense: true,

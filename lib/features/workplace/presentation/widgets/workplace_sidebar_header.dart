@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../view_models/workplace_view_model.dart';
 import 'add_workplace_dialog.dart';
+import 'push_to_git.dart';
 import 'workplace_settings_dialog.dart';
 
 class WorkplaceSidebarHeader extends StatelessWidget {
@@ -233,16 +234,7 @@ class WorkplaceSidebarHeader extends StatelessWidget {
     } else if (action == 'reveal_in_finder') {
       await vm.revealWorkplaceFolder();
     } else if (action == 'sync_git') {
-      await vm.syncWithGit();
-      if (context.mounted) {
-        final error = vm.errorMessage;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error ?? 'Synced successfully with Git repository!'),
-            backgroundColor: error != null ? context.colors.statusError : null,
-          ),
-        );
-      }
+      await pushWorkplaceToGit(context, vm);
     } else if (action == 'pull_git') {
       await vm.pullFromGit();
       if (context.mounted) {

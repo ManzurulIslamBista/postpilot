@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/constants/app_constants.dart';
 import 'core/di/injector.dart';
+import 'core/layout/layout_prefs.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/view_models/auth_view_model.dart';
 import 'features/collections/presentation/view_models/collections_view_model.dart';
@@ -33,6 +34,7 @@ class PostPilotApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: locator<LinkedCollectionsViewModel>()),
         ChangeNotifierProvider.value(value: locator<SettingsViewModel>()),
         ChangeNotifierProvider.value(value: locator<TagFilterViewModel>()),
+        ChangeNotifierProvider.value(value: locator<LayoutPrefs>()),
       ],
       // A Selector so that typing in a settings field does not rebuild the app.
       child: Selector<SettingsViewModel, ThemeMode>(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../import_export/domain/services/backup_codec.dart';
 import '../../../import_export/domain/services/backup_service.dart';
 import '../../../shell/presentation/shell_view_model.dart';
 import '../../domain/entities/workplace_content.dart';
@@ -70,18 +71,29 @@ final class WorkplaceViewModel with ChangeNotifier {
   Future<void> init() async {
     _isBusy = true;
     notifyListeners();
+    var replaced = false;
     try {
       _workplaces = await repository.getWorkplaces();
       final active = await repository.getActiveWorkplace();
       if (active != null) {
         final content = await repository.loadWorkplaceContent(active);
         // An empty file next to a populated database means data that predates
-        // workplaces: adopt it instead of wiping it.
-        if (!_isEmpty(content)) await _withAutosaveHeld(() => _replaceDatabase(content));
+        // workplaces: adopt it instead of wiping it. A file the database already
+        // matches (the normal case, autosave keeps them in step) is left alone:
+        // reloading it would hand every row a new id and forget which environment
+        // was active. Only a file changed from outside (a Git pull, a manual edit)
+        // replaces the database.
+        if (!_isEmpty(content) && !await _databaseMatches(content)) {
+          await _withAutosaveHeld(() => _replaceDatabase(content));
+          replaced = true;
+        }
       }
       _activeWorkplace = active;
       _errorMessage = null;
       _startAutosave();
+      // The restored rows have new ids; write them back so the next start finds
+      // the file and the database identical again.
+      if (replaced) await saveCurrentWorkplace();
     } catch (e) {
       // Autosave stays off and no workplace is marked active: saving the
       // database over a file that could not be read would destroy it.
@@ -164,6 +176,19 @@ final class WorkplaceViewModel with ChangeNotifier {
     } catch (e) {
       debugPrint('Notice saving workplace: $e');
     }
+  }
+
+  /// The secret-marked values (passwords, tokens) the workspace holds, as
+  /// "Environment › name": everything a push to Git would publish in plain text.
+  Future<List<String>> secretsInWorkspace() async {
+    final snapshot = await backupService.snapshot();
+    return [
+      for (final environment in snapshot.environments)
+        for (final variable in environment.variables)
+          if (variable.isSecret && variable.value.isNotEmpty) '${environment.name} › ${variable.key}',
+      for (final global in snapshot.globals)
+        if (global.isSecret && global.value.isNotEmpty) 'Globals › ${global.key}',
+    ];
   }
 
   Future<void> syncWithGit({String? commitMessage}) async {
@@ -272,6 +297,24 @@ final class WorkplaceViewModel with ChangeNotifier {
     await database.clearWorkplaceData();
     if (!_isEmpty(content)) await backupService.restore(content.toJsonString());
     shellViewModel.closeRequest();
+  }
+
+  /// Whether the database already holds exactly what [content] describes. The
+  /// export date is ignored; everything else (including the file-local folder ids
+  /// the format uses) must be equal, which it is only if the file was written from
+  /// this very database.
+  Future<bool> _databaseMatches(WorkplaceContent content) async {
+    String fingerprint(BackupSnapshot snapshot) => BackupCodec.encode(BackupSnapshot(
+          exportedAt: DateTime.utc(2000),
+          collections: snapshot.collections,
+          environments: snapshot.environments,
+          globals: snapshot.globals,
+        ));
+    try {
+      return fingerprint(await backupService.snapshot()) == fingerprint(content.snapshot);
+    } catch (_) {
+      return false; // When in doubt, load the file: that is the safe direction.
+    }
   }
 
   bool _isEmpty(WorkplaceContent content) {

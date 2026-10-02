@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:postpilot/app.dart';
 import 'package:postpilot/core/database/app_database.dart';
+import 'package:postpilot/core/layout/layout_prefs.dart';
 import 'package:postpilot/core/di/injector.dart';
 import 'package:postpilot/core/shortcuts/app_shortcuts.dart';
 import 'package:postpilot/core/usecases/usecase.dart';
@@ -154,6 +155,7 @@ void main() {
       ..registerSingleton<LinkedCollectionsViewModel>(LinkedCollectionsViewModel(_LinkedCollections({1})))
       ..registerSingleton<SettingsViewModel>(SettingsViewModel(FakeSettingsRepository()))
       ..registerSingleton<TagFilterViewModel>(tagFilter)
+      ..registerSingleton<LayoutPrefs>(LayoutPrefs())
       ..registerSingleton<RequestConsoleLog>(RequestConsoleLog())
       ..registerFactory<ImportAnyViewModel>(() => ImportAnyViewModel(_Pending<ImportSummary, ImportAnyParams>()))
       ..registerFactory<BackupViewModel>(() => BackupViewModel(_Pending<BackupExport, NoParams>(), _Pending<ImportSummary, String>()))
@@ -180,6 +182,7 @@ void main() {
     locator<LinkedCollectionsViewModel>().dispose();
     locator<SettingsViewModel>().dispose();
     locator<TagFilterViewModel>().dispose();
+    locator<LayoutPrefs>().dispose();
     locator<RequestConsoleLog>().dispose();
     await locator.reset();
     await tags.close();

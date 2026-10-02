@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../../core/enums/http_method.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../../../../core/errors/unreachable_message.dart';
 import '../../../../core/network/api_http_response.dart';
 import '../../domain/entities/api_request_entity.dart';
 import '../../domain/entities/api_response_entity.dart';
@@ -102,7 +103,7 @@ final class RequestBuilderViewModel with ChangeNotifier {
         case NetworkErrorKind.timeout:
           return 'Request timed out';
         case NetworkErrorKind.connectionError:
-          return "Couldn't reach the server — check the URL and your connection";
+          return unreachableServerMessage();
         case NetworkErrorKind.badResponse:
           return 'The server returned an unexpected response';
         case NetworkErrorKind.cancelled:
@@ -116,7 +117,7 @@ final class RequestBuilderViewModel with ChangeNotifier {
     }
     if (error is InvalidRequestException) return error.message;
     if (error is FormatException) {
-      return "Couldn't reach the server — check the URL and your connection";
+      return unreachableServerMessage();
     }
     return 'Something went wrong sending this request';
   }

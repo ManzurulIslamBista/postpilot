@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/layout/layout_prefs.dart';
 import '../../../core/shortcuts/app_shortcuts.dart';
+import '../../../core/widgets/app_backdrop.dart';
+import '../../../core/widgets/split_handle.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../auth/presentation/widgets/account_dialog.dart';
 import '../../collections/presentation/view_models/collections_view_model.dart';
@@ -14,6 +17,7 @@ import '../../request_builder/presentation/request_builder_page.dart';
 import '../../settings/presentation/widgets/settings_dialog.dart';
 import '../../team/presentation/widgets/team_dialog.dart';
 import '../../workplace/presentation/view_models/workplace_view_model.dart';
+import '../../workplace/presentation/widgets/push_to_git.dart';
 import 'shell_view_model.dart';
 import 'widgets/request_tab_bar.dart';
 
@@ -43,50 +47,25 @@ class _ShellPageState extends State<ShellPage> {
         // Wrapped inside the route (not above MaterialApp) so dialogs, which
         // push their own focus scope, do not receive the shortcuts.
         return AppShortcuts(
-          handlers: _handlers(context),
+          handlers: _handlers(context, narrow: narrow),
           child: Scaffold(
             key: _scaffoldKey,
             drawer: narrow ? const Drawer(child: CollectionsSidebar()) : null,
-            body: Row(
-              children: [
-                if (!narrow) ...[
-                  const SizedBox(width: 280, child: CollectionsSidebar()),
-                  VerticalDivider(width: 1, color: context.colors.border),
-                ],
-                Expanded(
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.colors.border))),
-                        child: Row(
-                          children: [
-                            if (narrow)
-                              Builder(
-                                builder: (context) => IconButton(
-                                  icon: const Icon(Icons.menu, size: 20),
-                                  tooltip: 'Collections',
-                                  onPressed: () => Scaffold.of(context).openDrawer(),
-                                ),
-                              ),
-                            // Right-aligned while it fits; on a phone it scrolls instead of
-                            // overflowing, starting at the end so the environment picker stays in view.
-                            const Expanded(
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                reverse: true,
-                                child: _TopBarActions(),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const RequestTabBar(),
-                      const Expanded(child: _MainContent()),
-                    ],
+            body: AppBackdrop(
+              child: Row(
+                children: [
+                  if (!narrow) const _DesktopSidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _TopBar(narrow: narrow),
+                        const RequestTabBar(),
+                        const Expanded(child: _MainContent()),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -94,7 +73,7 @@ class _ShellPageState extends State<ShellPage> {
     );
   }
 
-  ShortcutHandlers _handlers(BuildContext context) {
+  ShortcutHandlers _handlers(BuildContext context, {required bool narrow}) {
     final shell = context.read<ShellViewModel>();
     return ShortcutHandlers(
       sendRequest: shell.sendSelected,
@@ -102,6 +81,14 @@ class _ShellPageState extends State<ShellPage> {
       focusSearch: () => _focusSearch(shell),
       closeRequest: shell.closeRequest,
       openHistory: () => HistoryDialog.show(context),
+      toggleSidebar: () {
+        if (narrow) {
+          final scaffold = _scaffoldKey.currentState;
+          scaffold == null || scaffold.isDrawerOpen ? scaffold?.closeDrawer() : scaffold.openDrawer();
+        } else {
+          context.read<LayoutPrefs>().toggleSidebar();
+        }
+      },
     );
   }
 
@@ -132,6 +119,79 @@ class _ShellPageState extends State<ShellPage> {
   }
 }
 
+/// The collections column with a drag handle on its right edge. Width and the
+/// collapsed state live in [LayoutPrefs], so they survive a restart.
+class _DesktopSidebar extends StatelessWidget {
+  const _DesktopSidebar();
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = context.watch<LayoutPrefs>();
+    if (prefs.sidebarCollapsed) return const SizedBox.shrink();
+    final colors = context.colors;
+    return Row(
+      children: [
+        SizedBox(width: prefs.sidebarWidth, child: const CollectionsSidebar()),
+        ColoredBox(
+          color: colors.sidebarBackground,
+          child: SplitHandle(
+            axis: Axis.horizontal,
+            thickness: 8,
+            onDrag: (dx) => prefs.setSidebarWidth(prefs.sidebarWidth + dx),
+            onDragEnd: prefs.commit,
+            onReset: prefs.resetSidebarWidth,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  final bool narrow;
+  const _TopBar({required this.narrow});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final prefs = context.watch<LayoutPrefs>();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: 0.6),
+        border: Border(bottom: BorderSide(color: colors.border)),
+      ),
+      child: Row(
+        children: [
+          if (narrow)
+            Builder(
+              builder: (context) => IconButton(
+                icon: const Icon(Icons.menu, size: 20),
+                tooltip: 'Collections',
+                onPressed: () => Scaffold.of(context).openDrawer(),
+              ),
+            )
+          else
+            IconButton(
+              icon: Icon(prefs.sidebarCollapsed ? Icons.menu_open : Icons.menu, size: 20),
+              tooltip: prefs.sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar',
+              onPressed: prefs.toggleSidebar,
+            ),
+          // Right-aligned while it fits; on a phone it scrolls instead of
+          // overflowing, starting at the end so the environment picker stays in view.
+          const Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
+              child: _TopBarActions(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TopBarActions extends StatelessWidget {
   const _TopBarActions();
 
@@ -153,18 +213,7 @@ class _TopBarActions extends StatelessWidget {
               ),
               onPressed: workplaceVm.isBusy
                   ? null
-                  : () async {
-                      await workplaceVm.syncWithGit();
-                      if (context.mounted) {
-                        final error = workplaceVm.errorMessage;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(error ?? 'Synced successfully with Git repository!'),
-                            backgroundColor: error != null ? context.colors.statusError : null,
-                          ),
-                        );
-                      }
-                    },
+                  : () => pushWorkplaceToGit(context, workplaceVm),
               icon: workplaceVm.isBusy
                   ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.sync, size: 14),

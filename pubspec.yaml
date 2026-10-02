@@ -53,6 +53,7 @@ dependencies:
   supabase_flutter: ^2.9.1
   url_launcher: ^6.3.2
   shared_preferences: ^2.5.5
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -68,6 +69,7 @@ dev_dependencies:
   drift_dev: ^2.34.0
   freezed: ^3.2.5
   json_serializable: ^6.14.1
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -110,3 +112,27 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Regenerate every platform icon from the masters in assets/logo with:
+#   dart run flutter_launcher_icons
+# (masters themselves come from tool/logo.svg via tool/build_logo.py)
+flutter_launcher_icons:
+  image_path: "assets/logo/logo.png"
+  android: "ic_launcher"
+  adaptive_icon_background: "#12141E"
+  adaptive_icon_foreground: "assets/logo/logo_foreground.png"
+  ios: true
+  image_path_ios: "assets/logo/logo_square.png"
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/logo/logo.png"
+    background_color: "#0D0F14"
+    theme_color: "#0D0F14"
+  windows:
+    generate: true
+    image_path: "assets/logo/logo.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/logo/logo.png"

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#232842"/>
+      <stop offset="0.55" stop-color="#12141E"/>
+      <stop offset="1" stop-color="#0A0B11"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.72" cy="0.28" r="0.75">
+      <stop offset="0" stop-color="#FF6C37" stop-opacity="0.34"/>
+      <stop offset="0.55" stop-color="#FF4D8D" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#FF4D8D" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#FF4D8D"/>
+      <stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF6C37"/>
+      <stop offset="1" stop-color="#E0306F"/>
+    </linearGradient>
+    <linearGradient id="tail" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C21F66"/>
+      <stop offset="1" stop-color="#8E1A5B"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <clipPath id="tile"><rect x="0" y="0" width="1024" height="1024" rx="232"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#halo)"/>
+    <rect width="1024" height="560" fill="url(#sheen)"/>
+    <!-- soft glow under the plane -->
+    <g filter="url(#glow)" opacity="0.7">
+      <polygon points="800,236 236,486 446,586" fill="#FF6C37"/>
+      <polygon points="800,236 446,586 592,810" fill="#FF4D8D"/>
+    </g>
+    <!-- paper plane: wing, body, tail fold -->
+    <polygon points="800,236 236,486 446,586" fill="url(#wing)"/>
+    <polygon points="800,236 446,586 592,810" fill="url(#body)"/>
+    <polygon points="446,586 592,810 396,742" fill="url(#tail)"/>
+    <!-- crisp crease highlight -->
+    <polyline points="800,236 446,586" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <rect x="1.5" y="1.5" width="1021" height="1021" rx="231" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="3"/>
+</svg>

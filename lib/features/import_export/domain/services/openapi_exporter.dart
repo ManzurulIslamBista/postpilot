@@ -259,10 +259,20 @@ final class _Exporter {
   }
 
   /// An integer, decimal or boolean written as text keeps its type; anything
-  /// else, `{{variables}}` included, stays a string.
+  /// else, `{{variables}}` included, stays a string. A digit run that does not
+  /// fit an int (an account number, a snowflake id) or a decimal that is not a
+  /// finite double is an identifier rather than a quantity: it stays the
+  /// exact text instead of failing the whole export.
   Object _typedValue(String value) {
-    if (_integer.hasMatch(value)) return int.parse(value);
-    if (_decimal.hasMatch(value)) return double.parse(value);
+    if (_integer.hasMatch(value)) {
+      final number = int.tryParse(value);
+      // On the web an int past 2^53 parses but loses digits; only exact ones count.
+      return number != null && '$number' == value ? number : value;
+    }
+    if (_decimal.hasMatch(value)) {
+      final number = double.tryParse(value);
+      return number != null && number.isFinite ? number : value;
+    }
     if (value == 'true' || value == 'false') return value == 'true';
     return value;
   }

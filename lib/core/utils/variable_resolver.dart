@@ -30,16 +30,37 @@ final class VariableResolver {
     return null;
   }
 
-  String resolve(String input) => _resolve(input, const {});
+  String resolve(String input) => _resolve(input, const {}, _Budget());
 
   Map<String, String> resolveMap(Map<String, String> input) =>
       input.map((key, value) => MapEntry(key, resolve(value)));
 
-  String _resolve(String input, Set<String> expanding) => input.replaceAllMapped(AppConstants.variablePattern, (m) {
+  String _resolve(String input, Set<String> expanding, _Budget budget) =>
+      input.replaceAllMapped(AppConstants.variablePattern, (m) {
         final key = m[1]!;
         final value = lookup(key);
         if (value == null) return (dynamicVariables ?? DynamicVariables.shared).resolve(key) ?? m[0]!;
-        if (expanding.contains(key) || expanding.length >= _maxDepth) return m[0]!;
-        return _resolve(value, {...expanding, key});
+        if (expanding.contains(key) || expanding.length >= _maxDepth || !budget.spend(value.length)) return m[0]!;
+        return _resolve(value, {...expanding, key}, budget);
       });
+
+  /// Most variable values expanded, and most characters of them, in one
+  /// [resolve] call. The depth limit alone still lets `{{v0}}` .. `{{v9}}`,
+  /// each repeating the next thirty times, expand about 30^10 times.
+  static const _maxExpansions = 20000;
+  static const _maxExpandedChars = 32 * 1024 * 1024;
+}
+
+/// What is left of the [VariableResolver] expansion allowance; a token met
+/// after it runs out stays unresolved, like one that hit the depth limit.
+final class _Budget {
+  int _expansions = VariableResolver._maxExpansions;
+  int _chars = VariableResolver._maxExpandedChars;
+
+  bool spend(int chars) {
+    if (_expansions <= 0 || _chars < chars) return false;
+    _expansions--;
+    _chars -= chars;
+    return true;
+  }
 }

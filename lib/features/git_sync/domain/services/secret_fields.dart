@@ -1,7 +1,16 @@
 import '../entities/sync_doc.dart';
+import 'secret_names.dart';
+import 'secret_text.dart';
 
 /// Which fields hold credentials and must not be committed unless the
 /// user opted in (`GitLink.includeSecrets`).
+///
+/// A credential is blanked (not removed) wherever PostPilot can recognise one:
+/// the `auth` map, secret-looking collection variables, and in requests the
+/// values of `Authorization`/`Cookie`/API-key headers, secret query parameters
+/// (also inside the URL), secret form and urlencoded fields, and secret string
+/// values of JSON raw and GraphQL-variables bodies. Values that only reference
+/// `{{variables}}` hold no credential and are kept.
 abstract final class SecretFields {
   /// Keys of `RequestAuth.toJson()` that carry credentials or live tokens.
   static const authKeys = {
@@ -18,14 +27,9 @@ abstract final class SecretFields {
     'oauth2TokenExpiry',
   };
 
-  static final _secretKeyName = RegExp(
-    r'(token|secret|password|passwd|pwd|api[_-]?key|apikey|private[_-]?key|credential)',
-    caseSensitive: false,
-  );
-
   /// Collection variables whose key looks like a credential get an empty
   /// value in committed files.
-  static bool looksSecretKey(String key) => _secretKeyName.hasMatch(key);
+  static bool looksSecretKey(String key) => SecretNames.looksSecretKey(key);
 
   /// [auth] (a `RequestAuth.toJson()` map) without its credential keys.
   static Map<String, Object?> stripAuth(Map<String, Object?> auth) => {
@@ -33,8 +37,10 @@ abstract final class SecretFields {
           if (!authKeys.contains(e.key)) e.key: e.value,
       };
 
-  /// [doc] without credentials: its `auth` map loses [authKeys] and, on the
-  /// collection doc, `variables` whose key [looksSecretKey] get an empty value.
+  /// [doc] without credentials: its `auth` map loses [authKeys], on the
+  /// collection doc `variables` whose key [looksSecretKey] get an empty value,
+  /// and on a request the credentials of its headers, query parameters, URL
+  /// and body get one (see the class comment).
   /// Idempotent, so applying it to an already stripped doc changes nothing.
   static SyncDoc stripDoc(SyncDoc doc) {
     final data = {...doc.data};
@@ -51,6 +57,7 @@ abstract final class SecretFields {
         };
       }
     }
+    if (doc.kind == SyncKind.request) _stripRequest(data);
     return SyncDoc(
       uid: doc.uid,
       kind: doc.kind,
@@ -68,6 +75,39 @@ abstract final class SecretFields {
   /// without credentials.
   static SyncSnapshot applyPolicy(SyncSnapshot snapshot, {required bool includeSecrets}) =>
       includeSecrets ? snapshot : stripSnapshot(snapshot);
+
+  static void _stripRequest(Map<String, Object?> data) {
+    final url = data['url'];
+    if (url is String) data['url'] = SecretText.blankUrl(url);
+    _blankItems(data, 'headers', SecretNames.isSecretHeader);
+    _blankItems(data, 'queryParams', SecretNames.isSecretQuery);
+    final body = data['body'];
+    if (body is Map) {
+      final stripped = Map<String, Object?>.from(body);
+      _blankItems(stripped, 'formFields', SecretNames.looksSecretKey);
+      _blankItems(stripped, 'urlEncodedFields', SecretNames.looksSecretKey);
+      for (final key in const ['rawText', 'graphqlVariables']) {
+        final text = stripped[key];
+        if (text is String) stripped[key] = SecretText.blankJson(text);
+      }
+      data['body'] = stripped;
+    }
+  }
+
+  static void _blankItems(Map<String, Object?> data, String field, bool Function(String key) isSecret) {
+    final items = data[field];
+    if (items is List) data[field] = [for (final item in items) _blankItem(item, isSecret)];
+  }
+
+  static Object? _blankItem(Object? item, bool Function(String key) isSecret) {
+    if (item is! Map) return item;
+    final key = item['key'];
+    final value = item['value'];
+    if (key is String && value is String && isSecret(key) && SecretNames.hasLiteralSecret(value)) {
+      return Map<String, Object?>.from(item)..['value'] = '';
+    }
+    return item;
+  }
 
   static Object? _blankIfSecret(Object? variable) {
     if (variable is! Map) return variable;

@@ -12,7 +12,8 @@ final class AssertionEvaluator {
 
   /// `{{variables}}` in each assertion's expected value, JSON path and header
   /// name are resolved through [resolver] first, so a check can compare against
-  /// a value an earlier request extracted.
+  /// a value an earlier request extracted. A result keeps the unresolved text
+  /// in its name.
   List<AssertionResult> evaluate(
     ApiResponseEntity response,
     List<AssertionEntity> assertions, [
@@ -36,7 +37,10 @@ final class AssertionEvaluator {
       AssertionType.headerExists => _headerExists(reader, assertion.path),
       AssertionType.responseTimeBelowMs => _responseTimeBelow(reader, expected),
     };
-    return AssertionResult(name: assertion.name, passed: passed, actual: actual);
+    // Named after what the user wrote, not the resolved values: a failed
+    // check's name is shown in the runner and exported, and `{{token}}` must
+    // not turn into the token there.
+    return AssertionResult(name: raw.name, passed: passed, actual: actual);
   }
 
   (bool, String) _bodyContains(ResponseReader reader, String expected) {

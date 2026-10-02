@@ -64,6 +64,12 @@ const _pushed = PushResult(
   changedFiles: 1,
 );
 
+// The messages the GitHub client really produces: they carry the specifics the UI has to show.
+const _rejectedToken = GitAuthException('GitHub rejected the saved token: Bad credentials');
+const _rateLimited = GitRateLimitException(
+  'GitHub rate limit reached. It resets at 14:05. Saving a GitHub token raises the limit.',
+);
+
 const _readOnlyRepo = GitRepoInfo(defaultBranch: 'main', canPush: false, isPrivate: true, isEmpty: false);
 const _writableRepo = GitRepoInfo(defaultBranch: 'main', canPush: true, isPrivate: false, isEmpty: false);
 
@@ -274,7 +280,7 @@ void main() {
       final h = _Harness();
       h.changes = const [_listUsers];
       h.status.handler = (params) async {
-        if (params.checkRemote) throw const GitAuthException('Bad credentials');
+        if (params.checkRemote) throw _rejectedToken;
         return GitStatus(link: _link(), localChanges: h.changes);
       };
 
@@ -282,7 +288,7 @@ void main() {
 
       expect(h.vm.isLoaded, isTrue);
       expect(h.vm.localChanges, [_listUsers]);
-      expect(h.vm.errorMessage, startsWith('GitHub rejected your token'));
+      expect(h.vm.errorMessage, startsWith('GitHub rejected the saved token'));
     });
 
     test('a failing load leaves isLoaded false so the dialog can offer a retry', () async {
@@ -299,18 +305,44 @@ void main() {
       final cases = <String, (Object, Matcher)>{
         'auth': (
           const GitAuthException('token ghp_SECRET revoked'),
+          equals('token … revoked. It may have expired or lack access — update it under Settings.'),
+        ),
+        'auth without a message': (
+          const GitAuthException(' '),
           equals('GitHub rejected your token — it may have expired or lack access. Update it under Settings.'),
+        ),
+        'SSO enforcement': (
+          const GitAuthException(
+            'GitHub rejected the saved token: Resource protected by organization SAML enforcement. '
+            'You must grant your Personal Access token access to this organization.',
+          ),
+          allOf(contains('SAML enforcement'), contains('grant your Personal Access token access')),
+        ),
+        'missing token': (
+          const GitMissingTokenException(),
+          equals('Save a GitHub token first: paste one into the token field, then try again.'),
         ),
         'not fast-forward': (
           const GitNotFastForwardException('ref moved'),
           equals('Someone pushed since you last pulled. Pull first, then push again.'),
         ),
-        'rate limit': (const GitRateLimitException('HTTP 403'), contains('limiting requests')),
+        'rate limit': (
+          _rateLimited,
+          equals('GitHub rate limit reached. It resets at 14:05. Saving a GitHub token raises the limit.'),
+        ),
+        'rate limit without a message': (
+          const GitRateLimitException(''),
+          contains('limiting requests'),
+        ),
         'read-only': (const GitReadOnlyException(), contains('read access')),
         'nothing to commit': (const GitNothingToCommitException(), contains('nothing to commit')),
         'path occupied': (const GitPathOccupiedException('apis/users'), contains('apis/users')),
         'uncommitted changes': (const GitUncommittedChangesException(), contains('Push or discard them first')),
-        'not found': (const GitNotFoundException('404'), contains("couldn't find that repository")),
+        'not found names what was not found': (
+          const GitNotFoundException('Branch "dev" of acme/api not found, or your token cannot see it'),
+          equals('Branch "dev" of acme/api not found, or your token cannot see it.'),
+        ),
+        'not found without a message': (const GitNotFoundException(' '), contains("couldn't find that repository")),
         'sync exception': (const GitSyncException('Sync said no.'), equals('Sync said no.')),
         'host exception': (const GitHostException('Host said no.'), equals('Host said no.')),
         'anything else': (StateError('boom'), equals('Something went wrong — please try again.')),
@@ -387,7 +419,7 @@ void main() {
       test('remoteChecked turns true only once the host answered, or after we synced with it ourselves', () async {
         final h = _Harness();
         h.status.handler = (params) async {
-          if (params.checkRemote) throw const GitRateLimitException('403');
+          if (params.checkRemote) throw _rateLimited;
           return GitStatus(link: _link(), localChanges: const []);
         };
         h.pull.handler = (_) async => const PullUpToDate();
@@ -760,12 +792,12 @@ void main() {
       test('a rejected token is reported and not remembered', () async {
         final h = _Harness();
         h.credentials.token = null;
-        h.saveToken.handler = (_) => throw const GitAuthException('Bad credentials');
+        h.saveToken.handler = (_) => throw _rejectedToken;
         await h.load();
 
         expect(await h.vm.saveToken('ghp_bad'), isFalse);
 
-        expect(h.vm.errorMessage, startsWith('GitHub rejected your token'));
+        expect(h.vm.errorMessage, startsWith('GitHub rejected the saved token'));
         expect(h.vm.verifiedLogin, isNull);
         expect(h.vm.hasToken, isFalse);
       });
@@ -774,7 +806,7 @@ void main() {
         final h = _Harness();
         h.saveToken.handler = (_) async {
           h.credentials.token = null;
-          throw const GitAuthException('Bad credentials');
+          throw _rejectedToken;
         };
         await h.load();
         expect(h.vm.hasToken, isTrue);
@@ -787,7 +819,7 @@ void main() {
 
       test('what is saved is read back after a rejection: kept when the previous token was restored', () async {
         final h = _Harness();
-        h.saveToken.handler = (_) => throw const GitAuthException('Bad credentials');
+        h.saveToken.handler = (_) => throw _rejectedToken;
         await h.load();
 
         await h.vm.saveToken('ghp_bad');
@@ -910,11 +942,11 @@ void main() {
 
       test('a failed list load is tried again on the next visit', () async {
         final h = _Harness();
-        h.history.handler = (_) => throw const GitRateLimitException('403');
+        h.history.handler = (_) => throw _rateLimited;
         await h.load();
 
         await h.vm.ensureHistory();
-        expect(h.vm.errorMessage, contains('limiting requests'));
+        expect(h.vm.errorMessage, contains('rate limit reached'));
         expect(h.vm.historyLoaded, isFalse);
 
         h.history.handler = (_) async => const [];
@@ -1073,11 +1105,11 @@ void main() {
 
     test('failures become plain language and a failed search shows no results', () async {
       final h = _CloneHarness();
-      h.discover.handler = (_) => throw const GitNotFoundException('404');
+      h.discover.handler = (_) => throw const GitNotFoundException('Repository acme/api not found, or your token cannot see it');
 
       expect(await h.vm.discover(repository: 'acme/api'), isFalse);
 
-      expect(h.vm.errorMessage, contains("couldn't find that repository"));
+      expect(h.vm.errorMessage, 'Repository acme/api not found, or your token cannot see it.');
       expect(h.vm.hasSearched, isFalse);
     });
 
@@ -1243,7 +1275,7 @@ void main() {
 
     testWidgets('a rejected token is explained inline', (tester) async {
       final h = _Harness()..links.link = null;
-      h.saveToken.handler = (_) => throw const GitAuthException('Bad credentials');
+      h.saveToken.handler = (_) => throw _rejectedToken;
       await tester.runAsync(h.load);
       await _pumpSync(tester, h.vm);
 
@@ -1252,7 +1284,7 @@ void main() {
       await tester.tap(find.text('Save token'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('GitHub rejected your token'), findsOneWidget);
+      expect(find.textContaining('GitHub rejected the saved token'), findsOneWidget);
       expect(find.text('Bad credentials'), findsNothing);
     });
 
@@ -1315,7 +1347,7 @@ void main() {
     testWidgets('"Up to date" is only claimed once GitHub has answered', (tester) async {
       final h = _Harness();
       h.status.handler = (params) async {
-        if (params.checkRemote) throw const GitRateLimitException('403');
+        if (params.checkRemote) throw _rateLimited;
         return GitStatus(link: _link(), localChanges: const []);
       };
       await tester.runAsync(h.load);
@@ -1323,7 +1355,7 @@ void main() {
 
       expect(find.text('Up to date'), findsNothing);
       expect(find.text('No local changes'), findsOneWidget);
-      expect(find.textContaining('limiting requests'), findsOneWidget);
+      expect(find.textContaining('rate limit reached'), findsOneWidget);
     });
 
     testWidgets('a viewer gets a banner and cannot push', (tester) async {
@@ -1620,8 +1652,7 @@ void main() {
 
       await tester.enterText(find.byType(TextField).first, 'ghp_rotated');
       await tester.pump();
-      await tester.tap(find.text('Save token'));
-      await tester.pumpAndSettle();
+      await _tapText(tester, 'Save token');
 
       expect(h.saveToken.calls.single.token, 'ghp_rotated');
       expect(find.text('Signed in to GitHub as octocat'), findsOneWidget);
@@ -1734,7 +1765,7 @@ void main() {
 
     testWidgets('a failure is shown inline and nothing is cloned', (tester) async {
       final h = _CloneHarness();
-      h.discover.handler = (_) => throw const GitRateLimitException('403');
+      h.discover.handler = (_) => throw _rateLimited;
       await tester.runAsync(h.vm.load);
       await _pumpClone(tester, h.vm, onCloned: (_) {});
 
@@ -1743,7 +1774,7 @@ void main() {
       await tester.tap(find.text('Find collections'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('limiting requests'), findsOneWidget);
+      expect(find.textContaining('rate limit reached'), findsOneWidget);
       expect(_button(tester, 'Clone').onPressed, isNull);
     });
   });

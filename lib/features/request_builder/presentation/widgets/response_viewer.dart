@@ -92,7 +92,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
   }
 
   ResponseBodyFormatter? _formatterFor(ApiResponseEntity? response) =>
-      response == null ? null : ResponseBodyFormatter(response.headers, response.bodyBytes);
+      response == null ? null : ResponseBodyFormatter(response.headers, response.bodyBytes, truncated: response.truncated);
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +120,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
                 Expanded(
                   child: TabBarView(
                     children: [
-                      _buildBodyTab(context, formatter, viewingExample: example != null),
+                      _buildBodyTab(context, formatter, example: example),
                       _buildHeadersTab(context, headers),
                       ResponseExamplesTab(selectedId: example?.id, onSelect: _selectExample),
                     ],
@@ -140,14 +140,17 @@ class _ResponseViewerState extends State<ResponseViewer> {
     return response == null ? const _NoResponseSummary() : _LiveSummary(response: response);
   }
 
-  Widget _buildBodyTab(BuildContext context, ResponseBodyFormatter? formatter, {required bool viewingExample}) {
+  Widget _buildBodyTab(BuildContext context, ResponseBodyFormatter? formatter, {required ResponseExampleEntity? example}) {
     if (formatter == null) return const _EmptyState();
+    final viewingExample = example != null;
     final isImage = formatter.kind == ResponseContentKind.image;
     final displayText = isImage ? null : formatter.displayTextFor(_mode);
     final matches = displayText == null ? const <int>[] : _matchesFor(displayText);
     final current = matches.isEmpty ? 0 : _currentMatch.clamp(0, matches.length - 1);
     final response = widget.response;
     final body = formatter.text;
+    // Whether what is shown is only the first part of the body.
+    final cutOff = example?.truncated ?? response?.truncated ?? false;
     return Column(
       children: [
         Padding(
@@ -169,7 +172,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
               IconButton(
                 icon: const Icon(Icons.download, size: 18),
                 tooltip: 'Download body',
-                onPressed: () => _download(context, formatter),
+                onPressed: () => _download(context, formatter, cutOff: cutOff),
               ),
               if (widget.canSaveExamples)
                 IconButton(
@@ -182,7 +185,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
             ],
           ),
         ),
-        if (!viewingExample && response != null && response.truncated) const _SizeLimitNotice(),
+        if (cutOff) _SizeLimitNotice(forExample: viewingExample),
         if (displayText != null && formatter.isTruncated(_mode))
           _TruncationNotice(shown: displayText.length, total: formatter.textFor(_mode).length),
         Expanded(
@@ -340,8 +343,18 @@ class _ResponseViewerState extends State<ResponseViewer> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _download(BuildContext context, ResponseBodyFormatter formatter) async {
+  Future<void> _download(BuildContext context, ResponseBodyFormatter formatter, {required bool cutOff}) async {
     final messenger = ScaffoldMessenger.of(context);
+    if (cutOff) {
+      final proceed = await showConfirmDialog(
+        context,
+        title: 'Incomplete body',
+        message: 'This body was cut off at the response size limit, so the file will be incomplete — '
+            'an archive, PDF or image made from it may not open. Raise the limit in Settings to get the whole body.',
+        confirmLabel: 'Download anyway',
+      );
+      if (!proceed) return;
+    }
     try {
       final path = await downloadFile(
         fileName: formatter.downloadFileName(requestName: widget.requestName),
@@ -355,6 +368,16 @@ class _ResponseViewerState extends State<ResponseViewer> {
   }
 
   Future<void> _saveAsExample(BuildContext context, ApiResponseEntity response, String body) async {
+    if (response.truncated) {
+      final proceed = await showConfirmDialog(
+        context,
+        title: 'Save a partial body?',
+        message: 'This response was cut off at the size limit, so the example will hold only the first part of it. '
+            'Raise the limit in Settings to keep the whole body.',
+        confirmLabel: 'Save anyway',
+      );
+      if (!proceed || !context.mounted) return;
+    }
     final name = await showPromptDialog(
       context,
       title: 'Save as example',
@@ -412,7 +435,10 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _SizeLimitNotice extends StatelessWidget {
-  const _SizeLimitNotice();
+  /// A saved example carries the cut-off with it, long after the limit that
+  /// caused it was hit.
+  final bool forExample;
+  const _SizeLimitNotice({required this.forExample});
 
   @override
   Widget build(BuildContext context) {
@@ -422,7 +448,9 @@ class _SizeLimitNotice extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       color: context.colors.mainAccent.withValues(alpha: 0.12),
       child: Text(
-        'Response larger than the limit was cut off — raise the limit in Settings',
+        forExample
+            ? 'This example holds only the first part of the response: it was cut off at the size limit when saved'
+            : 'Response larger than the limit was cut off — raise the limit in Settings',
         style: context.textStyles.caption,
       ),
     );

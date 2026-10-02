@@ -78,7 +78,8 @@ final class RequestBuilderViewModel with ChangeNotifier {
         // would show (and let the user save) a result this send never produced.
         if (sent == null) response = null;
         errorMessage = _describeError(e);
-        errorDetail = e.toString();
+        // The message of an InvalidRequestException already says it all.
+        errorDetail = e is InvalidRequestException ? null : e.toString();
       }
     }
 
@@ -113,6 +114,7 @@ final class RequestBuilderViewModel with ChangeNotifier {
     if (error is InvalidUrlException) {
       return "That URL isn't valid — it needs a host, e.g. https://api.example.com/users";
     }
+    if (error is InvalidRequestException) return error.message;
     if (error is FormatException) {
       return "Couldn't reach the server — check the URL and your connection";
     }

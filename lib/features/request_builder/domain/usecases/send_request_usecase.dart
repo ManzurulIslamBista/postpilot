@@ -6,6 +6,7 @@ import '../../../../core/network/api_http_response.dart';
 import '../../../../core/usecases/usecase.dart';
 import '../../../../core/utils/variable_resolver.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
+import '../../../documentation/domain/services/secret_masker.dart';
 import '../../../history/domain/repositories/history_repository.dart';
 import '../../../settings/domain/repositories/request_settings_repository.dart';
 import '../../../settings/domain/repositories/settings_repository.dart';
@@ -95,7 +96,8 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
     final uri = Uri.tryParse(url);
     final scheme = uri?.scheme.toLowerCase();
     if (uri == null || uri.host.isEmpty || (scheme != 'http' && scheme != 'https')) {
-      throw InvalidUrlException('Not a valid http(s) URL: "$url"');
+      // The URL is resolved, so a secret in it must not travel in the message.
+      throw InvalidUrlException('Not a valid http(s) URL: "${SecretMasker.maskUrl(url)}"');
     }
   }
 
@@ -123,12 +125,11 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
     final challenge = DigestAuthChallenge.parse(_header(challengeResponse.headers, 'www-authenticate'));
     if (challenge == null) return challengeResponse;
 
-    final uri = Uri.parse(spec.url);
     final digestHeader = challenge.buildAuthorizationHeader(
       username: resolver.resolve(auth.basicUsername),
       password: resolver.resolve(auth.basicPassword),
       method: spec.method,
-      digestUri: uri.path.isEmpty ? '/' : uri.path,
+      digestUri: digestRequestUri(spec.url),
     );
 
     return _apiClient.send(ApiRequestSpec(
@@ -156,4 +157,12 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
         duration: response.duration,
         truncated: response.truncated,
       );
+}
+
+/// The Request-URI the Digest `uri` directive (and HA2) must cover, RFC 7616
+/// §3.4: path plus query, exactly as it goes on the request line.
+String digestRequestUri(String url) {
+  final uri = Uri.parse(url);
+  final path = uri.path.isEmpty ? '/' : uri.path;
+  return uri.hasQuery ? '$path?${uri.query}' : path;
 }

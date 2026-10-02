@@ -7,6 +7,19 @@ final _bareUrl = RegExp(r'https?://[^\s<]+', caseSensitive: false);
 final _wordChar = RegExp(r'[\p{L}\p{N}]', unicode: true);
 final _escapedPunctuation = RegExp(r'\\([!-/:-@\[-`{-~])');
 
+/// What the emphasis searches of one text share: the searches known to fail,
+/// so a run of unmatched openers is not rescanned once per opener, and a work
+/// allowance that keeps input built to defeat that shortcut linear. Text
+/// left after the allowance runs out stays literal.
+final class _EmphasisScan {
+  _EmphasisScan(int length) : budget = length * 200 + 100;
+
+  /// Per `c` and size: an opener whose content starts at or after this index
+  /// has no closer.
+  final failedFrom = <String, int>{};
+  int budget;
+}
+
 /// Bold, italic, inline code and links. Anything that does not form a complete
 /// construct stays literal text; nesting and scan lengths are capped so hostile
 /// input (docs can arrive through git) cannot make parsing slow.
@@ -19,7 +32,7 @@ abstract final class MarkdownInlineParser {
   static List<MarkdownInline> _run(String s, int depth, bool allowLinks) {
     final out = <MarkdownInline>[];
     final buf = StringBuffer();
-    final failedClosers = <String, int>{};
+    final scan = _EmphasisScan(s.length);
 
     void flush() {
       if (buf.isEmpty) return;
@@ -129,7 +142,7 @@ abstract final class MarkdownInlineParser {
           run++;
         }
         if (run <= 3 && depth < _maxDepth && _canOpen(s, i, i + run, c)) {
-          final close = _emphasisEnd(s, i + run, c, run, failedClosers, 0);
+          final close = _emphasisEnd(s, i + run, c, run, scan, 0);
           if (close != -1) {
             flush();
             final inner = _run(s.substring(i + run, close), depth + 1, allowLinks);
@@ -196,13 +209,19 @@ abstract final class MarkdownInlineParser {
   /// characters, or -1. A longer closing run (`*a **b***`) gives [size]
   /// characters from its start and leaves the rest for the enclosing emphasis;
   /// a pair opened on the way is skipped whole.
-  static int _emphasisEnd(String s, int from, String c, int size, Map<String, int> failedFrom, int nest) {
+  static int _emphasisEnd(String s, int from, String c, int size, _EmphasisScan scan, int nest) {
     final key = '$c$size';
-    final failed = failedFrom[key];
+    final failed = scan.failedFrom[key];
     if (failed != null && from >= failed) return -1;
 
     var i = from;
+    // Where the last pair skipped on the way ended. A search that fails saw
+    // nothing that could close in the text after that point, so a later search
+    // starting there fails too; one starting before it may take a skipped
+    // pair's closer for its own (`*.json and *this*`), so it must run.
+    var resume = from;
     while (i < s.length) {
+      if (--scan.budget < 0) return -1;
       final ch = s[i];
       if (ch == '\\') {
         i += 2;
@@ -226,9 +245,10 @@ abstract final class MarkdownInlineParser {
         final opens = _canOpen(s, i, end, c);
         if (i > from && _canClose(s, i, end, c) && (run == size || (run > size && !opens))) return i;
         if (run <= 3 && nest < _maxDepth && opens) {
-          final inner = _emphasisEnd(s, end, c, run, failedFrom, nest + 1);
+          final inner = _emphasisEnd(s, end, c, run, scan, nest + 1);
           if (inner != -1) {
             i = inner + run;
+            resume = i;
             continue;
           }
         }
@@ -237,7 +257,7 @@ abstract final class MarkdownInlineParser {
       }
       i++;
     }
-    failedFrom[key] = failed == null ? from : math.min(failed, from);
+    scan.failedFrom[key] = failed == null ? resume : math.min(failed, resume);
     return -1;
   }
 

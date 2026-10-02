@@ -7,6 +7,7 @@ import '../../../../core/enums/body_type.dart';
 import '../../../../core/enums/http_method.dart';
 import '../../../request_builder/data/models/request_json_codec.dart';
 import '../../domain/entities/sync_doc.dart';
+import '../../domain/services/secret_names.dart';
 import 'doc_values.dart';
 
 abstract final class RequestDocMapper {
@@ -51,10 +52,13 @@ abstract final class RequestDocMapper {
       ));
 
   /// [doc] in the exact shape [toDoc] produces. [local] is the request doc as
-  /// it is stored now: credentials that [doc] leaves empty keep its values.
+  /// it is stored now: credentials that [doc] leaves empty (auth, secret-looking
+  /// headers, parameters, form fields, URL and JSON body values) keep its values.
   static SyncDoc canonical(SyncDoc doc, {SyncDoc? local}) {
     final data = doc.data;
     final body = data['body'] as Map? ?? const {};
+    final localData = local?.data;
+    final localBody = localData?['body'] as Map?;
     final tests = data['tests'] as Map? ?? const {};
     final assertions = DocValues.jsonList(tests['assertions']);
     final extractors = DocValues.jsonList(tests['extractors']);
@@ -67,19 +71,39 @@ abstract final class RequestDocMapper {
       order: doc.order,
       data: {
         'method': HttpMethod.fromString(data['method'] as String?).name,
-        'url': data['url'] as String? ?? '',
-        'headers': DocValues.keyValues(data['headers']),
-        'queryParams': DocValues.keyValues(data['queryParams']),
+        'url': DocValues.url(data['url'], keepingSecretsOf: localData?['url']),
+        'headers': DocValues.keyValues(
+          data['headers'],
+          keepingSecretsOf: localData?['headers'],
+          isSecret: SecretNames.isSecretHeader,
+        ),
+        'queryParams': DocValues.keyValues(
+          data['queryParams'],
+          keepingSecretsOf: localData?['queryParams'],
+          isSecret: SecretNames.isSecretQuery,
+        ),
         'body': {
           'type': DocValues.enumName(BodyType.values, body['type'], BodyType.none),
           'rawContentType': DocValues.enumName(RawContentType.values, body['rawContentType'], RawContentType.json),
-          'rawText': body['rawText'] as String? ?? '',
-          'formFields': DocValues.keyValues(body['formFields']),
-          'urlEncodedFields': DocValues.keyValues(body['urlEncodedFields']),
+          'rawText': DocValues.jsonText(body['rawText'], fallback: '', keepingSecretsOf: localBody?['rawText']),
+          'formFields': DocValues.keyValues(
+            body['formFields'],
+            keepingSecretsOf: localBody?['formFields'],
+            isSecret: SecretNames.looksSecretKey,
+          ),
+          'urlEncodedFields': DocValues.keyValues(
+            body['urlEncodedFields'],
+            keepingSecretsOf: localBody?['urlEncodedFields'],
+            isSecret: SecretNames.looksSecretKey,
+          ),
           'graphqlQuery': body['graphqlQuery'] as String? ?? '',
-          'graphqlVariables': body['graphqlVariables'] as String? ?? '{}',
+          'graphqlVariables': DocValues.jsonText(
+            body['graphqlVariables'],
+            fallback: '{}',
+            keepingSecretsOf: localBody?['graphqlVariables'],
+          ),
         },
-        'auth': DocValues.requestAuth(data['auth'], keepingSecretsOf: local?.data['auth']),
+        'auth': DocValues.requestAuth(data['auth'], keepingSecretsOf: localData?['auth']),
         if (assertions.isNotEmpty || extractors.isNotEmpty)
           'tests': {'assertions': assertions, 'extractors': extractors},
         if (settings.isNotEmpty) 'settings': settings,

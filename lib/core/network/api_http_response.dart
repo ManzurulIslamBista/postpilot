@@ -71,6 +71,20 @@ final class ProxyConfig {
   /// valid port there is nothing to route through, so requests go direct.
   bool get isUsableCustom => mode == ProxyMode.custom && host.isNotEmpty && port > 0 && port <= 65535;
 
+  /// Credentials travel in a `PROXY user:password@host:port` directive that
+  /// `dart:io` splits on `;` and reads the user name up to the first `:`, so a
+  /// `;` in either, or a `:` in the user name, cannot be sent. Sending them
+  /// anyway fails every request with an error that quotes the directive.
+  bool get hasUnsendableCredentials => username.contains(';') || username.contains(':') || password.contains(';');
+
+  static const unsendableCredentialsMessage =
+      'The proxy user name cannot contain ":" or ";" and the password cannot contain ";" — '
+      'requests through this proxy fail until they are changed.';
+
+  /// `HttpClient` rejects credentials with an empty side, so with only one of
+  /// the two set none are sent.
+  bool get hasHalfCredentials => username.isEmpty != password.isEmpty;
+
   bool bypasses(Uri uri) {
     final host = uri.host.toLowerCase();
     for (final entry in bypass) {

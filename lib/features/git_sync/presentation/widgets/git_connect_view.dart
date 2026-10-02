@@ -99,6 +99,7 @@ class _GitConnectViewState extends State<GitConnectView> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Include credentials in commits'),
+                subtitle: const Text(gitCredentialsOffHint),
                 value: _includeSecrets,
                 onChanged: vm.isBusy ? null : (value) => setState(() => _includeSecrets = value),
               ),

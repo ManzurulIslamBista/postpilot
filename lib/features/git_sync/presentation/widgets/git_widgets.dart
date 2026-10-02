@@ -121,6 +121,11 @@ class GitBusyBar extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(height: 2, child: busy ? const LinearProgressIndicator() : null);
 }
 
+/// Under the "Include credentials in commits" switch: what stays out of commits while it is off, stated exactly.
+const gitCredentialsOffHint = 'When off, auth settings and credential-looking values (variables, headers, URL and '
+    'form parameters, JSON body fields named like a token, password, secret, API key or Authorization) are left out. '
+    'Everything else is committed.';
+
 class GitCredentialsWarning extends StatelessWidget {
   const GitCredentialsWarning({super.key});
 
@@ -147,7 +152,10 @@ class GitPanelTitle extends StatelessWidget {
   final String title;
   final String? subtitle;
   final String? busyLabel;
-  const GitPanelTitle({super.key, required this.title, this.subtitle, this.busyLabel});
+
+  /// False while a change is being written: closing then would not stop it and would lose its result.
+  final bool canClose;
+  const GitPanelTitle({super.key, required this.title, this.subtitle, this.busyLabel, this.canClose = true});
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +186,11 @@ class GitPanelTitle extends StatelessWidget {
                 style: context.textStyles.caption.copyWith(color: context.colors.mainAccent),
               ),
             ),
-          IconButton(icon: const Icon(Icons.close), tooltip: 'Close', onPressed: () => Navigator.pop(context)),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Close',
+            onPressed: canClose ? () => Navigator.pop(context) : null,
+          ),
         ],
       ),
     );

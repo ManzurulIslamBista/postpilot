@@ -19,7 +19,16 @@ class GitChangesTab extends StatelessWidget {
     final secondary = context.colors.secondaryText;
     return Column(
       children: [
-        if (!vm.canPush)
+        if (!vm.hasToken)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: GitBanner(
+              kind: GitBannerKind.warning,
+              message: 'No GitHub token is saved on this device. Save one under Settings to push your changes; '
+                  'without it you can only pull.',
+            ),
+          )
+        else if (!vm.canPush)
           const Padding(
             padding: EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: GitBanner(

@@ -395,6 +395,30 @@ void main() {
   });
 
   group('edge cases', () {
+    test('a digit run beyond int64 or a decimal beyond double stays a string instead of failing the export', () {
+      final huge = '9' * 400;
+      final export = OpenApiExporter.export(
+        collectionName: 'Numbers',
+        folders: const [],
+        requests: [
+          _request('Account', 'https://a.test/accounts?account=12345678901234567890&n=42&price=9.5&big=$huge.5&neg=-7'),
+        ],
+      );
+      final doc = _decode(export);
+
+      final byName = {for (final p in _parameters(_operation(doc, '/accounts', 'get'))) '${p['name']}': p};
+      expect(byName['account']!['schema'], {'type': 'string'});
+      expect(byName['account']!['example'], '12345678901234567890');
+      expect(byName['big']!['schema'], {'type': 'string'});
+      expect(byName['big']!['example'], '$huge.5');
+      expect(byName['n']!['schema'], {'type': 'integer'});
+      expect(byName['n']!['example'], 42);
+      expect(byName['neg']!['example'], -7);
+      expect(byName['price']!['schema'], {'type': 'number'});
+      expect(byName['price']!['example'], 9.5);
+      expect(export.operations, 1);
+    });
+
     test('an empty collection is still a valid document', () {
       final export = OpenApiExporter.export(collectionName: '', folders: const [], requests: const []);
       final doc = _decode(export);

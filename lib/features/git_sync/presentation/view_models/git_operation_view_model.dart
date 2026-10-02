@@ -10,22 +10,42 @@ typedef UriOpener = Future<bool> Function(Uri uri);
 
 Future<bool> _openInBrowser(Uri uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
 
-/// Plain-language text for any failure of a Git operation; raw exception text is never the message.
+final _tokenLike = RegExp(r'\b(?:gh[pousr]_|github_pat_)\w+');
+
+/// A domain message trimmed and with anything shaped like a GitHub token replaced, so it is safe to show.
+String _shown(String message) => message.trim().replaceAll(_tokenLike, '…');
+
+/// [_shown] as a finished sentence, ready to have a next step appended.
+String _sentence(String message) {
+  final text = _shown(message);
+  return RegExp(r'[.!?]$').hasMatch(text) ? text : '$text.';
+}
+
+bool _hasText(String message) => message.trim().isNotEmpty;
+
+/// Plain-language text for any failure of a Git operation. The host and sync messages are written for people and carry
+/// the specifics (when a rate limit resets, an SSO instruction, what was not found), so they are kept and given a next
+/// step where one helps; anything unknown gets a generic line, and nothing shaped like a token is ever shown.
 String friendlyGitError(Object error) => switch (error) {
+      GitMissingTokenException() => 'Save a GitHub token first: paste one into the token field, then try again.',
+      GitAuthException(:final message) when _hasText(message) =>
+        '${_sentence(message)} It may have expired or lack access — update it under Settings.',
       GitAuthException() =>
         'GitHub rejected your token — it may have expired or lack access. Update it under Settings.',
       GitNotFastForwardException() => 'Someone pushed since you last pulled. Pull first, then push again.',
+      GitRateLimitException(:final message) when _hasText(message) => _sentence(message),
       GitRateLimitException() => 'GitHub is limiting requests right now. Wait a few minutes and try again.',
+      GitNotFoundException(:final message) when _hasText(message) => _sentence(message),
       GitNotFoundException() =>
         "GitHub couldn't find that repository. Check its name, and make sure your token can access it.",
       GitReadOnlyException() =>
         'You only have read access to this repository, so you cannot push. Ask an owner for write access.',
       GitNothingToCommitException() => 'There is nothing to commit — no local changes since the last sync.',
-      GitPathOccupiedException(:final message) => message,
+      GitPathOccupiedException(:final message) => _shown(message),
       GitUncommittedChangesException() =>
         'You have local changes that are not pushed yet. Push or discard them first, then try again.',
-      GitSyncException(:final message) when message.trim().isNotEmpty => message,
-      GitHostException(:final message) when message.trim().isNotEmpty => message,
+      GitSyncException(:final message) when _hasText(message) => _shown(message),
+      GitHostException(:final message) when _hasText(message) => _shown(message),
       _ => 'Something went wrong — please try again.',
     };
 
@@ -44,6 +64,7 @@ abstract class GitOperationViewModel with ChangeNotifier {
   }) : _openUri = openUri ?? _openInBrowser;
 
   int _busyCount = 0;
+  int _closeGuards = 0;
   bool _disposed = false;
 
   String? busyLabel;
@@ -62,17 +83,28 @@ abstract class GitOperationViewModel with ChangeNotifier {
 
   bool get isBusy => _busyCount > 0;
 
+  /// The dialog may be dismissed. False while a change is being written (clone, commit, pull, ...): closing then would
+  /// not stop it, and its result or error would be lost. Loads and refreshes do not hold the dialog open.
+  bool get canClose => _closeGuards == 0;
+
   /// Null for a valid or still empty input, so a field only complains once something wrong was typed.
   static String? repositoryError(String input) =>
       input.trim().isEmpty || RepoRef.parse(input) != null ? null : _repositoryHint;
 
   /// Runs [action] behind the busy indicator and turns any failure into [errorMessage]; true when it completed.
-  /// An [exclusive] action is refused while anything else is running; read-only list loads are not.
+  /// An [exclusive] action is refused while anything else is running; read-only list loads are not. An action that
+  /// [guardsClose] writes something, so [canClose] is false until it has finished and reported.
   @protected
-  Future<bool> run(String label, Future<void> Function() action, {bool exclusive = true}) async {
+  Future<bool> run(
+    String label,
+    Future<void> Function() action, {
+    bool exclusive = true,
+    bool guardsClose = false,
+  }) async {
     if (exclusive && isBusy) return false;
     if (_busyCount == 0) busyLabel = label;
     _busyCount++;
+    if (guardsClose) _closeGuards++;
     errorMessage = null;
     infoMessage = null;
     notifyListeners();
@@ -84,6 +116,7 @@ abstract class GitOperationViewModel with ChangeNotifier {
       return false;
     } finally {
       _busyCount--;
+      if (guardsClose) _closeGuards--;
       if (_busyCount == 0) busyLabel = null;
       notifyListeners();
     }

@@ -123,6 +123,16 @@ class _ProxySettingsPaneState extends State<ProxySettingsPane> {
                 style: context.textStyles.caption.copyWith(color: context.colors.secondaryText),
               ),
             ),
+          if (proxy.problem case final problem?)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(problem, style: context.textStyles.caption.copyWith(color: context.colors.statusError)),
+            ),
+          if (proxy.routeNote case final note?)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(note, style: context.textStyles.caption.copyWith(color: context.colors.secondaryText)),
+            ),
         ],
       ],
     );

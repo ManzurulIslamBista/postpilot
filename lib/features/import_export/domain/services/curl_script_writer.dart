@@ -29,7 +29,9 @@ abstract final class CurlScriptWriter {
     String? previousFolder;
     for (final entry in entries) {
       if (entry.folder != previousFolder) {
-        lines.addAll(['', '# --- ${entry.folder ?? 'Collection root'} ---']);
+        // A folder name is user (or imported) text like any other: a newline in
+        // it would end the comment and start an executable line.
+        lines.addAll(['', '# --- ${_oneLine(entry.folder ?? '', 'Collection root')} ---']);
         previousFolder = entry.folder;
       }
       lines.addAll(['', '# ${_oneLine(entry.name, 'Untitled request')}']);
@@ -43,7 +45,8 @@ abstract final class CurlScriptWriter {
     return '${lines.join('\n')}\n';
   }
 
-  /// A comment ends at the newline, so a name holding one would spill into a command.
+  /// A comment ends at the newline, so a name holding one would spill into a
+  /// command. `\s` covers every line break Dart knows (`\n`, `\r`, U+2028/2029).
   static String _oneLine(String text, String fallback) {
     final collapsed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     return collapsed.isEmpty ? fallback : collapsed;

@@ -560,6 +560,23 @@ void main() {
       expect(results.last.passed, isTrue);
     });
 
+    test('an error result never quotes a secret from the URL, resolved or not', () async {
+      final harness = _Harness([
+        _request(1, 'ftp://ann:hunter2@api.test/a?api_key=s3cret&page=2'),
+        _request(2, '{{baseUrl}}/b?token=t0psecret'),
+      ]);
+
+      final results = await _runAll(harness);
+
+      for (final result in results) {
+        expect(result.error, contains('Not a valid http(s) URL'));
+        expect(result.error, isNot(contains('hunter2')));
+        expect(result.error, isNot(contains('s3cret')));
+        expect(result.error, isNot(contains('t0psecret')));
+      }
+      expect(results.first.error, contains('page=2'));
+    });
+
     test('a request deleted mid-run is skipped', () async {
       final harness = _Harness([_request(1, 'https://api.test/a')]);
       final ghost = _summary('Ghost', id: 99);

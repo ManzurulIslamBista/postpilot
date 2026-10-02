@@ -34,32 +34,15 @@ final class AwsSigV4Signer {
     final amzDate = _amzDate(timestamp);
     final dateStamp = amzDate.substring(0, 8);
 
-    final signedHeaderMap = <String, String>{
-      ...{for (final e in headers.entries) e.key.toLowerCase(): e.value.trim()},
-      'host': uri.host,
-      'x-amz-date': amzDate,
-      if (sessionToken.isNotEmpty) 'x-amz-security-token': sessionToken,
-    };
-
-    final sortedHeaderNames = signedHeaderMap.keys.toList()..sort();
-    final canonicalHeaders = sortedHeaderNames.map((k) => '$k:${signedHeaderMap[k]}\n').join();
-    final signedHeaders = sortedHeaderNames.join(';');
-
-    final canonicalRequest = [
-      method.toUpperCase(),
-      _canonicalUri(uri),
-      _canonicalQuery(uri),
-      canonicalHeaders,
-      signedHeaders,
-      sha256.convert(body).toString(),
-    ].join('\n');
+    final canonical = canonicalRequest(method: method, uri: uri, headers: headers, body: body, amzDate: amzDate);
+    final signedHeaders = canonical.signedHeaders;
 
     final credentialScope = '$dateStamp/$region/$service/aws4_request';
     final stringToSign = [
       'AWS4-HMAC-SHA256',
       amzDate,
       credentialScope,
-      sha256.convert(utf8.encode(canonicalRequest)).toString(),
+      sha256.convert(utf8.encode(canonical.request)).toString(),
     ].join('\n');
 
     final signingKey = _deriveSigningKey(dateStamp);
@@ -75,6 +58,47 @@ final class AwsSigV4Signer {
       if (sessionToken.isNotEmpty) 'X-Amz-Security-Token': sessionToken,
       'Authorization': authorization,
     };
+  }
+
+  /// Step 1 of the signing process, and the `SignedHeaders` list it names.
+  /// Public so the canonical form can be checked against AWS's documented
+  /// examples.
+  ({String request, String signedHeaders}) canonicalRequest({
+    required String method,
+    required Uri uri,
+    required Map<String, String> headers,
+    required List<int> body,
+    required String amzDate,
+  }) {
+    final signedHeaderMap = <String, String>{
+      ...{for (final e in headers.entries) e.key.toLowerCase(): e.value.trim()},
+      'host': _hostHeader(uri),
+      'x-amz-date': amzDate,
+      if (sessionToken.isNotEmpty) 'x-amz-security-token': sessionToken,
+    };
+
+    final sortedHeaderNames = signedHeaderMap.keys.toList()..sort();
+    final canonicalHeaders = sortedHeaderNames.map((k) => '$k:${signedHeaderMap[k]}\n').join();
+    final signedHeaders = sortedHeaderNames.join(';');
+
+    final request = [
+      method.toUpperCase(),
+      _canonicalUri(uri),
+      _canonicalQuery(uri),
+      canonicalHeaders,
+      signedHeaders,
+      sha256.convert(body).toString(),
+    ].join('\n');
+    return (request: request, signedHeaders: signedHeaders);
+  }
+
+  /// The `Host` header `dart:io` sends: the port is part of it unless it is
+  /// the scheme's default, and the signature must cover it exactly as sent
+  /// (LocalStack on :4566 or MinIO on :9000 reject anything else).
+  String _hostHeader(Uri uri) {
+    final host = uri.host.contains(':') ? '[${uri.host}]' : uri.host;
+    final defaultPort = uri.scheme == 'https' ? 443 : 80;
+    return uri.hasPort && uri.port != defaultPort ? '$host:${uri.port}' : host;
   }
 
   List<int> _deriveSigningKey(String dateStamp) {
@@ -96,14 +120,13 @@ final class AwsSigV4Signer {
   }
 
   String _canonicalQuery(Uri uri) {
-    final params = <String, String>{};
-    uri.queryParametersAll.forEach((key, values) {
-      for (final v in values) {
-        params[_uriEncode(key)] = _uriEncode(v);
-      }
-    });
-    final sortedKeys = params.keys.toList()..sort();
-    return sortedKeys.map((k) => '$k=${params[k]}').join('&');
+    // A name may repeat (`tag=a&tag=b`) and every occurrence is sent, so every
+    // one is signed: sorted by encoded name, then by encoded value.
+    final params = <(String, String)>[
+      for (final entry in uri.queryParametersAll.entries)
+        for (final value in entry.value) (_uriEncode(entry.key), _uriEncode(value)),
+    ]..sort((a, b) => a.$1 == b.$1 ? a.$2.compareTo(b.$2) : a.$1.compareTo(b.$1));
+    return params.map((p) => '${p.$1}=${p.$2}').join('&');
   }
 
   /// RFC 3986 percent-encoding as AWS requires it: unreserved characters

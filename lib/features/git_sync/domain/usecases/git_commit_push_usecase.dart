@@ -11,7 +11,7 @@ final class GitCommitPushParams {
   const GitCommitPushParams({required this.collectionId, required this.message});
 }
 
-/// Writes every local change as ONE commit on the linked branch and advances the base. Throws GitNothingToCommitException, GitReadOnlyException, or GitNotFastForwardException when the remote moved (the caller must pull first).
+/// Writes every local change as ONE commit on the linked branch and advances the base. Throws GitNothingToCommitException, GitReadOnlyException, GitMissingTokenException when no token is saved, or GitNotFastForwardException when the remote moved (the caller must pull first).
 final class GitCommitPushUseCase implements UseCase<PushResult, GitCommitPushParams> {
   final GitLinkRepository _links;
   final GitHostClient _host;
@@ -22,7 +22,12 @@ final class GitCommitPushUseCase implements UseCase<PushResult, GitCommitPushPar
   Future<PushResult> call(GitCommitPushParams params) async {
     final link = await _links.requireLink(params.collectionId);
     final info = await _host.getRepo(link.repo);
-    if (!info.canPush) throw const GitReadOnlyException();
+    if (!info.canPush) {
+      // Without a token the host answers anonymously and reports no permissions at all, which looks like read-only.
+      // This throws the missing-token (or rejected-token) error in that case; only a real token gets to "read-only".
+      await _host.getAuthenticatedLogin();
+      throw const GitReadOnlyException();
+    }
 
     final base = await _links.readBase(link.id);
     final local = await _engine.readLocal(link);

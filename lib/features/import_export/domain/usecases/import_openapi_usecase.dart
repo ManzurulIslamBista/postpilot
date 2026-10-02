@@ -5,6 +5,7 @@ import '../../../collections/domain/repositories/collection_repository.dart';
 import '../../../collections/domain/repositories/collection_variable_repository.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
+import '../services/import_names.dart';
 import '../services/openapi_parser.dart';
 
 /// Recreates an OpenAPI 3.x / Swagger 2.0 document (JSON or YAML) as a
@@ -38,7 +39,8 @@ final class ImportOpenApiUseCase implements UseCase<int, String> {
         await _persist(request, collectionId, null);
       }
       for (final folder in parsed.folders) {
-        final folderId = await _collectionRepository.createFolder(collectionId: collectionId, name: folder.name);
+        final folderId =
+            await _collectionRepository.createFolder(collectionId: collectionId, name: ImportNames.folder(folder.name));
         for (final request in folder.requests) {
           await _persist(request, collectionId, folderId);
         }

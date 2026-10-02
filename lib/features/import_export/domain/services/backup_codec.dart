@@ -12,6 +12,18 @@ import '../../../request_builder/domain/entities/request_auth.dart';
 import '../../../request_builder/domain/entities/request_body.dart';
 import '../../../request_builder/domain/entities/request_scripts_entity.dart';
 import '../../../request_builder/domain/entities/response_example_entity.dart';
+import '../../../settings/domain/entities/request_settings.dart';
+
+/// The description (Markdown) and tags of a collection, folder or request.
+final class BackupNotes {
+  final String description;
+  final List<String> tags;
+  const BackupNotes({this.description = '', this.tags = const []});
+
+  static const none = BackupNotes();
+
+  bool get isEmpty => description.isEmpty && tags.isEmpty;
+}
 
 /// A request with the rows that hang off it. Only the request's own fields
 /// are meaningful: its ids are placeholders, except [FolderEntity.id] which is
@@ -20,7 +32,19 @@ final class BackupRequest {
   final ApiRequestEntity request;
   final RequestScriptsEntity? scripts;
   final List<ResponseExampleEntity> examples;
-  const BackupRequest({required this.request, this.scripts, this.examples = const []});
+
+  /// Per-request overrides (redirects, TLS verification, timeout, no-cache);
+  /// null when the request has none.
+  final RequestSettings? settings;
+  final BackupNotes notes;
+
+  const BackupRequest({
+    required this.request,
+    this.scripts,
+    this.examples = const [],
+    this.settings,
+    this.notes = BackupNotes.none,
+  });
 }
 
 final class BackupCollection {
@@ -29,6 +53,10 @@ final class BackupCollection {
   final List<CollectionVariableEntity> variables;
   final List<FolderEntity> folders;
   final List<BackupRequest> requests;
+  final BackupNotes notes;
+
+  /// Descriptions and tags of the [folders], by their file-local id.
+  final Map<int, BackupNotes> folderNotes;
 
   const BackupCollection({
     required this.name,
@@ -36,6 +64,8 @@ final class BackupCollection {
     this.variables = const [],
     this.folders = const [],
     this.requests = const [],
+    this.notes = BackupNotes.none,
+    this.folderNotes = const {},
   });
 }
 
@@ -65,9 +95,12 @@ final class BackupSnapshot {
 /// plain text, so the file says so itself (`"sensitive": true` and a notice).
 /// Database ids never reach the file; folders carry a file-local `id` that
 /// their children point at, which a restore remaps to fresh ids.
+///
+/// Version 2 added descriptions and tags (collections, folders, requests) and
+/// per-request settings; a version 1 file has none of them and still reads.
 abstract final class BackupCodec {
   static const formatId = 'postpilot-backup';
-  static const currentVersion = 1;
+  static const currentVersion = 2;
   static const _notice =
       'This file contains secrets (variable values, tokens, passwords, API keys) in plain text. Keep it private.';
 
@@ -94,22 +127,32 @@ abstract final class BackupCodec {
 
   static Map<String, dynamic> _encodeCollection(BackupCollection c) => {
         'name': c.name,
+        ..._encodeNotes(c.notes),
         'auth': ?c.auth?.toJson(),
         'variables': [
           for (final v in c.variables) {'key': v.key, 'value': v.value, 'enabled': v.enabled},
         ],
         'folders': [
-          for (final f in c.folders) {'id': f.id, 'parentId': f.parentFolderId, 'name': f.name},
+          for (final f in c.folders)
+            {'id': f.id, 'parentId': f.parentFolderId, 'name': f.name, ..._encodeNotes(c.folderNotes[f.id] ?? BackupNotes.none)},
         ],
         'requests': [for (final r in c.requests) _encodeRequest(r)],
+      };
+
+  /// Only the parts that are set, so an undocumented entity adds no keys.
+  static Map<String, dynamic> _encodeNotes(BackupNotes notes) => {
+        if (notes.description.isNotEmpty) 'description': notes.description,
+        if (notes.tags.isNotEmpty) 'tags': notes.tags,
       };
 
   static Map<String, dynamic> _encodeRequest(BackupRequest r) {
     final q = r.request;
     final scripts = r.scripts;
+    final settings = r.settings;
     return {
       'folderId': q.folderId,
       'name': q.name,
+      ..._encodeNotes(r.notes),
       'method': q.method.name,
       'url': q.url,
       'headers': _encodeItems(q.headers),
@@ -124,6 +167,7 @@ abstract final class BackupCodec {
         'graphqlVariables': q.body.graphqlVariables,
       },
       'auth': q.auth.toJson(),
+      if (settings != null && !settings.isEmpty) 'settings': settings.toJson(),
       if (scripts != null)
         'scripts': {
           'assertions': _decodeJsonList(scripts.assertionsJson),
@@ -198,6 +242,7 @@ abstract final class BackupCodec {
   static BackupCollection _decodeCollection(Map<String, dynamic> c) => BackupCollection(
         name: _name(c['name'], 'Restored collection'),
         auth: c['auth'] is Map ? RequestAuth.fromJson(_map(c['auth'])) : null,
+        notes: _decodeNotes(c),
         variables: [
           for (final v in _maps(c['variables']))
             if (_text(v['key']).isNotEmpty)
@@ -219,12 +264,28 @@ abstract final class BackupCodec {
                 name: _name(f['name'], 'Folder'),
               ),
         ],
+        folderNotes: {
+          for (final f in _maps(c['folders']))
+            if (f['id'] is int && !_decodeNotes(f).isEmpty) f['id'] as int: _decodeNotes(f),
+        },
         requests: [for (final r in _maps(c['requests'])) _decodeRequest(r)],
+      );
+
+  static BackupNotes _decodeNotes(Map<String, dynamic> map) => BackupNotes(
+        description: map['description'] is String ? map['description'] as String : '',
+        tags: [
+          if (map['tags'] is List)
+            for (final tag in map['tags'] as List)
+              if (tag is String && tag.trim().isNotEmpty) tag,
+        ],
       );
 
   static BackupRequest _decodeRequest(Map<String, dynamic> r) {
     final scripts = r['scripts'];
+    final settings = r['settings'] is Map ? RequestSettings.fromJson(_map(r['settings'])) : null;
     return BackupRequest(
+      notes: _decodeNotes(r),
+      settings: settings == null || settings.isEmpty ? null : settings,
       request: ApiRequestEntity(
         id: 0,
         collectionId: 0,

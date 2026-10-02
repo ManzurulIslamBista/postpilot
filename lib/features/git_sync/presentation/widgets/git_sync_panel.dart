@@ -25,7 +25,7 @@ class GitSyncPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GitPanelTitle(title: 'Git sync', subtitle: collectionName, busyLabel: vm.busyLabel),
+        GitPanelTitle(title: 'Git sync', subtitle: collectionName, busyLabel: vm.busyLabel, canClose: vm.canClose),
         GitBusyBar(busy: vm.isBusy),
         _Messages(vm: vm),
         Expanded(
@@ -184,7 +184,11 @@ class _LinkedHeader extends StatelessWidget {
             tooltip: 'Check for changes',
             onPressed: vm.isBusy ? null : () => vm.refresh(checkRemote: true),
           ),
-          IconButton(icon: const Icon(Icons.close), tooltip: 'Close', onPressed: () => Navigator.pop(context)),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Close',
+            onPressed: vm.canClose ? () => Navigator.pop(context) : null,
+          ),
         ],
       ),
     );

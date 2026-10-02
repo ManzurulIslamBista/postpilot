@@ -4,6 +4,9 @@ import 'package:postpilot/features/collections/domain/entities/collection_variab
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
+import 'package:postpilot/features/documentation/domain/entities/entity_kind.dart';
+import 'package:postpilot/features/documentation/domain/repositories/documentation_repository.dart';
+import 'package:postpilot/features/documentation/domain/repositories/tag_repository.dart';
 import 'package:postpilot/features/environments/domain/entities/environment_entity.dart';
 import 'package:postpilot/features/environments/domain/entities/global_variable_entity.dart';
 import 'package:postpilot/features/environments/domain/repositories/environment_repository.dart';
@@ -19,6 +22,8 @@ import 'package:postpilot/features/request_builder/domain/entities/response_exam
 import 'package:postpilot/features/request_builder/domain/repositories/request_repository.dart';
 import 'package:postpilot/features/request_builder/domain/repositories/request_scripts_repository.dart';
 import 'package:postpilot/features/request_builder/domain/repositories/response_example_repository.dart';
+import 'package:postpilot/features/settings/domain/entities/request_settings.dart';
+import 'package:postpilot/features/settings/domain/repositories/request_settings_repository.dart';
 
 /// The repositories the import/export code works through. Implemented by the
 /// in-memory [InMemoryDb] and, in the database test, by the real ones.
@@ -31,6 +36,9 @@ abstract interface class RepositoryBundle {
   ResponseExampleRepository get exampleRepository;
   EnvironmentRepository get environmentRepository;
   GlobalVariableRepository get globalVariableRepository;
+  RequestSettingsRepository get requestSettingsRepository;
+  DocumentationRepository get documentationRepository;
+  TagRepository get tagRepository;
 }
 
 /// The services and use cases built on a [RepositoryBundle], wired the way the
@@ -52,6 +60,9 @@ extension ImportExportServices on RepositoryBundle {
         exampleRepository,
         environmentRepository,
         globalVariableRepository,
+        requestSettingsRepository,
+        documentationRepository,
+        tagRepository,
       );
 }
 
@@ -72,6 +83,11 @@ final class InMemoryDb implements RepositoryBundle {
   final environments = <EnvironmentEntity>[];
   final environmentVariables = <EnvironmentVariableEntity>[];
   final globals = <GlobalVariableEntity>[];
+  final requestSettings = <int, RequestSettings>{};
+
+  /// Descriptions and tags, keyed by `kind:id` (the real tables have no foreign key either).
+  final descriptions = <String, String>{};
+  final tags = <String, List<String>>{};
 
   /// Makes the n-th (1-based) call of that write throw, to exercise rollbacks.
   int? failSaveRequestOnCall;
@@ -117,6 +133,14 @@ final class InMemoryDb implements RepositoryBundle {
   InMemoryEnvironmentRepository get environmentRepository => InMemoryEnvironmentRepository(this);
   @override
   InMemoryGlobalVariableRepository get globalVariableRepository => InMemoryGlobalVariableRepository(this);
+  @override
+  InMemoryRequestSettingsRepository get requestSettingsRepository => InMemoryRequestSettingsRepository(this);
+  @override
+  InMemoryDocumentationRepository get documentationRepository => InMemoryDocumentationRepository(this);
+  @override
+  InMemoryTagRepository get tagRepository => InMemoryTagRepository(this);
+
+  static String noteKey(EntityKind kind, int id) => '${kind.dbValue}:$id';
 
   /// The requests of one collection, in creation order.
   List<ApiRequestEntity> requestsOf(int collectionId) => requests.where((r) => r.collectionId == collectionId).toList();
@@ -358,6 +382,76 @@ final class InMemoryGlobalVariableRepository implements GlobalVariableRepository
   Future<Map<String, String>> getEnabledMap() async => {
         for (final g in db.globals)
           if (g.enabled) g.key: g.value,
+      };
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
+}
+
+final class InMemoryRequestSettingsRepository implements RequestSettingsRepository {
+  final InMemoryDb db;
+  InMemoryRequestSettingsRepository(this.db);
+
+  @override
+  Future<RequestSettings> get(int requestId) async => db.requestSettings[requestId] ?? RequestSettings.none;
+
+  @override
+  Future<void> save(int requestId, RequestSettings settings) async {
+    if (settings.isEmpty) {
+      db.requestSettings.remove(requestId);
+    } else {
+      db.requestSettings[requestId] = settings;
+    }
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
+}
+
+final class InMemoryDocumentationRepository implements DocumentationRepository {
+  final InMemoryDb db;
+  InMemoryDocumentationRepository(this.db);
+
+  @override
+  Future<String> markdownOf(EntityKind kind, int id) async => db.descriptions[InMemoryDb.noteKey(kind, id)] ?? '';
+
+  @override
+  Future<void> setMarkdown(EntityKind kind, int id, String text) async {
+    if (text.isEmpty) {
+      db.descriptions.remove(InMemoryDb.noteKey(kind, id));
+    } else {
+      db.descriptions[InMemoryDb.noteKey(kind, id)] = text;
+    }
+  }
+
+  @override
+  Future<Map<int, String>> markdownByLocalId(EntityKind kind) async => {
+        for (final entry in db.descriptions.entries)
+          if (entry.key.startsWith('${kind.dbValue}:')) int.parse(entry.key.split(':').last): entry.value,
+      };
+}
+
+final class InMemoryTagRepository implements TagRepository {
+  final InMemoryDb db;
+  InMemoryTagRepository(this.db);
+
+  @override
+  Future<void> setTags(EntityKind kind, int id, List<String> tags) async {
+    final clean = [
+      for (final tag in tags)
+        if (tag.trim().isNotEmpty) tag.trim(),
+    ];
+    if (clean.isEmpty) {
+      db.tags.remove(InMemoryDb.noteKey(kind, id));
+    } else {
+      db.tags[InMemoryDb.noteKey(kind, id)] = clean;
+    }
+  }
+
+  @override
+  Future<Map<int, List<String>>> tagsByLocalId(EntityKind kind) async => {
+        for (final entry in db.tags.entries)
+          if (entry.key.startsWith('${kind.dbValue}:')) int.parse(entry.key.split(':').last): [...entry.value],
       };
 
   @override

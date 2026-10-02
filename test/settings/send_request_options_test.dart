@@ -285,6 +285,33 @@ void main() {
       expect(first.headers['Cache-Control'], 'no-cache');
       expect(first.headers, isNot(contains('Authorization')));
     });
+
+    test('signs the request-uri with its query string, as it goes on the request line', () async {
+      client.script = [
+        const ApiHttpResponse(
+          statusCode: 401,
+          statusMessage: 'Unauthorized',
+          headers: {'www-authenticate': challenge},
+          bodyBytes: [],
+          duration: Duration.zero,
+        ),
+      ];
+
+      await buildUseCase()(_request(
+        params: [KeyValueItem(key: 'page', value: '2')],
+        auth: const RequestAuth(type: AuthType.digest, basicUsername: 'ann', basicPassword: 'pw'),
+      ));
+
+      expect(client.sent[1].url, 'https://api.example.com/items?page=2');
+      expect(client.sent[1].headers['Authorization'], contains('uri="/items?page=2"'));
+    });
+
+    test('digestRequestUri keeps the query and falls back to "/" for an empty path', () {
+      expect(digestRequestUri('https://h.example/api/items?page=2&x=a%20b'), '/api/items?page=2&x=a%20b');
+      expect(digestRequestUri('https://h.example/api/items'), '/api/items');
+      expect(digestRequestUri('https://h.example'), '/');
+      expect(digestRequestUri('https://h.example?x=1'), '/?x=1');
+    });
   });
 }
 

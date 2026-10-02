@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import '../errors/app_exception.dart';
 import 'api_http_response.dart';
 
 /// An adapter over a `dart:io` client that skips certificate checks when
@@ -29,6 +30,9 @@ String proxyDirectiveFor(ProxyConfig proxy, Uri uri) {
       return HttpClient.findProxyFromEnvironment(uri);
     case ProxyMode.custom:
       if (!proxy.isUsableCustom || proxy.bypasses(uri)) return 'DIRECT';
+      // Refused here, before `HttpClient` parses the directive: its own error
+      // for a broken one quotes the whole directive, password included.
+      if (proxy.hasUnsendableCredentials) throw const NetworkException(ProxyConfig.unsendableCredentialsMessage);
       final host = proxy.host.contains(':') && !proxy.host.startsWith('[') ? '[${proxy.host}]' : proxy.host;
       // `HttpClient` rejects credentials with an empty side.
       final credentials = proxy.username.isEmpty || proxy.password.isEmpty ? '' : '${proxy.username}:${proxy.password}@';

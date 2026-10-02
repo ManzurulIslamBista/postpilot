@@ -461,6 +461,7 @@ class _ResultTile extends StatelessWidget {
       if (failedSaves.isNotEmpty)
         'variables: ${scripts.extracted.length - failedSaves.length}/${scripts.extracted.length} saved'
             ' - ${failedSaves.map((e) => e.error).toSet().join(', ')}',
+      if (result.truncated && (failedTests.isNotEmpty || failedSaves.isNotEmpty)) 'response cut off at the size limit',
     ];
     return parts.isEmpty ? null : parts.join(' · ');
   }

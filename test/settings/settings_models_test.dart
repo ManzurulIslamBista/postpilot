@@ -283,6 +283,54 @@ void main() {
       expect(const ProxySettings(mode: custom, host: 'proxy.local').toConfig().host, 'proxy.local');
     });
 
+    test('a pasted host:port is split, so the host is never read as an IPv6 literal', () {
+      final config = const ProxySettings(mode: custom, host: 'http://proxy.corp.com:3128/', port: 8080).toConfig();
+
+      expect(config.host, 'proxy.corp.com');
+      expect(config.port, 3128);
+      expect(const ProxySettings(mode: custom, host: 'proxy.corp.com:3128').toConfig().port, 3128);
+      expect(const ProxySettings(mode: custom, host: 'proxy.corp.com:').toConfig().host, 'proxy.corp.com');
+      expect(const ProxySettings(mode: custom, host: 'proxy.corp.com/pac?x=1', port: 81).toConfig().port, 81);
+    });
+
+    test('an IPv6 host keeps its address, with or without brackets and a port', () {
+      final bare = const ProxySettings(mode: custom, host: '::1', port: 3128).toConfig();
+      final bracketed = const ProxySettings(mode: custom, host: '[::1]:3129', port: 3128).toConfig();
+
+      expect((bare.host, bare.port), ('::1', 3128));
+      expect((bracketed.host, bracketed.port), ('[::1]', 3129));
+    });
+
+    test('credentials pasted in the host fill in empty fields but never override typed ones', () {
+      final pasted = const ProxySettings(mode: custom, host: 'http://ann:p%40ss@proxy.local:3128').toConfig();
+      final typed =
+          const ProxySettings(mode: custom, host: 'http://ann:x@proxy.local', username: 'bob', password: 'y').toConfig();
+
+      expect((pasted.host, pasted.username, pasted.password), ('proxy.local', 'ann', 'p@ss'));
+      expect((typed.username, typed.password), ('bob', 'y'));
+    });
+
+    test('problem names what would make every request fail, and nothing else', () {
+      const ok = ProxySettings(mode: custom, host: 'proxy.local', username: 'ann', password: 'p:@ss');
+
+      expect(ok.problem, isNull);
+      expect(const ProxySettings(mode: custom).problem, isNull, reason: 'a blank host is "requests go direct"');
+      expect(ok.copyWith(password: 'pa;ss').problem, ProxyConfig.unsendableCredentialsMessage);
+      expect(ok.copyWith(username: 'a:b').problem, ProxyConfig.unsendableCredentialsMessage);
+      expect(ok.copyWith(password: '').problem, contains('both'));
+      expect(ok.copyWith(host: 'proxy:abc').problem, contains('host'));
+      expect(ok.copyWith(host: 'my proxy').problem, contains('host'));
+      expect(ok.copyWith(mode: ProxyMode.none, password: 'pa;ss').problem, isNull);
+    });
+
+    test('routeNote tells what a pasted host was taken apart into', () {
+      expect(const ProxySettings(mode: custom, host: 'proxy.local').routeNote, isNull);
+      expect(
+        const ProxySettings(mode: custom, host: 'http://proxy.corp.com:3128/').routeNote,
+        'Requests go through proxy.corp.com:3128.',
+      );
+    });
+
     test('bypass text splits on commas, semicolons and whitespace and drops blanks', () {
       expect(
         const ProxySettings(mode: custom, bypass: ' a.com,, b.com ;c.com\n d.com ').toConfig().bypass,

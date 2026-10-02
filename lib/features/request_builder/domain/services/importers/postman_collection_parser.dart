@@ -64,7 +64,8 @@ final class ParsedPostmanCollection {
 /// none of their own.
 abstract final class PostmanCollectionParser {
   static ParsedPostmanCollection parse(String json) {
-    final root = jsonDecode(json) as Map<String, dynamic>;
+    // A leading BOM is not JSON, but the format detector accepts such a file.
+    final root = jsonDecode(json.replaceFirst('﻿', '').trim()) as Map<String, dynamic>;
     final name = (root['info'] as Map?)?['name'] as String? ?? 'Imported collection';
     final items = (root['item'] as List? ?? const []).map((i) => _parseItem(i, null)).whereType<PostmanItem>().toList();
     return ParsedPostmanCollection(

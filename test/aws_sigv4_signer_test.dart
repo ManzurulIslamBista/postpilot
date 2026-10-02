@@ -73,6 +73,60 @@ void main() {
       expect(result['Authorization'], contains('SignedHeaders=host;x-amz-date;x-amz-security-token'));
     });
 
+    group('canonical request', () {
+      const amzDate = '20150830T123600Z';
+
+      String canonicalFor(String url, {Map<String, String> headers = const {}}) =>
+          signer.canonicalRequest(method: 'GET', uri: Uri.parse(url), headers: headers, body: const [], amzDate: amzDate).request;
+
+      test('signs the port a non-default port puts in the Host header', () {
+        expect(canonicalFor('http://localhost:4566/bucket'), contains('\nhost:localhost:4566\n'));
+        expect(canonicalFor('http://minio.local:9000/'), contains('\nhost:minio.local:9000\n'));
+        expect(canonicalFor('https://example.com:8443/'), contains('\nhost:example.com:8443\n'));
+      });
+
+      test('leaves the default port out, as dart:io does', () {
+        expect(canonicalFor('https://example.com:443/'), contains('\nhost:example.com\n'));
+        expect(canonicalFor('http://example.com:80/'), contains('\nhost:example.com\n'));
+        expect(canonicalFor('https://example.com/'), contains('\nhost:example.com\n'));
+        expect(canonicalFor('http://example.com:443/'), contains('\nhost:example.com:443\n'), reason: '443 is not http default');
+      });
+
+      test('brackets an IPv6 host, as the Host header does', () {
+        expect(canonicalFor('http://[::1]:4566/'), contains('\nhost:[::1]:4566\n'));
+      });
+
+      test('a port changes the signature', () {
+        final plain = signer.sign(method: 'GET', uri: Uri.parse('http://localhost/'), headers: const {}, body: const [], now: fixedNow);
+        final ported = signer.sign(method: 'GET', uri: Uri.parse('http://localhost:4566/'), headers: const {}, body: const [], now: fixedNow);
+
+        expect(plain['Authorization'], isNot(ported['Authorization']));
+      });
+
+      test('signs every value of a repeated query parameter, sorted by name and then value', () {
+        final canonical = canonicalFor('https://example.com/?tag=b&tag=a&Alpha=z&tag=c');
+
+        expect(canonical.split('\n')[2], 'Alpha=z&tag=a&tag=b&tag=c');
+      });
+
+      test('sorts by the encoded name and encodes names and values as AWS asks', () {
+        final canonical = canonicalFor('https://example.com/?b=x%20y&a=%C3%A9&a2=1&a=1');
+
+        expect(canonical.split('\n')[2], 'a=%C3%A9&a=1&a2=1&b=x%20y');
+      });
+
+      test('a parameter without a value is signed with an empty one', () {
+        expect(canonicalFor('https://example.com/?acl').split('\n')[2], 'acl=');
+      });
+
+      test('a repeated parameter changes the signature', () {
+        final one = signer.sign(method: 'GET', uri: Uri.parse('https://example.com/?tag=a'), headers: const {}, body: const [], now: fixedNow);
+        final two = signer.sign(method: 'GET', uri: Uri.parse('https://example.com/?tag=a&tag=b'), headers: const {}, body: const [], now: fixedNow);
+
+        expect(one['Authorization'], isNot(two['Authorization']));
+      });
+    });
+
     test('a non-empty body changes the signature (payload hash is part of the canonical request)', () {
       final empty = signer.sign(method: 'POST', uri: uri, headers: const {}, body: const [], now: fixedNow);
       final withBody = signer.sign(method: 'POST', uri: uri, headers: const {}, body: 'hello'.codeUnits, now: fixedNow);

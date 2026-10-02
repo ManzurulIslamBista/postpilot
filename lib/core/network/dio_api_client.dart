@@ -42,9 +42,19 @@ final class DioApiClient implements ApiClient {
     } on DioException catch (e) {
       // Dio leaves `message` null when it merely wraps a foreign error (bad
       // scheme or host, TLS handshake failure); the cause lives in `error`.
-      final message = e.message ?? e.error?.toString() ?? 'Network request failed.';
+      final message = _withoutProxyCredentials(
+        e.message ?? e.error?.toString() ?? 'Network request failed.',
+        spec.options.proxy,
+      );
       throw NetworkException(_isCertificateProblem(e) ? '$message\n\n$_certificateHint' : message, kind: _kindOf(e.type));
     }
+  }
+
+  /// `dart:io` quotes a proxy directive it cannot use, `user:password@` part
+  /// included; the message ends up in the error banner and the Console log.
+  String _withoutProxyCredentials(String message, ProxyConfig proxy) {
+    if (proxy.username.isEmpty || proxy.password.isEmpty) return message;
+    return message.replaceAll('${proxy.username}:${proxy.password}@', '${proxy.username}:***@');
   }
 
   static const _certificateHint = 'If you trust this server, turn off "Verify SSL certificates" in Settings.';

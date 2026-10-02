@@ -161,6 +161,112 @@ void main() {
     });
   });
 
+  group('maskValue by what the value is', () {
+    test('a url under an ordinary name loses its password and secret parameters', () {
+      expect(SecretMasker.maskValue('baseUrl', 'https://ann:hunter2@staging.example.com'), 'https://ann:$mask@staging.example.com');
+      expect(SecretMasker.maskValue('dbUrl', 'postgres://u:pw@host/db'), 'postgres://u:$mask@host/db');
+      expect(SecretMasker.maskValue('callback', 'https://x/cb?code=1&api_key=abc'), 'https://x/cb?code=1&api_key=$mask');
+      expect(SecretMasker.maskValue('baseUrl', 'https://api.example.com/v1'), 'https://api.example.com/v1');
+    });
+
+    test('a webhook keeps its host but loses the secret path', () {
+      expect(SecretMasker.maskValue('webhook', 'https://hooks.slack.com/services/T0/B0/XXXX'),
+          'https://hooks.slack.com/services/$mask');
+      expect(SecretMasker.maskValue('hook', 'https://discord.com/api/webhooks/123/abc_DEF'), 'https://discord.com/api/webhooks/$mask');
+    });
+
+    test('a known token shape is masked whatever the name', () {
+      for (final value in [
+        'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln',
+        'sk_live_4eC39HqLyjWDarjtT1zdp7dc',
+        'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+        'AKIAIOSFODNN7EXAMPLE',
+        'xoxb-1234567890-abcdefghij',
+      ]) {
+        expect(SecretMasker.maskValue('note', value), mask, reason: value);
+      }
+    });
+
+    test('ordinary values and variable references stay', () {
+      expect(SecretMasker.maskValue('greeting', 'hello sk_live'), 'hello sk_live');
+      expect(SecretMasker.maskValue('id', 'AKIA-not-a-key'), 'AKIA-not-a-key');
+      expect(SecretMasker.maskValue('baseUrl', '{{scheme}}://{{host}}'), '{{scheme}}://{{host}}');
+    });
+  });
+
+  group('maskBody', () {
+    test('masks GraphQL literal arguments by their name', () {
+      expect(
+        SecretMasker.maskBody('mutation { login(user: "ann", password: "hunter2") { token } }'),
+        'mutation { login(user: "ann", password: "$mask") { token } }',
+      );
+      expect(SecretMasker.maskBody("{ f(api_key: 'abc', n: 'x') }"), "{ f(api_key: '$mask', n: 'x') }");
+      expect(SecretMasker.maskBody('{ login(password: \$pw, token: "{{t}}") }'), '{ login(password: \$pw, token: "{{t}}") }');
+    });
+
+    test('masks XML elements and attributes by their name', () {
+      expect(
+        SecretMasker.maskBody('<wsse:UsernameToken><wsse:Username>ann</wsse:Username><wsse:Password Type="x">hunter2</wsse:Password>'
+            '</wsse:UsernameToken>'),
+        '<wsse:UsernameToken><wsse:Username>ann</wsse:Username><wsse:Password Type="x">$mask</wsse:Password></wsse:UsernameToken>',
+      );
+      expect(SecretMasker.maskBody('<login user="ann" password="hunter2"/>'), '<login user="ann" password="$mask"/>');
+      expect(SecretMasker.maskBody('<a><Password>{{pw}}</Password><name>Ann</name></a>'), '<a><Password>{{pw}}</Password><name>Ann</name></a>');
+    });
+
+    test('masks name=value pairs of a urlencoded body sent as raw text', () {
+      expect(
+        SecretMasker.maskBody('grant_type=password&client_id=web&client_secret=abc&client%5Fpassword=p'),
+        'grant_type=password&client_id=web&client_secret=$mask&client%5Fpassword=$mask',
+      );
+      expect(SecretMasker.maskBody('API_KEY=abc\nNAME=Ann'), 'API_KEY=$mask\nNAME=Ann');
+      expect(SecretMasker.maskBody('token={{t}}&x=1'), 'token={{t}}&x=1');
+    });
+
+    test('masks name: value lines of a YAML or header-style body', () {
+      expect(
+        SecretMasker.maskBody('user: ann\npassword: hunter2  \n  - api_key: abc\nAuthorization: Bearer xyz\nurl: https://x/y'),
+        'user: ann\npassword: $mask  \n  - api_key: $mask\nAuthorization: Bearer $mask\nurl: https://x/y',
+      );
+    });
+
+    test('still masks JSON and known tokens, and leaves counts and plain text alone', () {
+      expect(SecretMasker.maskBody('{"password":"p","max_tokens":100,"note":"see sk_live_4eC39HqLyjWDarjtT1zdp7dc"}'),
+          '{"password":"$mask","max_tokens":100,"note":"see $mask"}');
+      const plain = 'Hello, this is a plain body.\nNothing secret: here.';
+      expect(SecretMasker.maskBody(plain), plain);
+      expect(SecretMasker.maskBody(''), '');
+    });
+
+    test('is idempotent', () {
+      const body = 'password: hunter2\n<Password>p</Password>\ntoken=abc\nf(secret: "s")';
+      final once = SecretMasker.maskBody(body);
+      expect(SecretMasker.maskBody(once), once);
+    });
+
+    test('a huge body of any shape is handled in linear time', () {
+      final watch = Stopwatch()..start();
+      SecretMasker.maskBody('a' * 2000000);
+      SecretMasker.maskBody('a-' * 1000000);
+      SecretMasker.maskBody('k: x${' ' * 1000000}y');
+      SecretMasker.maskBody('<a ${'b ' * 500000}');
+      SecretMasker.maskBody('password: "${'x' * 2000000}');
+      SecretMasker.maskBody('a=b&' * 250000);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 15)));
+    });
+  });
+
+  group('maskMessage', () {
+    test('masks urls quoted in a message, resolved or not', () {
+      expect(
+        SecretMasker.maskMessage('Not a valid http(s) URL: "{{baseUrl}}/u?api_key=abc&p=1" (see https://ann:pw@h/x)'),
+        'Not a valid http(s) URL: "{{baseUrl}}/u?api_key=$mask&p=1" (see https://ann:$mask@h/x)',
+      );
+      expect(SecretMasker.maskMessage('Request timed out. Try again?'), 'Request timed out. Try again?');
+      expect(SecretMasker.maskMessage(''), '');
+    });
+  });
+
   group('redact', () {
     test('masks every part of the model and keeps its shape', () {
       const model = ApiDocsModel(
@@ -206,6 +312,62 @@ void main() {
       expect(request.examples.single.body, '{"token":"$mask"}');
       expect(request.body!.typeLabel, 'JSON');
       expect(safe.name, 'Api');
+    });
+
+    test('masks credentials in other body formats and in variables under ordinary names', () {
+      const model = ApiDocsModel(
+        name: 'Api',
+        variables: [
+          ApiDocsField('baseUrl', 'https://ann:hunter2@staging.example.com'),
+          ApiDocsField('dbUrl', 'postgres://u:pw@host/db'),
+          ApiDocsField('webhook', 'https://hooks.slack.com/services/T0/B0/XXXX'),
+          ApiDocsField('stripe', 'sk_live_4eC39HqLyjWDarjtT1zdp7dc'),
+          ApiDocsField('region', 'eu'),
+        ],
+        requests: [
+          ApiDocsRequest(
+            name: 'GraphQL',
+            method: 'POST',
+            url: '/graphql',
+            body: ApiDocsBody(
+              typeLabel: 'GraphQL',
+              language: 'graphql',
+              text: 'mutation { login(user: "ann", password: "hunter2") { token } }',
+              variablesText: '{"pin": 4321, "password": "p2"}',
+            ),
+          ),
+          ApiDocsRequest(
+            name: 'SOAP',
+            method: 'POST',
+            url: '/soap',
+            body: ApiDocsBody(typeLabel: 'XML', language: 'xml', text: '<wsse:Password>hunter2</wsse:Password>'),
+            headers: [ApiDocsField('X-Callback', 'https://x/cb?api_key=abc')],
+            examples: [ApiDocsExample(name: 'OK', statusCode: 200, body: 'access_token=abc&expires=3600')],
+          ),
+          ApiDocsRequest(
+            name: 'Form',
+            method: 'POST',
+            url: '/token',
+            body: ApiDocsBody(typeLabel: 'Text', text: 'grant_type=password&client_secret=abc'),
+          ),
+        ],
+      );
+
+      final safe = SecretMasker.redact(model);
+
+      expect(safe.variables.map((v) => v.value), [
+        'https://ann:$mask@staging.example.com',
+        'postgres://u:$mask@host/db',
+        'https://hooks.slack.com/services/$mask',
+        mask,
+        'eu',
+      ]);
+      expect(safe.requests[0].body!.text, 'mutation { login(user: "ann", password: "$mask") { token } }');
+      expect(safe.requests[0].body!.variablesText, '{"pin": 4321, "password": "$mask"}');
+      expect(safe.requests[1].body!.text, '<wsse:Password>$mask</wsse:Password>');
+      expect(safe.requests[1].headers.single.value, 'https://x/cb?api_key=$mask');
+      expect(safe.requests[1].examples.single.body, 'access_token=$mask&expires=3600');
+      expect(safe.requests[2].body!.text, 'grant_type=password&client_secret=$mask');
     });
   });
 }

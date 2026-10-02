@@ -65,6 +65,11 @@ final class GitAuthException extends GitHostException {
   const GitAuthException(super.message);
 }
 
+/// No token is saved at all, as opposed to one the host rejected: the fix is to save one, not to replace it.
+final class GitMissingTokenException extends GitAuthException {
+  const GitMissingTokenException() : super('No GitHub token saved');
+}
+
 final class GitNotFoundException extends GitHostException {
   const GitNotFoundException(super.message);
 }

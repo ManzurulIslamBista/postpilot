@@ -67,12 +67,17 @@ class _GitSyncDialogState extends State<GitSyncDialog> {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<GitSyncViewModel>.value(
       value: _viewModel,
-      child: Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: SizedBox(
-          width: 760,
-          height: 600,
-          child: GitSyncPanel(collectionId: widget.collectionId, collectionName: widget.collectionName),
+      // The barrier, Escape and the back button cannot dismiss the dialog while a commit, pull or switch is running.
+      child: ListenableBuilder(
+        listenable: _viewModel,
+        builder: (context, child) => PopScope(canPop: _viewModel.canClose, child: child!),
+        child: Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: SizedBox(
+            width: 760,
+            height: 600,
+            child: GitSyncPanel(collectionId: widget.collectionId, collectionName: widget.collectionName),
+          ),
         ),
       ),
     );

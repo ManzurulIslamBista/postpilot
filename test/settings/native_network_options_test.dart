@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:dio/dio.dart' show DioException, HttpClientAdapter, RequestOptions, ResponseBody;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:postpilot/core/errors/app_exception.dart';
 import 'package:postpilot/core/network/api_http_response.dart';
@@ -100,6 +101,31 @@ void main() {
 
       expect(proxyDirectiveFor(noPassword, uri), 'PROXY p:1');
       expect(proxyDirectiveFor(noUser, uri), 'PROXY p:1');
+    });
+
+    test('credentials dart:io would split apart are refused with a message that does not quote them', () {
+      const semicolon = ProxyConfig(mode: ProxyMode.custom, host: 'p', port: 1, username: 'ann', password: 'pa;ss');
+      const colon = ProxyConfig(mode: ProxyMode.custom, host: 'p', port: 1, username: 'a:nn', password: 'pass');
+
+      for (final proxy in [semicolon, colon]) {
+        expect(
+          () => proxyDirectiveFor(proxy, uri),
+          throwsA(isA<NetworkException>().having((e) => e.message, 'message', isNot(contains('pass')))),
+        );
+      }
+    });
+
+    test('unsendable credentials do not matter for a request that bypasses the proxy', () {
+      const proxy = ProxyConfig(
+        mode: ProxyMode.custom,
+        host: 'p',
+        port: 1,
+        username: 'ann',
+        password: 'pa;ss',
+        bypass: ['example.com'],
+      );
+
+      expect(proxyDirectiveFor(proxy, uri), 'DIRECT');
     });
 
     test('a bypassed host goes direct, and so does a custom proxy with nowhere to connect', () {
@@ -304,6 +330,41 @@ void main() {
       expect(headers['auth'], 'Basic ${base64Encode(utf8.encode('ann:p:ss@word'))}');
     });
 
+    test('credentials that cannot be sent fail the request with a clear message that does not quote them', () async {
+      const proxy = ProxyConfig(mode: ProxyMode.custom, host: '127.0.0.1', port: 9, username: 'ann', password: 'pa;ss');
+      final options = ApiRequestOptions(timeout: _timeout, proxy: proxy);
+
+      await expectLater(
+        DioApiClient().send(_get('http://target.invalid/', options: options)),
+        throwsA(
+          isA<NetworkException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains(ProxyConfig.unsendableCredentialsMessage), isNot(contains('pa;ss'))),
+          ),
+        ),
+      );
+    });
+
+    test('a proxy password quoted by a lower layer is masked before the error is shown', () async {
+      final client = DioApiClient(
+        adapterFactory: ({required verifySsl, required proxy}) =>
+            _FailingAdapter('Invalid proxy configuration PROXY ann:s3cret@proxy.local:1, invalid port'),
+      );
+      const proxy = ProxyConfig(mode: ProxyMode.custom, host: 'proxy.local', port: 1, username: 'ann', password: 's3cret');
+
+      await expectLater(
+        client.send(_get('http://target.invalid/', options: const ApiRequestOptions(timeout: _timeout, proxy: proxy))),
+        throwsA(
+          isA<NetworkException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('ann:***@proxy.local:1'), isNot(contains('s3cret'))),
+          ),
+        ),
+      );
+    });
+
     test('a bypassed host is reached directly, not through the proxy', () async {
       var proxied = 0;
       final proxy = await serve((request) {
@@ -440,4 +501,17 @@ void main() {
       }
     });
   });
+}
+
+/// Stands for `dart:io` rejecting a proxy directive: the error quotes it.
+final class _FailingAdapter implements HttpClientAdapter {
+  final String message;
+  _FailingAdapter(this.message);
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) =>
+      Future.error(DioException(requestOptions: options, error: HttpException(message)));
+
+  @override
+  void close({bool force = false}) {}
 }

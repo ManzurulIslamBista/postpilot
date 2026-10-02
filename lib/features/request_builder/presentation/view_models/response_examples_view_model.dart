@@ -34,7 +34,10 @@ final class ResponseExamplesViewModel with ChangeNotifier {
       requestId: requestId,
       name: name,
       statusCode: response.statusCode,
-      headers: response.headers,
+      headers: {
+        ...response.headers,
+        if (response.truncated) ResponseExampleEntity.truncatedHeader: 'true',
+      },
       body: body,
       savedAt: DateTime.now(),
     ));

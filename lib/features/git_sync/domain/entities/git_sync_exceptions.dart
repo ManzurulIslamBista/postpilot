@@ -2,7 +2,13 @@ import '../repositories/git_host_client.dart';
 
 // Re-exported so callers catch every sync failure with one import.
 export '../repositories/git_host_client.dart'
-    show GitHostException, GitAuthException, GitNotFoundException, GitNotFastForwardException, GitRateLimitException;
+    show
+        GitHostException,
+        GitAuthException,
+        GitMissingTokenException,
+        GitNotFoundException,
+        GitNotFastForwardException,
+        GitRateLimitException;
 
 /// Sync-level failures (as opposed to host/transport failures, which are
 /// [GitHostException]s). Messages are user-readable.

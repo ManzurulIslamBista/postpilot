@@ -39,10 +39,18 @@ final class ResponseBodyFormatter {
     required this._contentDisposition,
   });
 
-  factory ResponseBodyFormatter(Map<String, String> headers, Uint8List bytes) {
+  /// [truncated] says the body was cut off at the response size limit, so a
+  /// multi-byte character cut in half at its end is not mistaken for a body in
+  /// another charset.
+  factory ResponseBodyFormatter(Map<String, String> headers, Uint8List bytes, {bool truncated = false}) {
     final contentType = _headerValue(headers, 'content-type');
     final mimeType = _mimeTypeOf(contentType);
-    final text = decodeResponseBody(bytes, mimeType: mimeType, charset: charsetOfContentType(contentType));
+    final text = decodeResponseBody(
+      bytes,
+      mimeType: mimeType,
+      charset: charsetOfContentType(contentType),
+      truncated: truncated,
+    );
     return ResponseBodyFormatter._(
       bytes: bytes,
       mimeType: mimeType,

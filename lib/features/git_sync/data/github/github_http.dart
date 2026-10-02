@@ -69,7 +69,7 @@ final class GitHubHttp {
     return saved == null || saved.isEmpty ? null : saved;
   }
 
-  Future<String> requireToken() async => await token() ?? (throw const GitAuthException('No GitHub token saved'));
+  Future<String> requireToken() async => await token() ?? (throw const GitMissingTokenException());
 
   /// [cacheBust] false is for answers addressed by sha, which never change.
   Future<GitHubResponse> get(String path, {Map<String, Object> query = const {}, bool cacheBust = true}) =>
@@ -89,7 +89,7 @@ final class GitHubHttp {
     bool cacheBust = false,
   }) async {
     final token = await this.token();
-    if (body != null && token == null) throw const GitAuthException('No GitHub token saved');
+    if (body != null && token == null) throw const GitMissingTokenException();
     try {
       final res = await _dio.request<String>(
         path,

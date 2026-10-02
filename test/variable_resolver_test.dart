@@ -77,6 +77,39 @@ void main() {
       expect(resolver.resolve('{{b}}'), '{{b}}');
     });
 
+    test('a chain that fans out at every level is cut off instead of expanding exponentially', () {
+      // v0..v9 each repeat the next one thirty times: about 30^10 expansions unbounded.
+      final variables = {
+        for (var i = 0; i < 10; i++) 'v$i': List.filled(30, '{{v${i + 1}}}').join(),
+        'v10': 'leaf',
+      };
+      final watch = Stopwatch()..start();
+
+      final result = VariableResolver(variables).resolve('{{v0}}');
+
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+      expect(result.length, lessThan(64 * 1024 * 1024));
+      expect(result, contains('{{'), reason: 'tokens past the allowance stay unresolved');
+    });
+
+    test('a fan-out chain that expands to nothing is cut off too', () {
+      final variables = {
+        for (var i = 0; i < 10; i++) 'v$i': List.filled(30, '{{v${i + 1}}}').join(),
+        'v10': '',
+      };
+      final watch = Stopwatch()..start();
+
+      VariableResolver(variables).resolve('{{v0}}');
+
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+    });
+
+    test('a modest fan-out still resolves in full', () {
+      final resolver = VariableResolver({'a': '{{b}}{{b}}{{b}}', 'b': '{{c}}-{{c}}', 'c': 'x'});
+
+      expect(resolver.resolve('{{a}}'), 'x-xx-xx-x');
+    });
+
     test('resolves names containing hyphens, dots and dollar signs', () {
       final resolver = VariableResolver({'base-url': 'https://api.example.com', 'user.id': '42', r'$region': 'eu'});
 

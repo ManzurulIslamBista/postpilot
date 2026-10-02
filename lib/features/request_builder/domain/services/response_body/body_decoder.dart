@@ -29,7 +29,11 @@ String? charsetOfContentType(String? contentType) =>
 /// Only UTF-8, UTF-16 and windows-1252 (which browsers also use for
 /// ISO-8859-1 and US-ASCII) are understood; a body in any other charset is
 /// decoded as if none was declared.
-String? decodeResponseBody(Uint8List bytes, {required String mimeType, String? charset}) {
+///
+/// With [truncated] the body was cut off at the response size limit, possibly
+/// in the middle of a multi-byte UTF-8 character; that incomplete tail is
+/// dropped instead of making the whole body look like invalid UTF-8.
+String? decodeResponseBody(Uint8List bytes, {required String mimeType, String? charset, bool truncated = false}) {
   if (bytes.isEmpty) return '';
   final isTextual = _textualMimeType.hasMatch(mimeType);
   final bom = isTextual || mimeType.isEmpty ? _byteOrderMark(bytes) : null;
@@ -46,14 +50,36 @@ String? decodeResponseBody(Uint8List bytes, {required String mimeType, String? c
     case _Encoding.utf8:
     case null:
       if (_hasNul(body)) return null;
+      final complete = truncated ? _withoutIncompleteUtf8Tail(body) : body;
       try {
-        return utf8.decode(body);
+        return utf8.decode(complete);
       } on FormatException {
-        if (encoding == _Encoding.utf8) return utf8.decode(body, allowMalformed: true);
+        if (encoding == _Encoding.utf8) return utf8.decode(complete, allowMalformed: true);
         if (mimeType.startsWith('text/')) return _decodeWindows1252(body);
-        return isTextual ? utf8.decode(body, allowMalformed: true) : null;
+        return isTextual ? utf8.decode(complete, allowMalformed: true) : null;
       }
   }
+}
+
+/// [bytes] without a final UTF-8 sequence whose continuation bytes were cut
+/// off. A tail that is complete, or not UTF-8 at all, is left alone.
+Uint8List _withoutIncompleteUtf8Tail(Uint8List bytes) {
+  var start = bytes.length - 1;
+  var continuationBytes = 0;
+  while (start >= 0 && continuationBytes < 3 && (bytes[start] & 0xC0) == 0x80) {
+    start--;
+    continuationBytes++;
+  }
+  if (start < 0) return bytes;
+  final lead = bytes[start];
+  final needed = lead >= 0xF0
+      ? 3
+      : lead >= 0xE0
+          ? 2
+          : lead >= 0xC0
+              ? 1
+              : 0;
+  return needed > continuationBytes ? Uint8List.sublistView(bytes, 0, start) : bytes;
 }
 
 ({_Encoding encoding, int length})? _byteOrderMark(Uint8List bytes) {

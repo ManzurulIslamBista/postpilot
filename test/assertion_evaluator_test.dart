@@ -161,13 +161,14 @@ void main() {
       expect(passes(AssertionType.statusEquals, expected: '{{userId}}'), isFalse);
     });
 
-    test('a result is named after the resolved values; unresolved tokens stay literal and fail', () {
+    test('a result is named after what was written, so a resolved secret never reaches its name', () {
       final resolver = VariableResolver({'userId': '43'});
       final stale =
           evaluator.evaluate(response, one(AssertionType.jsonPathEquals, path: 'data.id', expected: '{{userId}}'), resolver).single;
       expect(stale.passed, isFalse);
       expect(stale.actual, '42');
-      expect(stale.name, 'data.id equals 43');
+      expect(stale.name, 'data.id equals {{userId}}');
+      expect(stale.name, isNot(contains('43')));
 
       final missing = evaluator.evaluate(response, one(AssertionType.jsonPathEquals, path: 'data.id', expected: '{{nope}}')).single;
       expect(missing.passed, isFalse);

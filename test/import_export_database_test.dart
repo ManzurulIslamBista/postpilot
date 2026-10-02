@@ -12,6 +12,11 @@ import 'package:postpilot/features/collections/data/repositories/collection_vari
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
+import 'package:postpilot/features/documentation/data/repositories/documentation_repository_impl.dart';
+import 'package:postpilot/features/documentation/data/repositories/tag_repository_impl.dart';
+import 'package:postpilot/features/documentation/domain/entities/entity_kind.dart';
+import 'package:postpilot/features/documentation/domain/repositories/documentation_repository.dart';
+import 'package:postpilot/features/documentation/domain/repositories/tag_repository.dart';
 import 'package:postpilot/features/environments/data/repositories/environment_repository_impl.dart';
 import 'package:postpilot/features/environments/data/repositories/global_variable_repository_impl.dart';
 import 'package:postpilot/features/environments/domain/repositories/environment_repository.dart';
@@ -31,6 +36,9 @@ import 'package:postpilot/features/request_builder/domain/repositories/request_s
 import 'package:postpilot/features/request_builder/domain/repositories/response_example_repository.dart';
 import 'package:postpilot/features/request_builder/domain/usecases/build_variable_resolver_usecase.dart';
 import 'package:postpilot/features/request_builder/domain/usecases/generate_code_snippet_usecase.dart';
+import 'package:postpilot/features/settings/data/repositories/request_settings_repository_impl.dart';
+import 'package:postpilot/features/settings/domain/entities/request_settings.dart';
+import 'package:postpilot/features/settings/domain/repositories/request_settings_repository.dart';
 import 'support/in_memory_import_export_fakes.dart';
 import 'support/shop_seed.dart';
 
@@ -46,8 +54,17 @@ final class _DriftRepositories implements RepositoryBundle {
         scriptsRepository = RequestScriptsRepositoryImpl(database.requestScriptsDao),
         exampleRepository = ResponseExampleRepositoryImpl(database.responseExamplesDao),
         environmentRepository = EnvironmentRepositoryImpl(database.environmentsDao),
-        globalVariableRepository = GlobalVariableRepositoryImpl(database.globalVariablesDao);
+        globalVariableRepository = GlobalVariableRepositoryImpl(database.globalVariablesDao),
+        requestSettingsRepository = RequestSettingsRepositoryImpl(database.requestSettingsDao),
+        documentationRepository = DocumentationRepositoryImpl(database.entityDocsDao),
+        tagRepository = TagRepositoryImpl(database.entityTagsDao);
 
+  @override
+  final RequestSettingsRepository requestSettingsRepository;
+  @override
+  final DocumentationRepository documentationRepository;
+  @override
+  final TagRepository tagRepository;
   @override
   final CollectionRepository collectionRepository;
   @override
@@ -163,6 +180,34 @@ void main() {
       expect(create.auth.type, AuthType.oauth2);
       expect(create.auth.oauth2RefreshToken, 'refresh-token');
       expect(RequestAuth.fromJsonString(await target.collectionAuthRepository.getAuthJson(shop.id))!.bearerToken, '{{token}}');
+    });
+
+    test('settings, descriptions and tags land on the restored rows (their tables have no foreign key)', () async {
+      await seedShop(repos);
+      final backup = (await repos.backupService.export()).text;
+      final other = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(other.close);
+      final target = _DriftRepositories(other);
+      // Different ids than in the source database, so an un-remapped id would show.
+      for (var i = 0; i < 5; i++) {
+        await target.collectionRepository.createCollection('Noise $i');
+      }
+
+      await target.backupService.restore(backup);
+
+      final shop = (await target.collectionRepository.watchCollections().first).singleWhere((c) => c.name == 'Shop');
+      final list = (await target.requestRepository.watchByCollection(shop.id).first).singleWhere((r) => r.name == 'List orders');
+      final folders = {for (final f in await target.collectionRepository.watchFolders(shop.id).first) f.name: f.id};
+      expect(
+        await target.requestSettingsRepository.get(list.id),
+        const RequestSettings(verifySsl: false, timeoutSeconds: 5, followRedirects: false),
+      );
+      expect(await target.documentationRepository.markdownOf(EntityKind.request, list.id), 'Lists **every** order.');
+      expect(await target.tagRepository.tagsByLocalId(EntityKind.request), {list.id: ['orders', 'read']});
+      expect(await target.documentationRepository.markdownOf(EntityKind.collection, shop.id), '# Shop API');
+      expect(await target.tagRepository.tagsByLocalId(EntityKind.collection), {shop.id: ['internal']});
+      expect(await target.documentationRepository.markdownByLocalId(EntityKind.folder), {folders['Archive']!: 'Old orders, read-only.'});
+      expect(await target.tagRepository.tagsByLocalId(EntityKind.folder), {folders['Orders']!: ['orders', 'v2']});
     });
 
     test('a second restore into the same database adds a copy and leaves the originals alone', () async {

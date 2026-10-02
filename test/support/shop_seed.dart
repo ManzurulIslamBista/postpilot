@@ -3,6 +3,7 @@ import 'package:postpilot/core/enums/auth_type.dart';
 import 'package:postpilot/core/enums/body_type.dart';
 import 'package:postpilot/core/enums/http_method.dart';
 import 'package:postpilot/features/collections/domain/entities/collection_variable_entity.dart';
+import 'package:postpilot/features/documentation/domain/entities/entity_kind.dart';
 import 'package:postpilot/features/environments/domain/entities/environment_entity.dart';
 import 'package:postpilot/features/environments/domain/entities/global_variable_entity.dart';
 import 'package:postpilot/features/request_builder/domain/entities/api_request_entity.dart';
@@ -11,6 +12,7 @@ import 'package:postpilot/features/request_builder/domain/entities/request_auth.
 import 'package:postpilot/features/request_builder/domain/entities/request_body.dart';
 import 'package:postpilot/features/request_builder/domain/entities/request_scripts_entity.dart';
 import 'package:postpilot/features/request_builder/domain/entities/response_example_entity.dart';
+import 'package:postpilot/features/settings/domain/entities/request_settings.dart';
 import 'in_memory_import_export_fakes.dart';
 
 const shopAssertions = '[{"type":"statusIn2xx","path":"","expected":""}]';
@@ -57,11 +59,19 @@ Future<void> seedShop(RepositoryBundle repos) async {
   final archive = await repos.collectionRepository.createFolder(collectionId: shop, parentFolderId: orders, name: 'Archive');
   final users = await repos.collectionRepository.createFolder(collectionId: shop, name: 'Users');
 
-  await addRequest(repos, shop, 'List orders',
+  final list = await addRequest(repos, shop, 'List orders',
       folderId: orders,
       url: '{{baseUrl}}/orders',
       headers: [KeyValueItem(key: 'X-Trace', value: 'on', enabled: false)],
       query: [KeyValueItem(key: 'limit', value: '10')]);
+  // The rows that live beside a request rather than in it: per-request settings, descriptions, tags.
+  await repos.requestSettingsRepository.save(list, const RequestSettings(verifySsl: false, timeoutSeconds: 5, followRedirects: false));
+  await repos.documentationRepository.setMarkdown(EntityKind.request, list, 'Lists **every** order.');
+  await repos.tagRepository.setTags(EntityKind.request, list, ['orders', 'read']);
+  await repos.documentationRepository.setMarkdown(EntityKind.collection, shop, '# Shop API');
+  await repos.tagRepository.setTags(EntityKind.collection, shop, ['internal']);
+  await repos.documentationRepository.setMarkdown(EntityKind.folder, archive, 'Old orders, read-only.');
+  await repos.tagRepository.setTags(EntityKind.folder, orders, ['orders', 'v2']);
   await addRequest(repos, shop, 'Create order',
       folderId: orders,
       method: HttpMethod.post,
@@ -126,7 +136,13 @@ Map<String, dynamic> normalizedBackup(String backupText) {
     final folders = {for (final f in (collection['folders'] as List).cast<Map<String, dynamic>>()) f['id'] as int: f};
     String path(Map<String, dynamic> folder) =>
         folder['parentId'] == null ? '${folder['name']}' : '${path(folders[folder['parentId']]!)}/${folder['name']}';
-    collection['folders'] = [for (final f in folders.values) path(f)];
+    // A folder keeps its description and tags next to its path; a plain one is just the path.
+    collection['folders'] = [
+      for (final f in folders.values)
+        f.containsKey('description') || f.containsKey('tags')
+            ? {'path': path(f), 'description': f['description'], 'tags': f['tags']}
+            : path(f),
+    ];
     for (final request in (collection['requests'] as List).cast<Map<String, dynamic>>()) {
       final folderId = request['folderId'];
       request['folderId'] = folderId == null ? null : path(folders[folderId]!);

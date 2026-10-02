@@ -82,9 +82,12 @@ final class GitSyncViewModel extends GitOperationViewModel {
   List<DocChange> get localChanges => status?.localChanges ?? const [];
   bool get hasLocalChanges => localChanges.isNotEmpty;
 
-  /// Unknown access counts as writable so the UI only blocks on a known "no".
-  bool get canPush => repoInfo?.canPush ?? true;
-  bool get canCommit => !isBusy && link != null && hasLocalChanges && canPush;
+  /// Unknown access counts as writable so the UI only blocks on a known "no". Without a saved token GitHub answers
+  /// anonymously and reports no permissions at all, so its "no" says nothing about the user's rights: unknown too.
+  bool get canPush => !hasToken || (repoInfo?.canPush ?? true);
+
+  /// Pushing needs a saved token; [canPush] alone stays true without one, so it has to be asked for separately.
+  bool get canCommit => !isBusy && link != null && hasLocalChanges && hasToken && canPush;
   bool get historyLoaded => _historyLoaded;
   bool get branchesLoaded => _branchesLoaded;
   bool get contributorsLoaded => _contributorsLoaded;
@@ -123,7 +126,7 @@ final class GitSyncViewModel extends GitOperationViewModel {
   }) async {
     final repo = parseRepositoryOrReport(repository);
     if (repo == null) return false;
-    return run('Connecting to ${repo.fullName}…', () async {
+    return run('Connecting to ${repo.fullName}…', guardsClose: true, () async {
       link = await _connectUseCase(GitConnectParams(
         collectionId: _collectionId,
         repo: repo,
@@ -142,7 +145,7 @@ final class GitSyncViewModel extends GitOperationViewModel {
   Future<bool> commitPush() {
     final typed = commitMessage.trim();
     final message = typed.isEmpty ? _defaultCommitMessage : typed;
-    return run('Committing and pushing…', () async {
+    return run('Committing and pushing…', guardsClose: true, () async {
       lastPush = null;
       final pushed = await _commitPushUseCase(GitCommitPushParams(collectionId: _collectionId, message: message));
       lastPush = pushed;
@@ -171,7 +174,7 @@ final class GitSyncViewModel extends GitOperationViewModel {
     notifyListeners();
   }
 
-  Future<bool> discard() => run('Discarding local changes…', () async {
+  Future<bool> discard() => run('Discarding local changes…', guardsClose: true, () async {
         lastPush = null;
         final outcome = await _discardUseCase(_collectionId);
         await _loadStatus();
@@ -199,7 +202,7 @@ final class GitSyncViewModel extends GitOperationViewModel {
       reportError('Enter a branch name.');
       return Future.value(false);
     }
-    return run('Creating branch $branch…', () async {
+    return run('Creating branch $branch…', guardsClose: true, () async {
       link = await _createBranchUseCase(GitBranchParams(collectionId: _collectionId, branch: branch));
       _markInSync();
       _historyLoaded = false;
@@ -209,7 +212,7 @@ final class GitSyncViewModel extends GitOperationViewModel {
     });
   }
 
-  Future<bool> switchBranch(String name) => run('Switching to $name…', () async {
+  Future<bool> switchBranch(String name) => run('Switching to $name…', guardsClose: true, () async {
         lastPush = null;
         final outcome = await _switchBranchUseCase(GitBranchParams(collectionId: _collectionId, branch: name));
         _markInSync();
@@ -226,14 +229,14 @@ final class GitSyncViewModel extends GitOperationViewModel {
 
   Future<bool> ensureContributors() => _ensure(_contributorsLoaded, 'contributors', loadContributors);
 
-  Future<bool> setIncludeSecrets(bool value) => run('Updating settings…', () async {
+  Future<bool> setIncludeSecrets(bool value) => run('Updating settings…', guardsClose: true, () async {
         link = await _updateLinkSettingsUseCase(
           GitLinkSettingsParams(collectionId: _collectionId, includeSecrets: value),
         );
         await _loadStatus();
       });
 
-  Future<bool> disconnect() => run('Disconnecting…', () async {
+  Future<bool> disconnect() => run('Disconnecting…', guardsClose: true, () async {
         await _disconnectUseCase(_collectionId);
         link = null;
         status = null;
@@ -262,7 +265,7 @@ final class GitSyncViewModel extends GitOperationViewModel {
     if (link != null) await _checkRemote();
   }
 
-  Future<bool> _pull(ConflictResolutions? resolutions, String label) => run(label, () async {
+  Future<bool> _pull(ConflictResolutions? resolutions, String label) => run(label, guardsClose: true, () async {
         lastPush = null;
         final result = await _pullUseCase(GitPullParams(collectionId: _collectionId, resolutions: resolutions));
         switch (result) {

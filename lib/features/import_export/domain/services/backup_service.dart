@@ -5,6 +5,9 @@ import '../../../collections/domain/entities/collection_variable_entity.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
 import '../../../collections/domain/repositories/collection_repository.dart';
 import '../../../collections/domain/repositories/collection_variable_repository.dart';
+import '../../../documentation/domain/entities/entity_kind.dart';
+import '../../../documentation/domain/repositories/documentation_repository.dart';
+import '../../../documentation/domain/repositories/tag_repository.dart';
 import '../../../environments/domain/entities/environment_entity.dart';
 import '../../../environments/domain/entities/global_variable_entity.dart';
 import '../../../environments/domain/repositories/environment_repository.dart';
@@ -15,13 +18,18 @@ import '../../../request_builder/domain/entities/response_example_entity.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
 import '../../../request_builder/domain/repositories/request_scripts_repository.dart';
 import '../../../request_builder/domain/repositories/response_example_repository.dart';
+import '../../../settings/domain/repositories/request_settings_repository.dart';
 import '../entities/backup_export.dart';
 import '../entities/import_format.dart';
 import '../entities/import_summary.dart';
 import 'backup_codec.dart';
 import 'collection_loader.dart';
+import 'import_names.dart';
 
-/// Exports all local data as one backup file and restores such a file.
+/// Exports all local data as one backup file and restores such a file: a
+/// collection with its folders, variables, auth, requests (with their tests,
+/// saved examples, per-request settings), and the descriptions and tags of the
+/// collection, its folders and requests; plus environments and global variables.
 ///
 /// A restore only ever adds: every collection and environment in the file is
 /// created new (a name that is already taken gets a "(restored)" suffix), and
@@ -40,6 +48,9 @@ final class BackupService {
   final ResponseExampleRepository _exampleRepository;
   final EnvironmentRepository _environmentRepository;
   final GlobalVariableRepository _globalVariableRepository;
+  final RequestSettingsRepository _requestSettingsRepository;
+  final DocumentationRepository _documentationRepository;
+  final TagRepository _tagRepository;
 
   const BackupService(
     this._loader,
@@ -51,6 +62,9 @@ final class BackupService {
     this._exampleRepository,
     this._environmentRepository,
     this._globalVariableRepository,
+    this._requestSettingsRepository,
+    this._documentationRepository,
+    this._tagRepository,
   );
 
   Future<BackupExport> export() async {
@@ -66,15 +80,28 @@ final class BackupService {
   }
 
   Future<BackupSnapshot> _readSnapshot() async {
+    final notes = {
+      for (final kind in EntityKind.values)
+        kind: (
+          docs: await _documentationRepository.markdownByLocalId(kind),
+          tags: await _tagRepository.tagsByLocalId(kind),
+        ),
+    };
+    BackupNotes notesOf(EntityKind kind, int id) =>
+        BackupNotes(description: notes[kind]!.docs[id] ?? '', tags: notes[kind]!.tags[id] ?? const []);
+
     final collections = <BackupCollection>[];
     for (final loaded in await _loader.loadAll()) {
       final requests = <BackupRequest>[];
       for (final request in loaded.requests) {
         final scripts = await _scriptsRepository.get(request.id);
+        final settings = await _requestSettingsRepository.get(request.id);
         requests.add(BackupRequest(
           request: request,
           scripts: scripts != null && _hasScripts(scripts) ? scripts : null,
           examples: await _exampleRepository.watchByRequest(request.id).first,
+          settings: settings.isEmpty ? null : settings,
+          notes: notesOf(EntityKind.request, request.id),
         ));
       }
       collections.add(BackupCollection(
@@ -83,6 +110,11 @@ final class BackupService {
         variables: loaded.variables,
         folders: loaded.folders,
         requests: requests,
+        notes: notesOf(EntityKind.collection, loaded.collection.id),
+        folderNotes: {
+          for (final folder in loaded.folders)
+            if (!notesOf(EntityKind.folder, folder.id).isEmpty) folder.id: notesOf(EntityKind.folder, folder.id),
+        },
       ));
     }
     final environments = <BackupEnvironment>[];
@@ -194,8 +226,13 @@ final class BackupService {
         enabled: variable.enabled,
       ));
     }
+    await _restoreNotes(EntityKind.collection, collectionId, collection.notes);
 
     final folderIds = await _restoreFolders(collectionId, collection.folders);
+    for (final entry in collection.folderNotes.entries) {
+      final folderId = folderIds[entry.key];
+      if (folderId != null) await _restoreNotes(EntityKind.folder, folderId, entry.value);
+    }
     for (final item in collection.requests) {
       final source = item.request;
       final folderId = source.folderId == null ? null : folderIds[source.folderId];
@@ -224,6 +261,9 @@ final class BackupService {
           extractorsJson: scripts.extractorsJson,
         ));
       }
+      final settings = item.settings;
+      if (settings != null) await _requestSettingsRepository.save(requestId, settings);
+      await _restoreNotes(EntityKind.request, requestId, item.notes);
       for (final example in item.examples) {
         await _exampleRepository.add(ResponseExampleEntity(
           id: 0,
@@ -237,6 +277,11 @@ final class BackupService {
       }
     }
     return (folders: folderIds.length, requests: collection.requests.length);
+  }
+
+  Future<void> _restoreNotes(EntityKind kind, int id, BackupNotes notes) async {
+    if (notes.description.isNotEmpty) await _documentationRepository.setMarkdown(kind, id, notes.description);
+    if (notes.tags.isNotEmpty) await _tagRepository.setTags(kind, id, notes.tags);
   }
 
   /// Creates [folders] parents-first and returns file id -> new id. A folder
@@ -269,7 +314,7 @@ final class BackupService {
   }
 
   Future<int> _createFolder(int collectionId, int? parentFolderId, String name) =>
-      _collectionRepository.createFolder(collectionId: collectionId, parentFolderId: parentFolderId, name: name);
+      _collectionRepository.createFolder(collectionId: collectionId, parentFolderId: parentFolderId, name: ImportNames.folder(name));
 
   /// [name] itself when free, else "name (restored)", "name (restored 2)", ...;
   /// the chosen name is added to [taken].

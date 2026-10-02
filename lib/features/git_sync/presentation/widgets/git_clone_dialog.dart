@@ -34,12 +34,17 @@ class _GitCloneDialogState extends State<GitCloneDialog> {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<GitCloneViewModel>.value(
       value: _viewModel,
-      child: Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: SizedBox(
-          width: 600,
-          height: 620,
-          child: GitClonePanel(onCloned: (collectionId) => Navigator.pop(context, collectionId)),
+      // The barrier, Escape and the back button cannot dismiss the dialog while a clone is being written.
+      child: ListenableBuilder(
+        listenable: _viewModel,
+        builder: (context, child) => PopScope(canPop: _viewModel.canClose, child: child!),
+        child: Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: SizedBox(
+            width: 600,
+            height: 620,
+            child: GitClonePanel(onCloned: (collectionId) => Navigator.pop(context, collectionId)),
+          ),
         ),
       ),
     );

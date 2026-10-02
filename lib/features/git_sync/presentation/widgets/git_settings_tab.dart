@@ -26,6 +26,7 @@ class GitSettingsTab extends StatelessWidget {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Include credentials in commits'),
+          subtitle: const Text(gitCredentialsOffHint),
           value: link.includeSecrets,
           onChanged: vm.isBusy ? null : (value) => _toggleSecrets(context, vm, value),
         ),

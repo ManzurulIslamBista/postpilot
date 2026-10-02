@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../../../../core/enums/auth_type.dart';
 import '../../../../core/enums/body_type.dart';
+import '../../../../core/errors/app_exception.dart';
 import '../../../../core/utils/variable_resolver.dart';
 import '../entities/api_request_entity.dart';
 import '../entities/key_value_item.dart';
@@ -109,7 +110,8 @@ final class RequestSpecBuilder {
     _Tidy tidy,
   ) {
     final headers = {for (final row in _rows(request.headers, resolver, tidy)) row.key: row.value};
-    if (body.contentType != null && !headers.containsKey('Content-Type')) {
+    // Header names are case-insensitive: a user's `content-type` row wins.
+    if (body.contentType != null && !headers.keys.any((name) => name.toLowerCase() == 'content-type')) {
       headers['Content-Type'] = body.contentType!;
     }
     _applyAuth(auth, headers, resolver, uri, body.bytes, method);
@@ -149,7 +151,7 @@ final class RequestSpecBuilder {
         final token = JwtSigner.sign(
           secret: resolver.resolve(auth.jwtSecret),
           algorithm: auth.jwtAlgorithm,
-          payload: (jsonDecode(resolver.resolve(auth.jwtPayload)) as Map).cast<String, dynamic>(),
+          payload: _jwtPayload(resolver.resolve(auth.jwtPayload)),
         );
         headers['Authorization'] = '${auth.jwtHeaderPrefix} $token'.trim();
       case AuthType.oauth2:
@@ -182,10 +184,31 @@ final class RequestSpecBuilder {
         final variables = resolver.resolve(body.graphqlVariables).trim();
         final payload = jsonEncode({
           'query': resolver.resolve(body.graphqlQuery),
-          'variables': variables.isEmpty ? <String, dynamic>{} : jsonDecode(variables),
+          'variables': variables.isEmpty ? <String, dynamic>{} : _graphqlVariables(variables),
         });
         return _EncodedBody(bytes: utf8.encode(payload), contentType: 'application/json');
     }
+  }
+
+  /// A `FormatException` here would be read by the UI as a URL or connection
+  /// problem, so bad JSON in the user's own fields is reported as what it is.
+  Object? _graphqlVariables(String text) {
+    try {
+      return jsonDecode(text);
+    } on FormatException catch (e) {
+      throw InvalidRequestException('The GraphQL variables are not valid JSON (${e.message}).');
+    }
+  }
+
+  Map<String, dynamic> _jwtPayload(String text) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException catch (e) {
+      throw InvalidRequestException('The JWT payload is not valid JSON (${e.message}).');
+    }
+    if (decoded is! Map) throw const InvalidRequestException('The JWT payload must be a JSON object.');
+    return decoded.cast<String, dynamic>();
   }
 
   _EncodedBody _buildMultipart(RequestBody body, VariableResolver resolver, _Tidy tidy) {

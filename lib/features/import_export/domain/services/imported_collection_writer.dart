@@ -5,6 +5,7 @@ import '../../../collections/domain/repositories/collection_variable_repository.
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
 import '../entities/imported_collection.dart';
+import 'import_names.dart';
 
 /// What [ImportedCollectionWriter] created.
 final class WrittenCollection {
@@ -66,7 +67,7 @@ final class ImportedCollectionWriter {
           final newFolderId = await _collectionRepository.createFolder(
             collectionId: collectionId,
             parentFolderId: folderId,
-            name: item.name,
+            name: ImportNames.folder(item.name),
           );
           await addItems(collectionId, newFolderId, item.children);
         case ImportedRequest():

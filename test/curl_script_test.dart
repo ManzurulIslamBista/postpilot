@@ -64,6 +64,21 @@ curl --location --request GET 'https://a.test/ping'
       expect(script, contains('# First Second Third\ncurl https://a.test'));
     });
 
+    test('a folder name with line breaks cannot start an executable line', () {
+      final script = CurlScriptWriter.write(
+        collectionName: 'C',
+        entries: const [
+          CurlScriptEntry.generated(name: 'A', folder: 'x\nrm -rf ~ #', command: 'curl https://a.test'),
+          CurlScriptEntry.generated(name: 'B', folder: 'y\r\nrm -rf /  touch z', command: 'curl https://b.test'),
+        ],
+      );
+
+      expect(script, contains('\n# --- x rm -rf ~ # ---\n'));
+      for (final line in script.split('\n')) {
+        expect(line.isEmpty || line.startsWith('#') || line.startsWith('curl '), isTrue, reason: 'unexpected executable line: $line');
+      }
+    });
+
     test('a request that could not be rendered is explained in a comment', () {
       final script = CurlScriptWriter.write(
         collectionName: 'C',

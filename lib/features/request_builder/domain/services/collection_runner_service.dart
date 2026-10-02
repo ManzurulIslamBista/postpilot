@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import '../../../../core/network/api_http_response.dart';
+import '../../../documentation/domain/services/secret_masker.dart';
 import '../../../scripting/domain/entities/script_run_result.dart';
 import '../../../scripting/domain/usecases/run_request_scripts_usecase.dart';
 import '../entities/api_request_entity.dart';
@@ -33,11 +34,22 @@ final class CollectionRunResult {
   int get assertionCount => scripts?.assertions.length ?? 0;
   int get passedAssertionCount => scripts?.passedCount ?? 0;
 
-  /// What went wrong in the tests and variable saves, one line each.
-  List<String> get failures => [
-        ...?scripts?.assertions.where((a) => !a.passed).map((a) => a.name),
-        ...?scripts?.extracted.where((e) => !e.ok).map((e) => 'variable ${e.key}: ${e.error}'),
-      ];
+  /// The response body was cut off at the size limit, so the tests and
+  /// extractors ran on only the first part of it.
+  bool get truncated => response?.truncated ?? false;
+
+  /// What went wrong in the tests and variable saves, one line each; when the
+  /// body they ran on was cut short, a last line says so.
+  List<String> get failures {
+    final lines = [
+      ...?scripts?.assertions.where((a) => !a.passed).map((a) => a.name),
+      ...?scripts?.extracted.where((e) => !e.ok).map((e) => 'variable ${e.key}: ${e.error}'),
+    ];
+    if (lines.isNotEmpty && truncated) lines.add(truncatedBodyHint);
+    return lines;
+  }
+
+  static const truncatedBodyHint = 'The response was cut off at the size limit (see Settings), so tests ran on part of it.';
 }
 
 Future<void> _sleep(Duration duration) => Future<void>.delayed(duration);
@@ -136,7 +148,8 @@ final class CollectionRunnerService {
       );
     } catch (e) {
       if (cancelToken?.isCancelled ?? false) return null;
-      return CollectionRunResult(request: summary, error: e.toString(), iteration: iteration);
+      // The message can quote the resolved URL, and the result is shown and exported.
+      return CollectionRunResult(request: summary, error: SecretMasker.maskMessage(e.toString()), iteration: iteration);
     }
   }
 
@@ -148,5 +161,6 @@ final class CollectionRunnerService {
         headers: response.headers,
         bodyBytes: Uint8List(0),
         duration: response.duration,
+        truncated: response.truncated,
       );
 }

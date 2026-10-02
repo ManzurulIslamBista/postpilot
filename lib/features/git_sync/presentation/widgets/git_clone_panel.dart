@@ -48,6 +48,7 @@ class _GitClonePanelState extends State<GitClonePanel> {
           title: 'Clone from Git',
           subtitle: 'Create a new collection from a GitHub repository',
           busyLabel: vm.busyLabel,
+          canClose: vm.canClose,
         ),
         GitBusyBar(busy: vm.isBusy),
         if (vm.errorMessage != null)
@@ -106,7 +107,7 @@ class _GitClonePanelState extends State<GitClonePanel> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(onPressed: vm.canClose ? () => Navigator.pop(context) : null, child: const Text('Cancel')),
               const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: vm.canClone ? () => _clone(vm) : null,

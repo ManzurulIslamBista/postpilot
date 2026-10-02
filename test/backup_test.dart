@@ -5,6 +5,7 @@ import 'package:postpilot/core/enums/body_type.dart';
 import 'package:postpilot/core/enums/http_method.dart';
 import 'package:postpilot/core/errors/app_exception.dart';
 import 'package:postpilot/core/usecases/usecase.dart';
+import 'package:postpilot/features/documentation/domain/entities/entity_kind.dart';
 import 'package:postpilot/features/environments/domain/entities/environment_entity.dart';
 import 'package:postpilot/features/environments/domain/entities/global_variable_entity.dart';
 import 'package:postpilot/features/import_export/domain/entities/import_format.dart';
@@ -37,7 +38,8 @@ void main() {
 
     test('is versioned and marked as holding secrets', () {
       expect(doc['format'], 'postpilot-backup');
-      expect(doc['version'], 1);
+      expect(doc['version'], BackupCodec.currentVersion);
+      expect(BackupCodec.currentVersion, 2);
       expect(doc['sensitive'], isTrue);
       expect(doc['notice'], contains('secrets'));
       expect(DateTime.tryParse(doc['exportedAt'] as String), isNotNull);
@@ -85,6 +87,23 @@ void main() {
     test('an empty collection has no auth key', () {
       expect(((doc['collections'] as List).last as Map), isNot(contains('auth')));
     });
+
+    test('requests carry their settings, and collections, folders and requests their descriptions and tags', () {
+      final shop = (doc['collections'] as List).first as Map<String, dynamic>;
+      final folders = {for (final f in (shop['folders'] as List).cast<Map<String, dynamic>>()) f['name']: f};
+      final list = (shop['requests'] as List).cast<Map<String, dynamic>>().singleWhere((r) => r['name'] == 'List orders');
+
+      expect(list['settings'], {'followRedirects': false, 'verifySsl': false, 'timeoutSeconds': 5});
+      expect(list, containsPair('description', 'Lists **every** order.'));
+      expect(list, containsPair('tags', ['orders', 'read']));
+      expect(shop, containsPair('description', '# Shop API'));
+      expect(shop, containsPair('tags', ['internal']));
+      expect(folders['Archive'], containsPair('description', 'Old orders, read-only.'));
+      expect(folders['Orders'], containsPair('tags', ['orders', 'v2']));
+      expect(folders['Users'], isNot(anyOf(contains('description'), contains('tags'))));
+      final plain = (shop['requests'] as List).cast<Map<String, dynamic>>().singleWhere((r) => r['name'] == 'Plain');
+      expect(plain, isNot(anyOf(contains('settings'), contains('description'), contains('tags'))));
+    });
   });
 
   group('restore', () {
@@ -126,6 +145,29 @@ void main() {
       expect(target.requestsOf(shop.id).singleWhere((r) => r.name == 'Ping').folderId, isNull);
       expect(target.scripts[oldOrder.id]!.extractorsJson, shopExtractors);
       expect(target.examples.where((e) => e.requestId == oldOrder.id).map((e) => e.name), unorderedEquals(['200 OK', 'Gone']));
+    });
+
+    test('per-request settings, descriptions and tags are re-keyed to the new local ids', () async {
+      final target = InMemoryDb();
+      await target.collectionRepository.createCollection('Noise');
+
+      await target.backupService.restore(backup);
+
+      final shop = target.collections.singleWhere((c) => c.name == 'Shop');
+      final folders = {for (final f in target.folders.where((f) => f.collectionId == shop.id)) f.name: f};
+      final list = target.requestsOf(shop.id).singleWhere((r) => r.name == 'List orders');
+      expect(target.requestSettings[list.id]!.verifySsl, isFalse);
+      expect((target.requestSettings[list.id]!.timeoutSeconds, target.requestSettings[list.id]!.followRedirects), (5, false));
+      expect(target.descriptions[InMemoryDb.noteKey(EntityKind.request, list.id)], 'Lists **every** order.');
+      expect(target.tags[InMemoryDb.noteKey(EntityKind.request, list.id)], ['orders', 'read']);
+      expect(target.descriptions[InMemoryDb.noteKey(EntityKind.collection, shop.id)], '# Shop API');
+      expect(target.tags[InMemoryDb.noteKey(EntityKind.collection, shop.id)], ['internal']);
+      expect(target.descriptions[InMemoryDb.noteKey(EntityKind.folder, folders['Archive']!.id)], 'Old orders, read-only.');
+      expect(target.tags[InMemoryDb.noteKey(EntityKind.folder, folders['Orders']!.id)], ['orders', 'v2']);
+      // Nothing else gained anything: only the seeded rows exist.
+      expect(target.requestSettings, hasLength(1));
+      expect(target.descriptions, hasLength(3));
+      expect(target.tags, hasLength(3));
     });
 
     test('secret values and tokens come back exactly', () async {
@@ -283,7 +325,7 @@ void main() {
 
     test('no version', () => expectRejected('{"format":"postpilot-backup"}', contains('version')));
 
-    test('a version from a newer app', () => expectRejected(_backupOf({'version': 2}), contains('newer')));
+    test('a version from a newer app', () => expectRejected(_backupOf({'version': BackupCodec.currentVersion + 1}), contains('newer')));
 
     test('a field of the wrong type', () => expectRejected(_backupOf({'collections': [{'name': 'X', 'auth': {'bearerToken': 5}}]}), contains('damaged')));
   });
@@ -312,6 +354,57 @@ void main() {
       expect(snapshot.collections.single.auth, isNull);
       expect(snapshot.globals.single.enabled, isTrue);
       expect(snapshot.globals.single.isSecret, isFalse);
+    });
+
+    test('a version 1 backup (no settings, descriptions or tags) still restores', () async {
+      final target = InMemoryDb();
+      final v1 = jsonEncode({
+        'format': BackupCodec.formatId,
+        'version': 1,
+        'collections': [
+          {
+            'name': 'Old',
+            'folders': [
+              {'id': 1, 'parentId': null, 'name': 'F'},
+            ],
+            'requests': [
+              {'name': 'R', 'folderId': 1, 'url': 'https://a.test'},
+            ],
+          },
+        ],
+      });
+
+      final summary = await target.backupService.restore(v1);
+
+      expect((summary.folders, summary.requests), (1, 1));
+      expect(target.requestSettings, isEmpty);
+      expect(target.descriptions, isEmpty);
+      expect(target.tags, isEmpty);
+    });
+
+    test('unreadable settings, and blank or non-text tags, are dropped instead of failing the restore', () {
+      final snapshot = BackupCodec.decode(_backupOf({
+        'collections': [
+          {
+            'name': 'C',
+            'description': 5,
+            'tags': ['ok', '', 3, '  '],
+            'requests': [
+              {
+                'name': 'R',
+                'settings': {'verifySsl': 'nope', 'timeoutSeconds': -1},
+                'tags': 'not-a-list',
+              },
+            ],
+          },
+        ],
+      }));
+
+      final collection = snapshot.collections.single;
+      expect(collection.notes.description, '');
+      expect(collection.notes.tags, ['ok']);
+      expect(collection.requests.single.settings, isNull);
+      expect(collection.requests.single.notes.isEmpty, isTrue);
     });
 
     test('drops variables without a key', () {

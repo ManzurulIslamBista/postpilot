@@ -65,7 +65,7 @@ final class GitCloneViewModel extends GitOperationViewModel {
     final chosen = selected;
     if (repo == null || chosen == null) return null;
     int? collectionId;
-    await run('Cloning ${chosen.name}…', () async {
+    await run('Cloning ${chosen.name}…', guardsClose: true, () async {
       final link = await _cloneUseCase(GitCloneParams(repo: repo, branch: _branch, basePath: chosen.basePath));
       collectionId = link.collectionId;
     });

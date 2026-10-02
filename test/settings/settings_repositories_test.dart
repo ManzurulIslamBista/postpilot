@@ -7,6 +7,7 @@ import 'package:postpilot/features/settings/data/repositories/settings_repositor
 import 'package:postpilot/features/settings/domain/entities/app_settings.dart';
 import 'package:postpilot/features/settings/domain/entities/proxy_settings.dart';
 import 'package:postpilot/features/settings/domain/entities/request_settings.dart';
+import 'fakes/fake_proxy_password_store.dart';
 
 const _custom = AppSettings(
   themeMode: AppThemeMode.dark,
@@ -29,8 +30,12 @@ void main() {
 
   group('SettingsRepositoryImpl', () {
     late SettingsRepositoryImpl repository;
+    late FakeProxyPasswordStore passwords;
 
-    setUp(() => repository = SettingsRepositoryImpl(db.settingsDao));
+    setUp(() {
+      passwords = FakeProxyPasswordStore();
+      repository = SettingsRepositoryImpl(db.settingsDao, passwords);
+    });
 
     test('holds the defaults until load has run', () {
       expect(repository.current, const AppSettings());
@@ -95,10 +100,94 @@ void main() {
     test('a new repository over the same database loads what the first saved', () async {
       await repository.save(_custom);
 
-      final restarted = SettingsRepositoryImpl(db.settingsDao);
+      final restarted = SettingsRepositoryImpl(db.settingsDao, passwords);
       await restarted.load();
 
       expect(restarted.current, _custom);
+    });
+
+    group('the proxy password', () {
+      final withPassword = _custom.copyWith(
+        proxy: _custom.proxy.copyWith(username: 'ann', password: 'S3cr;et-p@ss'),
+      );
+
+      test('goes to secure storage and never into the database row', () async {
+        await repository.save(withPassword);
+
+        final row = (await db.settingsDao.get(SettingsRepositoryImpl.storageKey))!;
+        expect(row, isNot(contains('S3cr')));
+        expect(row, contains('"passwordInSecureStorage":true'));
+        expect(passwords.stored, 'S3cr;et-p@ss');
+        expect(repository.current.proxy.password, 'S3cr;et-p@ss', reason: 'the next send still needs it');
+      });
+
+      test('comes back on the next start', () async {
+        await repository.save(withPassword);
+
+        final restarted = SettingsRepositoryImpl(db.settingsDao, passwords);
+        await restarted.load();
+
+        expect(restarted.current, withPassword);
+      });
+
+      test('is not written again while it is unchanged', () async {
+        await repository.save(withPassword);
+        await repository.save(withPassword.copyWith(verifySsl: true));
+
+        expect(passwords.writes, 1);
+      });
+
+      test('is removed from secure storage when it is cleared or the settings are reset', () async {
+        await repository.save(withPassword);
+        await repository.save(withPassword.copyWith(proxy: withPassword.proxy.copyWith(password: '')));
+
+        expect(passwords.stored, '');
+        expect(await db.settingsDao.get(SettingsRepositoryImpl.storageKey), isNot(contains('passwordInSecureStorage')));
+
+        await repository.save(withPassword);
+        await repository.reset();
+
+        expect(passwords.stored, '');
+      });
+
+      test('leaves the keychain alone for a user who never set one', () async {
+        await repository.save(_custom);
+        await repository.load();
+
+        expect(passwords.reads, 0);
+        expect(passwords.writes, 0);
+        expect(passwords.deletes, 0);
+      });
+
+      test('one an older version left in the row is moved to secure storage on load', () async {
+        await db.settingsDao.put(SettingsRepositoryImpl.storageKey, withPassword.encode());
+        expect(await db.settingsDao.get(SettingsRepositoryImpl.storageKey), contains('S3cr'));
+
+        await repository.load();
+
+        expect(repository.current, withPassword);
+        expect(passwords.stored, 'S3cr;et-p@ss');
+        expect(await db.settingsDao.get(SettingsRepositoryImpl.storageKey), isNot(contains('S3cr')));
+      });
+
+      test('an older one stays in the row when secure storage refuses it, so it is not lost', () async {
+        passwords.refuseWrites = true;
+        await db.settingsDao.put(SettingsRepositoryImpl.storageKey, withPassword.encode());
+
+        await repository.load();
+
+        expect(repository.current, withPassword);
+        expect(await db.settingsDao.get(SettingsRepositoryImpl.storageKey), contains('S3cr'));
+      });
+
+      test('a refusing secure storage means the password is held for the session only', () async {
+        passwords.refuseWrites = true;
+
+        await repository.save(withPassword);
+
+        expect(repository.current.proxy.password, 'S3cr;et-p@ss');
+        expect(await db.settingsDao.get(SettingsRepositoryImpl.storageKey), isNot(contains('S3cr')));
+      });
     });
 
     test('reset goes back to the defaults and forgets what was stored', () async {

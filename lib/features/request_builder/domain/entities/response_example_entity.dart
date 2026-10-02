@@ -18,4 +18,12 @@ final class ResponseExampleEntity {
   });
 
   bool get isSuccess => statusCode >= 200 && statusCode < 300;
+
+  /// Marks, among [headers], an example saved from a response that was cut off
+  /// at the size limit: the examples table has no column for it, and the header
+  /// keeps the fact with the example through backups and restores.
+  static const truncatedHeader = 'x-postpilot-truncated';
+
+  /// True when [body] is only the first part of what the server sent.
+  bool get truncated => headers.keys.any((name) => name.toLowerCase() == truncatedHeader);
 }

@@ -106,6 +106,7 @@ import '../../features/scripting/domain/usecases/run_request_scripts_usecase.dar
 import '../../features/scripting/presentation/view_models/request_scripts_view_model.dart';
 import '../../features/settings/data/repositories/request_settings_repository_impl.dart';
 import '../../features/settings/data/repositories/settings_repository_impl.dart';
+import '../../features/settings/data/secure_proxy_password_store.dart';
 import '../../features/settings/domain/repositories/request_settings_repository.dart';
 import '../../features/settings/domain/repositories/settings_repository.dart';
 import '../../features/settings/presentation/view_models/request_settings_view_model.dart';
@@ -204,7 +205,9 @@ void _registerRequestBuilder() {
   locator.registerLazySingleton<ResponseExampleRepository>(
     () => ResponseExampleRepositoryImpl(locator<AppDatabase>().responseExamplesDao),
   );
-  locator.registerLazySingleton<OAuth2TokenService>(() => OAuth2TokenService(locator<ApiClient>()));
+  locator.registerLazySingleton<OAuth2TokenService>(
+    () => OAuth2TokenService(locator<ApiClient>(), settings: locator<SettingsRepository>()),
+  );
   locator.registerLazySingleton<BuildVariableResolverUseCase>(
     () => BuildVariableResolverUseCase(
       locator<CollectionVariableRepository>(),
@@ -305,7 +308,7 @@ void _registerShell() {
 
 void _registerSettings() {
   locator.registerLazySingleton<SettingsRepository>(
-    () => SettingsRepositoryImpl(locator<AppDatabase>().settingsDao),
+    () => SettingsRepositoryImpl(locator<AppDatabase>().settingsDao, SecureProxyPasswordStore()),
   );
   locator.registerLazySingleton<RequestSettingsRepository>(
     () => RequestSettingsRepositoryImpl(locator<AppDatabase>().requestSettingsDao),
@@ -377,6 +380,9 @@ void _registerImportExport() {
       locator<ResponseExampleRepository>(),
       locator<EnvironmentRepository>(),
       locator<GlobalVariableRepository>(),
+      locator<RequestSettingsRepository>(),
+      locator<DocumentationRepository>(),
+      locator<TagRepository>(),
     ),
   );
 

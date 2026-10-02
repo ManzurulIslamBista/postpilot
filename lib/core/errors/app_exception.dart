@@ -21,6 +21,13 @@ final class InvalidUrlException extends AppException {
   const InvalidUrlException(super.message);
 }
 
+/// A request that cannot be built as configured (for example malformed JSON in
+/// GraphQL variables or a JWT payload); [message] says what to fix and is safe
+/// to show to the user as is.
+final class InvalidRequestException extends AppException {
+  const InvalidRequestException(super.message);
+}
+
 final class ImportException extends AppException {
   const ImportException(super.message);
 }

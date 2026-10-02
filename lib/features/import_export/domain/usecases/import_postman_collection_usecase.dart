@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show compute;
 import '../../../../core/usecases/usecase.dart';
 import '../../../collections/domain/entities/collection_variable_entity.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
@@ -6,10 +7,12 @@ import '../../../collections/domain/repositories/collection_variable_repository.
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
 import '../../../request_builder/domain/services/importers/postman_collection_parser.dart';
+import '../services/import_names.dart';
 
 /// Recreates an entire Postman collection export (folders, requests,
 /// collection variables and collection auth) inside a brand-new local
-/// collection. Returns the new collection's id.
+/// collection. Returns the new collection's id. If saving fails midway the
+/// half-built collection is deleted again, so a retry doesn't add a duplicate.
 final class ImportPostmanCollectionUseCase implements UseCase<int, String> {
   final CollectionRepository _collectionRepository;
   final RequestRepository _requestRepository;
@@ -25,21 +28,33 @@ final class ImportPostmanCollectionUseCase implements UseCase<int, String> {
 
   @override
   Future<int> call(String json) async {
-    final parsed = PostmanCollectionParser.parse(json);
+    // Off the UI isolate: a multi-MB collection would otherwise freeze the
+    // window before the import spinner ever paints. The BOM some editors and
+    // exporters prepend is not JSON (the format detector already ignores it).
+    final parsed = await compute(PostmanCollectionParser.parse, json.replaceFirst('﻿', '').trim());
     final collectionId = await _collectionRepository.createCollection(parsed.name);
-    final auth = parsed.auth;
-    if (auth != null) await _collectionAuthRepository.setAuthJson(collectionId, auth.toJsonString());
-    for (final variable in parsed.variables) {
-      await _collectionVariableRepository.upsert(CollectionVariableEntity(
-        id: 0,
-        collectionId: collectionId,
-        key: variable.key,
-        value: variable.value,
-        enabled: variable.enabled,
-      ));
-    }
-    for (final item in parsed.items) {
-      await _persist(item, collectionId, null);
+    try {
+      final auth = parsed.auth;
+      if (auth != null) await _collectionAuthRepository.setAuthJson(collectionId, auth.toJsonString());
+      for (final variable in parsed.variables) {
+        await _collectionVariableRepository.upsert(CollectionVariableEntity(
+          id: 0,
+          collectionId: collectionId,
+          key: variable.key,
+          value: variable.value,
+          enabled: variable.enabled,
+        ));
+      }
+      for (final item in parsed.items) {
+        await _persist(item, collectionId, null);
+      }
+    } catch (_) {
+      // The cascade removes the collection's contents too. Best effort: the
+      // original failure is what the user needs to see.
+      try {
+        await _collectionRepository.deleteCollection(collectionId);
+      } catch (_) {}
+      rethrow;
     }
     return collectionId;
   }
@@ -48,7 +63,7 @@ final class ImportPostmanCollectionUseCase implements UseCase<int, String> {
     switch (item) {
       case PostmanFolderItem():
         final newFolderId =
-            await _collectionRepository.createFolder(collectionId: collectionId, parentFolderId: folderId, name: item.name);
+            await _collectionRepository.createFolder(collectionId: collectionId, parentFolderId: folderId, name: ImportNames.folder(item.name));
         for (final child in item.children) {
           await _persist(child, collectionId, newFolderId);
         }

@@ -56,7 +56,7 @@ void main() {
 
       expect(login.extracted.single.ok, isTrue);
       expect(fetch.assertions.single.passed, isTrue);
-      expect(fetch.assertions.single.name, 'data.id equals 42');
+      expect(fetch.assertions.single.name, 'data.id equals {{userId}}');
     });
 
     test('a disabled environment variable is re-enabled when an extractor writes it', () async {
@@ -178,7 +178,7 @@ void main() {
       final withoutRow = await harness.run(1, '{"data":{"id":"7"}}');
 
       expect(withRow.assertions.single.passed, isTrue);
-      expect(withRow.assertions.single.name, 'data.id equals 7');
+      expect(withRow.assertions.single.name, '{{field}} equals {{id}}');
       expect(withoutRow.assertions.single.passed, isFalse, reason: 'the row belongs to one run only');
     });
 

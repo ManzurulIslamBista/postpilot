@@ -246,6 +246,13 @@ void main() {
       expect(parsed('2*3*4'), 'p[2<i>3</i>4]');
     });
 
+    test('an unmatched opener before a real pair does not swallow the pair', () {
+      expect(parsed('Skips *.json files, but *this* is emphasised.'), 'p[Skips *.json files, but <i>this</i> is emphasised.]');
+      expect(parsed('_private and _italic_'), 'p[_private and <i>italic</i>]');
+      expect(parsed('*.md, *.txt and **bold**'), 'p[*.md, *.txt and <b>bold</b>]');
+      expect(parsed('**a and **b** c'), 'p[**a and <b>b</b> c]');
+    });
+
     test('unmatched markers stay as they are', () {
       expect(parsed('**open only'), 'p[**open only]');
       expect(parsed('close only**'), 'p[close only**]');
@@ -348,6 +355,14 @@ void main() {
       MarkdownParser.parse('_a ' * 20000);
       MarkdownParser.parse('${'  ' * 50000}x | y\n${' ' * 50000}|');
       expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+    });
+
+    test('unmatched openers followed by a real pair stay bounded', () {
+      final watch = Stopwatch()..start();
+      final blocks = MarkdownParser.parse('${'*a ' * 20000}*b*');
+      MarkdownParser.parse('${'_a ' * 20000}_b_');
+      expect(blocks, isNotEmpty);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
     });
 
     test('deeply nested emphasis is bounded', () {

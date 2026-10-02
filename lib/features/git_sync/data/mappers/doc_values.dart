@@ -4,6 +4,7 @@ import '../../../../core/enums/auth_type.dart';
 import '../../../request_builder/domain/entities/key_value_item.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
 import '../../domain/services/secret_fields.dart';
+import '../../domain/services/secret_text.dart';
 
 /// Canonical forms of the values that recur across doc kinds. Each function
 /// takes what a doc may hold (absent, null, or the right JSON type) and returns
@@ -34,14 +35,41 @@ abstract final class DocValues {
     });
   }
 
-  static List<Map<String, Object?>> keyValues(Object? value) => [
-        for (final item in (value as List? ?? const []))
-          {
-            'key': (item as Map)['key'] as String,
-            'value': item['value'] as String? ?? '',
-            'enabled': item['enabled'] as bool? ?? true,
-          },
-      ];
+  /// Headers, parameters and form fields. With [keepingSecretsOf] (the local,
+  /// already canonical list) and [isSecret], an item whose name [isSecret]
+  /// accepts and whose value is empty keeps the local value of the same name,
+  /// matching repeated names by occurrence.
+  static List<Map<String, Object?>> keyValues(
+    Object? value, {
+    Object? keepingSecretsOf,
+    bool Function(String name)? isSecret,
+  }) {
+    final items = [
+      for (final item in (value as List? ?? const []))
+        {
+          'key': (item as Map)['key'] as String,
+          'value': item['value'] as String? ?? '',
+          'enabled': item['enabled'] as bool? ?? true,
+        },
+    ];
+    if (isSecret == null || keepingSecretsOf is! List) return items;
+    return _keepLocalValues(items, keepingSecretsOf, isSecret);
+  }
+
+  /// A request URL. With [keepingSecretsOf] (the local URL) the blanked
+  /// password and secret query values of the URL get their local values back.
+  static String url(Object? value, {Object? keepingSecretsOf}) {
+    final url = value as String? ?? '';
+    return keepingSecretsOf is String ? SecretText.restoreUrl(url, keepingSecretsOf) : url;
+  }
+
+  /// A body text that may hold JSON (raw body, GraphQL variables), [fallback]
+  /// when absent. With [keepingSecretsOf] (the local text) blanked secret
+  /// values get their local values back.
+  static String jsonText(Object? value, {required String fallback, Object? keepingSecretsOf}) {
+    final text = value as String? ?? fallback;
+    return keepingSecretsOf is String ? SecretText.restoreJson(text, keepingSecretsOf) : text;
+  }
 
   static List<KeyValueItem> keyValueItems(Object? canonicalKeyValues) => [
         for (final item in canonicalKeyValues as List)
@@ -87,29 +115,39 @@ abstract final class DocValues {
       });
     final sorted = [for (final i in order) items[i]];
     if (keepingSecretsOf is! List) return sorted;
+    return _keepLocalValues(sorted, keepingSecretsOf, SecretFields.looksSecretKey);
+  }
 
+  /// [items] where an empty value under a name that [isSecret] takes the value
+  /// [local] has for the same name (matched by occurrence).
+  static List<Map<String, Object?>> _keepLocalValues(
+    List<Map<String, Object?>> items,
+    List<Object?> local,
+    bool Function(String name) isSecret,
+  ) {
     final localValues = <String, List<String>>{};
-    for (final variable in keepingSecretsOf) {
-      (localValues[variable['key'] as String] ??= []).add(variable['value'] as String);
+    for (final item in local) {
+      (localValues[(item as Map)['key'] as String] ??= []).add(item['value'] as String);
     }
     final occurrences = <String, int>{};
     return [
-      for (final variable in sorted) _keepLocalValue(variable, localValues, occurrences),
+      for (final item in items) _keepLocalValue(item, localValues, occurrences, isSecret),
     ];
   }
 
   static Map<String, Object?> _keepLocalValue(
-    Map<String, Object?> variable,
+    Map<String, Object?> item,
     Map<String, List<String>> localValues,
     Map<String, int> occurrences,
+    bool Function(String name) isSecret,
   ) {
-    final key = variable['key'] as String;
+    final key = item['key'] as String;
     final nth = occurrences[key] ?? 0;
     occurrences[key] = nth + 1;
-    if (variable['value'] != '' || !SecretFields.looksSecretKey(key)) return variable;
+    if (item['value'] != '' || !isSecret(key)) return item;
     final local = localValues[key];
-    if (local == null || nth >= local.length || local[nth].isEmpty) return variable;
-    return {...variable, 'value': local[nth]};
+    if (local == null || nth >= local.length || local[nth].isEmpty) return item;
+    return {...item, 'value': local[nth]};
   }
 
   /// A request's auth as `RequestAuth.toJson()` writes it. No auth at all is

@@ -16,11 +16,14 @@ class GitTeamTab extends StatelessWidget {
     final textStyles = context.textStyles;
     final colors = context.colors;
     final info = vm.repoInfo;
-    final (accessLabel, accessColor) = switch (info?.canPush) {
-      null => ('Not checked yet', colors.secondaryText),
-      true => ('Can push', colors.statusSuccess),
-      false => ('Read-only', colors.methodPost),
-    };
+    // Without a token GitHub answers anonymously, which says nothing about the user's own access.
+    final (accessLabel, accessColor) = !vm.hasToken
+        ? ('Unknown: no token saved', colors.secondaryText)
+        : switch (info?.canPush) {
+            null => ('Not checked yet', colors.secondaryText),
+            true => ('Can push', colors.statusSuccess),
+            false => ('Read-only', colors.methodPost),
+          };
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [

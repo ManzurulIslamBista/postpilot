@@ -132,6 +132,16 @@ void main() {
     expect(file(r, 'lib/features/users_api/users_api_injection.dart'), isNot(contains('UseCase')));
   });
 
+  test('allNullable flows into the generated DTOs', () {
+    final r = gen.generate('Users API', _sample(), options: const ApiLayerOptions(allNullable: true));
+    final model = file(r, 'lib/features/users_api/data/models/get_user_response.dart');
+    expect(model, contains('final int? id;'));
+    expect(model, contains('copyWith('));
+    expect(model, isNot(contains('required ')));
+    final strict = file(gen.generate('Users API', _sample()), 'lib/features/users_api/data/models/get_user_response.dart');
+    expect(strict, contains('required this.id,'));
+  });
+
   test('duplicate request names get distinct methods and models', () {
     final r = gen.generate('Dup', const [
       ApiSpecRequest(name: 'Get', method: 'GET', url: 'https://a.test/x', exampleResponse: '{"a":1}'),

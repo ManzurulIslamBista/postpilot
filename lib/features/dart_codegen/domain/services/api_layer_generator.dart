@@ -42,7 +42,15 @@ final class ApiLayerOptions {
   /// Add repository + use case classes on top of the data source.
   final bool domainLayer;
 
-  const ApiLayerOptions({this.packageName = 'app', this.modelStyle = DartModelStyle.plain, this.domainLayer = true});
+  /// Make every DTO field nullable and optional (see [DartModelOptions.allNullable]).
+  final bool allNullable;
+
+  const ApiLayerOptions({
+    this.packageName = 'app',
+    this.modelStyle = DartModelStyle.plain,
+    this.domainLayer = true,
+    this.allNullable = false,
+  });
 }
 
 final class ApiLayerResult {
@@ -313,7 +321,8 @@ final class ApiLayerGenerator {
     String feature,
     Set<String> imports,
   ) {
-    final result = const DartModelGenerator().generate(samples, rootName: rootName, options: DartModelOptions(style: options.modelStyle));
+    final modelOptions = DartModelOptions(style: options.modelStyle, allNullable: options.allNullable);
+    final result = const DartModelGenerator().generate(samples, rootName: rootName, options: modelOptions);
     if (result.classCount == 0) return null;
     var root = DartNames.pascal(rootName);
     var path = 'lib/features/$feature/data/models/${DartNames.snake(root)}.dart';
@@ -325,7 +334,7 @@ final class ApiLayerGenerator {
     }
     final renamed = root == DartNames.pascal(rootName)
         ? result
-        : const DartModelGenerator().generate(samples, rootName: root, options: DartModelOptions(style: options.modelStyle));
+        : const DartModelGenerator().generate(samples, rootName: root, options: modelOptions);
     modelFiles[path] = GeneratedFile(path, renamed.code);
     imports.add(path.substring('lib/'.length));
     return root;

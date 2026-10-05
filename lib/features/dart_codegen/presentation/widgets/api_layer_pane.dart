@@ -94,6 +94,11 @@ class _ApiLayerPaneState extends State<ApiLayerPane> {
                     selected: _vm.domainLayer,
                     onSelected: (v) => _vm.update(domain: v),
                   ),
+                  FilterChip(
+                    label: const Text('All fields optional'),
+                    selected: _vm.allNullable,
+                    onSelected: (v) => _vm.update(nullable: v),
+                  ),
                   GradientButton(
                     label: 'Generate',
                     icon: Icons.auto_awesome,

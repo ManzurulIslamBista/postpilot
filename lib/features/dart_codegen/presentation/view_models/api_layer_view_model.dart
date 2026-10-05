@@ -15,17 +15,19 @@ final class ApiLayerViewModel with ChangeNotifier {
   String packageName = 'app';
   DartModelStyle modelStyle = DartModelStyle.plain;
   bool domainLayer = true;
+  bool allNullable = false;
 
   bool isBusy = false;
   String? error;
   List<GeneratedFile> files = const [];
   List<String> notes = const [];
 
-  void update({int? collection, String? package, DartModelStyle? style, bool? domain}) {
+  void update({int? collection, String? package, DartModelStyle? style, bool? domain, bool? nullable}) {
     if (collection != null) collectionId = collection;
     if (package != null) packageName = package;
     if (style != null) modelStyle = style;
     if (domain != null) domainLayer = domain;
+    if (nullable != null) allNullable = nullable;
     notifyListeners();
   }
 
@@ -42,6 +44,7 @@ final class ApiLayerViewModel with ChangeNotifier {
           packageName: packageName.trim().isEmpty ? 'app' : packageName.trim(),
           modelStyle: modelStyle,
           domainLayer: domainLayer,
+          allNullable: allNullable,
         ),
       );
       files = result.files;

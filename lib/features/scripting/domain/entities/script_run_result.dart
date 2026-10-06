@@ -9,15 +9,9 @@ final class ExtractionResult {
   /// Why nothing was written (not found, no active environment, ...); `null` on success.
   final String? error;
 
-  /// Where an inherited extractor was set (`collection "Shop"`); null for the request's own.
-  final String? origin;
-
-  const ExtractionResult({required this.key, required this.scope, this.value, this.error, this.origin});
+  const ExtractionResult({required this.key, required this.scope, this.value, this.error});
 
   bool get ok => error == null;
-
-  ExtractionResult fromOrigin(String origin) =>
-      ExtractionResult(key: key, scope: scope, value: value, error: error, origin: origin);
 }
 
 final class ScriptRunResult {

@@ -17,7 +17,6 @@ final class ExportOpenApiUseCase implements UseCase<CollectionExportResult, int>
       requests: loaded.requests,
       variables: loaded.variables,
       collectionAuth: loaded.auth,
-      defaults: loaded.defaultsTree,
     );
     return CollectionExportResult(
       collectionName: loaded.collection.name,

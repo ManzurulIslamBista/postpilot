@@ -41,18 +41,13 @@ class HistoryDao extends DatabaseAccessor<AppDatabase> with _$HistoryDaoMixin {
   /// headroom for a longer view, so the table cannot grow for ever.
   static const maxRows = 1000;
 
-  /// Adds [entry] and drops whatever falls out of the newest [keep] (the
-  /// history settings' "max entries"), in one transaction so the watchers see a
-  /// single change.
-  Future<int> record(HistoryEntriesCompanion entry, {int keep = maxRows}) => transaction(() async {
+  /// Adds [entry] and drops whatever falls out of the newest [maxRows], in one
+  /// transaction so the watchers see a single change.
+  Future<int> record(HistoryEntriesCompanion entry) => transaction(() async {
         final id = await into(historyEntries).insert(entry);
-        await prune(keep: keep);
+        await prune();
         return id;
       });
-
-  /// Deletes every row sent before [cutoff] (the history settings' retention in days).
-  Future<int> pruneOlderThan(DateTime cutoff) =>
-      (delete(historyEntries)..where((row) => row.sentAt.isSmallerThanValue(cutoff))).go();
 
   /// Deletes every row but the [keep] newest. Newest by send time, then by id
   /// because `sent_at` only has the resolution of a second.

@@ -4,9 +4,6 @@ import 'dart:math' as math;
 import 'package:drift/drift.dart' show BooleanExpressionOperators, OrderingTerm, Value, innerJoin;
 
 import '../../../../core/database/app_database.dart';
-import '../../../defaults/data/defaults_repository_impl.dart';
-import '../../../defaults/domain/entities/level_defaults.dart';
-import '../../../defaults/domain/repositories/defaults_repository.dart';
 import '../../domain/entities/git_sync_exceptions.dart';
 import '../../domain/entities/sync_doc.dart';
 import '../../domain/repositories/local_collection_store.dart';
@@ -27,9 +24,6 @@ final class LocalCollectionStoreImpl implements LocalCollectionStore {
   final EntityUidRegistry _uids;
 
   const LocalCollectionStoreImpl(this._db, this._uids);
-
-  /// The headers, tests, variables and auth a collection and its folders pass down are synced with them.
-  DefaultsRepository get _defaults => DefaultsRepositoryImpl(_db);
 
   @override
   Future<SyncSnapshot> readSnapshot(int collectionId, {required bool includeSecrets}) => _db.transaction(() async {
@@ -126,15 +120,8 @@ final class LocalCollectionStoreImpl implements LocalCollectionStore {
         await _db.collectionAuthDao.upsert(id, authJson);
       }
     }
-    if (_differs(before, after, 'headers') || _differs(before, after, 'tests')) {
-      await _defaults.saveCollection(id, CollectionDocMapper.defaults(after));
-    }
     await _writeNotes(SyncKind.collection, id, after, before);
   }
-
-  /// Whether what a folder passes down to its requests differs between two docs of it.
-  static bool _defaultsDiffer(SyncDoc? before, SyncDoc after) =>
-      const ['headers', 'variables', 'auth', 'tests'].any((key) => _differs(before, after, key));
 
   /// Creates or updates every folder, parents before children. Returns the
   /// local id of every folder by uid.
@@ -155,7 +142,6 @@ final class LocalCollectionStoreImpl implements LocalCollectionStore {
         await _uids.adopt(SyncKind.folder, id, doc.uid);
         ids[doc.uid] = id;
         await _writeNotes(SyncKind.folder, id, after, null);
-        if (_defaultsDiffer(null, after)) await _defaults.saveFolder(id, FolderDocMapper.defaults(after));
         tally.added++;
       } else if (before != after) {
         await (_db.update(_db.folders)..where((t) => t.id.equals(existingId))).write(FoldersCompanion(
@@ -164,7 +150,6 @@ final class LocalCollectionStoreImpl implements LocalCollectionStore {
           orderIndex: Value(after.order),
         ));
         await _writeNotes(SyncKind.folder, existingId, after, before);
-        if (_defaultsDiffer(before, after)) await _defaults.saveFolder(existingId, FolderDocMapper.defaults(after));
         tally.updated++;
       }
     }
@@ -287,7 +272,6 @@ final class LocalCollectionStoreImpl implements LocalCollectionStore {
           ..orderBy([(t) => OrderingTerm.asc(t.id)]))
         .get();
     final auth = await _db.collectionAuthDao.findByCollection(collectionId);
-    final defaults = await _defaults.loadTree(collectionId);
     final scripts = {
       for (final script in await (_db.select(_db.requestScripts).join([
         innerJoin(_db.requests, _db.requests.id.equalsExp(_db.requestScripts.requestId)),
@@ -324,7 +308,6 @@ final class LocalCollectionStoreImpl implements LocalCollectionStore {
         tags: tags[SyncKind.collection]![collectionId] ?? const [],
         variables: variables,
         auth: auth,
-        defaults: defaults.collection,
       ),
     };
     for (final folder in folders) {
@@ -335,7 +318,6 @@ final class LocalCollectionStoreImpl implements LocalCollectionStore {
         parentUid: parentOf(folder.parentFolderId),
         description: descriptions[SyncKind.folder]![folder.id] ?? '',
         tags: tags[SyncKind.folder]![folder.id] ?? const [],
-        defaults: defaults.folderDefaults[folder.id] ?? LevelDefaults.empty,
       );
     }
     for (final request in requests) {

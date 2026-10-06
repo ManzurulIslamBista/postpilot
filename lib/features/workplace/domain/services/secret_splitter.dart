@@ -48,11 +48,7 @@ final class LocalSecrets {
 ///    secret value of its raw, GraphQL query or GraphQL variables body (JSON,
 ///    XML, SOAP, urlencoded text),
 ///  * it is a credential in a saved response example (its headers and body),
-///    in what an assertion expects, or an unmistakable one in a description,
-///  * it is in what a collection or a folder passes down to its requests: the
-///    value of an `Authorization`/`Cookie`/API-key default header, a folder
-///    variable marked secret (or named like a credential), a credential field
-///    of a folder's auth, what a default check expects.
+///    in what an assertion expects, or an unmistakable one in a description.
 ///
 /// Each secret is addressed by a key. A collection or request that has a Git
 /// `uid` is addressed by it (`@<uid>`), because a uid survives renames and
@@ -61,8 +57,7 @@ final class LocalSecrets {
 /// `#3`. The keys read `env/<environment>/<variable>`, `global/<variable>`,
 /// `cvar/<collection>/<variable>`, `cauth/<collection>/<field>`,
 /// `rauth/<collection>/<request>/<field>`, and `rurl`, `rhdr`, `rqry`, `rform`,
-/// `renc`, `rbody`, `rtest`, `rexh`, `rexb`, `cdesc`, `fdesc`, `rdesc`, `cdhdr`, `cdtest` (the headers
-/// and checks a collection passes down), `fdhdr`, `fvar`, `fauth`, `fdtest` (the same for a folder) and `gbase` (the
+/// `renc`, `rbody`, `rtest`, `rexh`, `rexb`, `cdesc`, `fdesc`, `rdesc` and `gbase` (the
 /// synced docs a linked collection keeps) for the other places. A file written before they existed still works: the old
 /// names of a key are tried too.
 abstract final class SecretSplitter {
@@ -235,10 +230,6 @@ abstract final class SecretSplitter {
         if (auth.containsKey(f)) slots.add(field(auth, f, 'cauth', '/$f', '$name › auth $f', blank: _blankLiteral));
       }
     }
-    // What the collection passes down to its requests: an Authorization header or a token it carries is
-    // a secret like the same value on a request.
-    _defaultHeaders(c['headers'], slots, 'cdhdr/$id', [if (legacyId != null) 'cdhdr/$legacyId'], name);
-    _defaultTests(c['tests'], slots, 'cdtest/$id', [if (legacyId != null) 'cdtest/$legacyId'], name);
     if (c['description'] is String) {
       slots.add(field(c, 'description', 'cdesc', '', '$name › description', blank: SecretText.blankNote, restore: SecretText.restoreNote, isExposedValue: _hasKnownToken));
     }
@@ -258,24 +249,6 @@ abstract final class SecretSplitter {
         restore: SecretText.restoreNote,
         isExposedValue: _hasKnownToken,
       ));
-    }
-
-    // What each folder passes down: headers, variables (a secret one is marked), auth and tests.
-    // A folder is addressed by its Git uid when it has one, else by its path of names.
-    final defaultsSeen = <String, int>{};
-    for (final folder in _maps(c['folders'])) {
-      final path = folderPaths[folder['id']] ?? '${folder['name'] ?? ''}';
-      final pathKey = _unique(defaultsSeen, path);
-      final folderUid = _uid(folder['uid']);
-      final ref = folderUid == null ? pathKey : '@$folderUid';
-      final byName = legacyId != null || folderUid != null;
-      String base(String kind) => '$kind/$id/$ref';
-      List<String> legacy(String kind) => [if (byName) '$kind/${legacyId ?? id}/$pathKey'];
-      final where = '$name › $path';
-      _defaultHeaders(folder['headers'], slots, base('fdhdr'), legacy('fdhdr'), where);
-      _defaultVariables(folder['variables'], slots, base('fvar'), legacy('fvar'), where);
-      _defaultAuth(folder['auth'], slots, base('fauth'), legacy('fauth'), where);
-      _defaultTests(folder['tests'], slots, base('fdtest'), legacy('fdtest'), where);
     }
 
     // The Git link of a collection carries the docs as last synced. A collection that syncs its
@@ -303,83 +276,6 @@ abstract final class SecretSplitter {
         label: '$name › $requestName',
         slots: slots,
       );
-    }
-  }
-
-  /// The headers of a collection's or folder's defaults: the value of a secret one (`Authorization`,
-  /// `X-Api-Key`) is a secret, like on a request. [keyBase] addresses them; [legacyBases] are the same
-  /// addresses by name, for a file written before the collection or folder had a uid.
-  static void _defaultHeaders(Object? list, List<_Slot> slots, String keyBase, List<String> legacyBases, String label) {
-    final seen = <String, int>{};
-    for (final item in _maps(list)) {
-      final name = '${item['key'] ?? ''}';
-      final unique = _unique(seen, name);
-      slots.add(_Slot(
-        item,
-        'value',
-        '$keyBase/$unique',
-        '$label › $name header',
-        legacyKeys: [for (final base in legacyBases) '$base/$unique'],
-        blank: SecretNames.isSecretHeader(name) ? _blankLiteral : _keep,
-        isExposedValue: _looksExposed,
-      ));
-    }
-  }
-
-  /// The variables of a folder's defaults: one marked secret is blanked whole, one named like a
-  /// credential (`api_key`) when it holds a literal, like a collection variable.
-  static void _defaultVariables(Object? list, List<_Slot> slots, String keyBase, List<String> legacyBases, String label) {
-    final seen = <String, int>{};
-    for (final item in _maps(list)) {
-      final name = '${item['key'] ?? ''}';
-      final unique = _unique(seen, name);
-      final secret = item['secret'] == true;
-      slots.add(_Slot(
-        item,
-        'value',
-        '$keyBase/$unique',
-        '$label › $name',
-        legacyKeys: [for (final base in legacyBases) '$base/$unique'],
-        blank: secret ? _blankAll : (SecretNames.looksSecretKey(name) ? _blankLiteral : _keep),
-        isExposedValue: secret ? null : (value) => _namedLikeSecret(name, value) || _looksExposed(value),
-      ));
-    }
-  }
-
-  /// The credential fields of the auth a folder passes down (the same fields a request's auth has).
-  static void _defaultAuth(Object? auth, List<_Slot> slots, String keyBase, List<String> legacyBases, String label) {
-    if (auth is! Map<String, dynamic>) return;
-    for (final f in SecretFields.authKeys) {
-      if (!auth.containsKey(f)) continue;
-      slots.add(_Slot(
-        auth,
-        f,
-        '$keyBase/$f',
-        '$label › auth $f',
-        legacyKeys: [for (final base in legacyBases) '$base/$f'],
-        blank: _blankLiteral,
-      ));
-    }
-  }
-
-  /// What the checks of a collection's or folder's defaults expect: a credential there is shared like one on a request.
-  static void _defaultTests(Object? tests, List<_Slot> slots, String keyBase, List<String> legacyBases, String label) {
-    if (tests is! Map<String, dynamic>) return;
-    final seen = <String, int>{};
-    for (final assertion in _maps(tests['assertions'])) {
-      if (assertion['expected'] is! String) continue;
-      final type = assertion['type'];
-      final path = assertion['path'];
-      final unique = _unique(seen, '$type:${path ?? ''}');
-      slots.add(_Slot(
-        assertion,
-        'expected',
-        '$keyBase/$unique',
-        '$label › test "${path is String && path.isNotEmpty ? path : type}"',
-        legacyKeys: [for (final base in legacyBases) '$base/$unique'],
-        blank: (v) => SecretFields.blankedExpected(type, path, v) ?? v,
-        isExposedValue: _hasKnownToken,
-      ));
     }
   }
 

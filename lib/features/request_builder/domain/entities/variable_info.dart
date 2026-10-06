@@ -4,9 +4,6 @@ enum VariableSource {
   /// Built-in `{{$guid}}`-style generators.
   dynamic,
   environment,
-
-  /// A variable of a folder the request sits in (the innermost folder wins).
-  folder,
   collection,
   global,
 
@@ -19,8 +16,7 @@ final class VariableInfo {
   final String name;
   final VariableSource source;
 
-  /// The environment's name for [VariableSource.environment], the folder's for
-  /// [VariableSource.folder]; otherwise null.
+  /// The environment's name for [VariableSource.environment]; otherwise null.
   final String? scopeName;
 
   /// The stored value ([sample] for dynamic variables); null when unresolved.

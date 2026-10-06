@@ -74,14 +74,12 @@ class _ScriptResultsViewState extends State<ScriptResultsView> {
                 shrinkWrap: true,
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 children: [
-                  for (final a in result.assertions)
-                    _ResultRow(passed: a.passed, label: a.name, detail: a.actual, origin: a.origin),
+                  for (final a in result.assertions) _ResultRow(passed: a.passed, label: a.name, detail: a.actual),
                   for (final e in result.extracted)
                     _ResultRow(
                       passed: e.ok,
                       label: '{{${e.key}}} → ${e.scope.label.toLowerCase()}',
                       detail: e.error ?? e.value ?? '',
-                      origin: e.origin,
                     ),
                 ],
               ),
@@ -96,10 +94,7 @@ class _ResultRow extends StatelessWidget {
   final bool passed;
   final String label;
   final String detail;
-
-  /// Where an inherited test was set (`folder "Auth"`); null for the request's own.
-  final String? origin;
-  const _ResultRow({required this.passed, required this.label, required this.detail, this.origin});
+  const _ResultRow({required this.passed, required this.label, required this.detail});
 
   @override
   Widget build(BuildContext context) {
@@ -112,11 +107,7 @@ class _ResultRow extends StatelessWidget {
           const SizedBox(width: 6),
           Expanded(
             flex: 3,
-            child: Text(
-              origin == null ? label : '$label · from $origin',
-              style: context.textStyles.caption,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(label, style: context.textStyles.caption, overflow: TextOverflow.ellipsis),
           ),
           const SizedBox(width: 8),
           Expanded(

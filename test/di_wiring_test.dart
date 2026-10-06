@@ -74,7 +74,6 @@ import 'package:postpilot/features/git_sync/presentation/view_models/git_sync_vi
 import 'package:postpilot/features/git_sync/presentation/view_models/linked_collections_view_model.dart';
 import 'package:postpilot/features/history/domain/repositories/history_repository.dart';
 import 'package:postpilot/features/history/presentation/view_models/history_view_model.dart';
-import 'package:postpilot/features/settings/data/history_prefs.dart';
 import 'package:postpilot/features/import_export/domain/repositories/git_state_store.dart';
 import 'package:postpilot/features/import_export/domain/services/backup_service.dart';
 import 'package:postpilot/features/import_export/domain/services/collection_loader.dart';
@@ -162,7 +161,6 @@ final _wirings = <_Wiring>[
   _wire<EnvironmentRepository>(),
   _wire<GlobalVariableRepository>(),
   _wire<EnvironmentsViewModel>(),
-  _wire<HistoryPrefs>(),
   _wire<HistoryRepository>(),
   _wire<HistoryViewModel>(),
   _wire<CookieRepository>(),

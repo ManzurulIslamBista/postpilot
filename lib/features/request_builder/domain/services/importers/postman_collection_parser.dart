@@ -3,7 +3,6 @@ import '../../../../../core/enums/auth_type.dart';
 import '../../../../../core/enums/body_type.dart';
 import '../../../../../core/enums/http_method.dart';
 import '../../../../../core/errors/app_exception.dart';
-import '../../../../defaults/domain/entities/default_variable.dart';
 import '../../../../scripting/domain/entities/assertion_entity.dart';
 import '../../../../scripting/domain/entities/extractor_entity.dart';
 import '../../entities/key_value_item.dart';
@@ -16,31 +15,9 @@ sealed class PostmanItem {
   const PostmanItem(this.name);
 }
 
-/// A folder with what Postman lets it pass down to the requests inside: its `auth`, `variable` list and
-/// `test` scripts. They become the folder's defaults (see `DefaultsRepository`), not copies on each request.
 final class PostmanFolderItem extends PostmanItem {
   final List<PostmanItem> children;
-
-  /// The folder's own `auth` block; null when it has none, which is Postman's "inherit from parent".
-  /// An explicit `noauth` is [AuthType.none]: it switches off what the parent passes down.
-  final RequestAuth? auth;
-
-  /// The folder's `variable` array ([DefaultVariable.enabled] is the inverse of Postman's `disabled`
-  /// flag, `isSecret` is set for the type `secret`).
-  final List<DefaultVariable> variables;
-
-  /// What the folder's `test` scripts translate to; they run for every request below it.
-  final List<AssertionEntity> assertions;
-  final List<ExtractorEntity> extractors;
-
-  const PostmanFolderItem(
-    super.name,
-    this.children, {
-    this.auth,
-    this.variables = const [],
-    this.assertions = const [],
-    this.extractors = const [],
-  });
+  const PostmanFolderItem(super.name, this.children);
 }
 
 final class PostmanRequestItem extends PostmanItem {
@@ -54,8 +31,8 @@ final class PostmanRequestItem extends PostmanItem {
   final RequestBody body;
   final RequestAuth auth;
 
-  /// The checks and variable extractions its own `test` scripts translate to
-  /// (those of its folders and the collection are theirs, see [PostmanFolderItem]).
+  /// The checks and variable extractions its `test` scripts (and those of the
+  /// folders and collection above it) translate to, parents first.
   final List<AssertionEntity> assertions;
   final List<ExtractorEntity> extractors;
   const PostmanRequestItem(
@@ -86,65 +63,31 @@ final class ParsedPostmanCollection {
   final List<PostmanItem> items;
 
   /// The collection-level `variable` array: [KeyValueItem.enabled] is the
-  /// inverse of Postman's `disabled` flag. A folder's variables stay on the
-  /// folder ([PostmanFolderItem.variables]).
+  /// inverse of Postman's `disabled` flag. Folder-level variables follow, since
+  /// this app has collection variables only.
   final List<KeyValueItem> variables;
 
   /// The root `auth` block; null when the export has none, in which case
   /// requests that inherit have nothing to inherit from.
   final RequestAuth? auth;
 
-  /// What the collection's own `test` scripts translate to; they run for every request in it.
-  final List<AssertionEntity> assertions;
-  final List<ExtractorEntity> extractors;
-
   /// What was left out or changed, in the order it was met.
   final List<PostmanImportNote> notes;
-  const ParsedPostmanCollection(
-    this.name,
-    this.items, {
-    this.variables = const [],
-    this.auth,
-    this.assertions = const [],
-    this.extractors = const [],
-    this.notes = const [],
-  });
+  const ParsedPostmanCollection(this.name, this.items, {this.variables = const [], this.auth, this.notes = const []});
 
   int get skippedCount => notes.where((n) => n.skipped).length;
-  int get folderCount => _count(items, (_) => 1, (_) => 0, folders: true);
-  int get requestCount => _count(items, (_) => 1, (_) => 0, folders: false);
+  int get folderCount => _count(items, (_) => 1, folders: true);
+  int get requestCount => _count(items, (_) => 1, folders: false);
+  int get assertionCount => _count(items, (request) => request.assertions.length, folders: false);
+  int get extractorCount => _count(items, (request) => request.extractors.length, folders: false);
 
-  /// Checks of the requests, of the folders and of the collection together.
-  int get assertionCount =>
-      assertions.length + _count(items, (r) => r.assertions.length, (f) => f.assertions.length, folders: false);
-
-  /// Variable extractors of the requests, of the folders and of the collection together.
-  int get extractorCount =>
-      extractors.length + _count(items, (r) => r.extractors.length, (f) => f.extractors.length, folders: false);
-
-  /// What the folders and the collection pass down: tests, folder auth, folder variables.
-  bool get hasDefaults =>
-      assertions.isNotEmpty || extractors.isNotEmpty || _anyFolder(items, (f) => f.auth != null || f.variables.isNotEmpty || f.assertions.isNotEmpty || f.extractors.isNotEmpty);
-
-  static bool _anyFolder(List<PostmanItem> items, bool Function(PostmanFolderItem) test) {
-    for (final item in items) {
-      if (item is PostmanFolderItem && (test(item) || _anyFolder(item.children, test))) return true;
-    }
-    return false;
-  }
-
-  /// Sums [perRequest] over the requests and [perFolder] over the folders, or counts the folders when [folders] is set.
-  static int _count(
-    List<PostmanItem> items,
-    int Function(PostmanRequestItem) perRequest,
-    int Function(PostmanFolderItem) perFolder, {
-    required bool folders,
-  }) {
+  /// Sums [perRequest] over the requests, or counts the folders when [folders] is set.
+  static int _count(List<PostmanItem> items, int Function(PostmanRequestItem) perRequest, {required bool folders}) {
     var total = 0;
     for (final item in items) {
       switch (item) {
         case PostmanFolderItem():
-          total += (folders ? 1 : perFolder(item)) + _count(item.children, perRequest, perFolder, folders: folders);
+          total += (folders ? 1 : 0) + _count(item.children, perRequest, folders: folders);
         case PostmanRequestItem():
           if (!folders) total += perRequest(item);
       }
@@ -166,12 +109,11 @@ final class ParsedPostmanCollection {
 /// failed import, but only if it says what is missing.
 ///
 /// Postman omits `auth` on a request that inherits, so a missing block means
-/// "inherit": it takes the nearest folder's auth, else the collection's, which
-/// is what the folders' defaults do here too. A folder's `auth`, `variable`
-/// list and `test` scripts, and the collection's `test` scripts, are therefore
-/// kept where Postman has them (see [PostmanFolderItem] and
-/// [ParsedPostmanCollection]) and become the folder's and the collection's
-/// defaults, not copies on each request. A request keeps only its own.
+/// "inherit". This app only has collection-level auth to inherit from, so a
+/// folder's own `auth` is copied down onto the requests beneath it that set
+/// none of their own. A folder's or the collection's `test` script runs after
+/// every request below it in Postman, so what it translates to is copied down
+/// the same way.
 abstract final class PostmanCollectionParser {
   static ParsedPostmanCollection parse(String json) {
     // A leading BOM is not JSON, but the format detector accepts such a file.
@@ -181,6 +123,14 @@ abstract final class PostmanCollectionParser {
     }
     return _Parser().parse(root);
   }
+}
+
+/// What a folder or the collection passes down to what is inside it.
+final class _Scope {
+  final RequestAuth? auth;
+  final List<AssertionEntity> assertions;
+  final List<ExtractorEntity> extractors;
+  const _Scope({this.auth, this.assertions = const [], this.extractors = const []});
 }
 
 final class _Parser {
@@ -194,22 +144,21 @@ final class _Parser {
     final info = root['info'];
     final name = info is Map ? info['name'] : null;
     _variables.addAll(_variablesOf(root['variable']));
-    // The collection's own auth is the collection auth that requests inherit at send time; its test
-    // scripts are its default tests. Neither is copied onto the requests.
+    // The collection's own auth is stored as the collection auth that requests inherit at send time, so it is
+    // not copied onto them; its test script, like a folder's, is.
     final collectionAuth = _explicitAuthOf(root['auth'], 'The collection');
     final scripts = _scriptsOf(root['event'], 'The collection');
+    final scope = _Scope(assertions: scripts.assertions, extractors: scripts.extractors);
     final rawItems = root['item'];
     final items = [
       if (rawItems is List)
-        for (final raw in rawItems) ?_parseItem(raw),
+        for (final raw in rawItems) ?_parseItem(raw, scope),
     ];
     return ParsedPostmanCollection(
       name is String && name.isNotEmpty ? name : 'Imported collection',
       items,
       variables: _variables,
       auth: collectionAuth,
-      assertions: scripts.assertions,
-      extractors: scripts.extractors,
       notes: _notes,
     );
   }
@@ -223,23 +172,37 @@ final class _Parser {
         .toList();
   }
 
-  /// A folder's own `variable` array: its variables, which only the requests inside see. Postman's type
-  /// `secret` is a secret variable here.
-  static List<DefaultVariable> _folderVariablesOf(dynamic variables) {
-    if (variables is! List) return const [];
-    return [
-      for (final v in variables.whereType<Map>())
-        if (v['key'] is String && (v['key'] as String).isNotEmpty)
-          DefaultVariable(
-            key: v['key'] as String,
-            value: '${v['value'] ?? ''}',
-            isSecret: v['type'] == 'secret',
-            enabled: v['disabled'] != true,
-          ),
-    ];
+  /// A folder's variables join the collection's. The first definition of a name wins.
+  void _mergeFolderVariables(String folder, dynamic variables) {
+    var added = 0;
+    for (final variable in _variablesOf(variables)) {
+      final known = _variables.where((v) => v.key == variable.key).firstOrNull;
+      if (known == null) {
+        _variables.add(variable);
+        added++;
+      } else if (known.value != variable.value || known.enabled != variable.enabled) {
+        _skip('Folder "$folder": variable "${variable.key}" is already defined with another value, so it was not imported.');
+      }
+    }
+    if (added > 0) {
+      _adjust(
+        'Folder "$folder": $added variable${added == 1 ? '' : 's'} imported as collection variable${added == 1 ? '' : 's'} '
+        '(PostPilot has no folder-level variables).',
+      );
+    }
   }
 
-  PostmanItem? _parseItem(dynamic raw) {
+  /// The auth and test scripts [raw] (a folder or the collection) hands down, on top of what it inherits.
+  _Scope _scopeOf(Map raw, String label, _Scope parent) {
+    final scripts = _scriptsOf(raw['event'], label);
+    return _Scope(
+      auth: _explicitAuthOf(raw['auth'], label) ?? parent.auth,
+      assertions: [...parent.assertions, ...scripts.assertions],
+      extractors: [...parent.extractors, ...scripts.extractors],
+    );
+  }
+
+  PostmanItem? _parseItem(dynamic raw, _Scope parent) {
     if (raw is! Map) {
       _skip('An entry of "item" is not an object, so it was not imported.');
       return null;
@@ -249,19 +212,13 @@ final class _Parser {
 
     if (requestRaw == null) {
       final label = 'Folder "$name"';
-      final scripts = _scriptsOf(raw['event'], label);
+      _mergeFolderVariables(name, raw['variable']);
+      final scope = _scopeOf(raw, label, parent);
       final rawChildren = raw['item'];
-      return PostmanFolderItem(
-        name,
-        [
-          if (rawChildren is List)
-            for (final child in rawChildren) ?_parseItem(child),
-        ],
-        auth: _explicitAuthOf(raw['auth'], label),
-        variables: _folderVariablesOf(raw['variable']),
-        assertions: scripts.assertions,
-        extractors: scripts.extractors,
-      );
+      return PostmanFolderItem(name, [
+        if (rawChildren is List)
+          for (final child in rawChildren) ?_parseItem(child, scope),
+      ]);
     }
 
     final label = 'Request "$name"';
@@ -290,9 +247,9 @@ final class _Parser {
       headers: _headersOf(request['header']),
       queryParams: _disabledQueryParamsOf(request['url']),
       body: _bodyOf(request['body'], label),
-      auth: _explicitAuthOf(request['auth'], label) ?? const RequestAuth(type: AuthType.inherit),
-      assertions: own.assertions,
-      extractors: own.extractors,
+      auth: _explicitAuthOf(request['auth'], label) ?? parent.auth ?? const RequestAuth(type: AuthType.inherit),
+      assertions: [...parent.assertions, ...own.assertions],
+      extractors: [...parent.extractors, ...own.extractors],
     );
   }
 

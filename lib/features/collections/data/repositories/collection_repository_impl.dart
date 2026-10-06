@@ -27,7 +27,6 @@ final class CollectionRepositoryImpl implements CollectionRepository {
                   collectionId: r.collectionId,
                   parentFolderId: r.parentFolderId,
                   name: r.name,
-                  orderIndex: r.orderIndex,
                 ))
             .toList(),
       );

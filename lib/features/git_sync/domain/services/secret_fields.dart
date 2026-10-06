@@ -62,7 +62,6 @@ abstract final class SecretFields {
       }
     }
     if (doc.kind == SyncKind.request) _stripRequest(data);
-    if (doc.kind == SyncKind.collection || doc.kind == SyncKind.folder) _stripDefaults(data, folder: doc.kind == SyncKind.folder);
     return SyncDoc(
       uid: doc.uid,
       kind: doc.kind,
@@ -80,32 +79,6 @@ abstract final class SecretFields {
   /// without credentials.
   static SyncSnapshot applyPolicy(SyncSnapshot snapshot, {required bool includeSecrets}) =>
       includeSecrets ? snapshot : stripSnapshot(snapshot);
-
-  /// What a collection or folder passes down to its requests: the values of its secret headers, the
-  /// expected values of its checks and, on a [folder], its secret variables (marked, or named like a
-  /// credential). Its `auth` is stripped with every doc's, above.
-  static void _stripDefaults(Map<String, Object?> data, {required bool folder}) {
-    _blankItems(data, 'headers', SecretNames.isSecretHeader);
-    final tests = data['tests'];
-    if (tests is Map && tests['assertions'] is List) {
-      data['tests'] = {
-        ...tests,
-        'assertions': [for (final assertion in tests['assertions'] as List) blankAssertion(assertion)],
-      };
-    }
-    final variables = data['variables'];
-    if (folder && variables is List) {
-      data['variables'] = [
-        for (final variable in variables)
-          variable is Map && (variable['secret'] == true || (variable['key'] is String && looksSecretKey(variable['key'] as String)))
-              ? _blankIfHasValue(variable)
-              : variable,
-      ];
-    }
-  }
-
-  static Object? _blankIfHasValue(Map variable) =>
-      variable.containsKey('value') ? (Map<String, Object?>.from(variable)..['value'] = '') : variable;
 
   static void _stripRequest(Map<String, Object?> data) {
     final url = data['url'];

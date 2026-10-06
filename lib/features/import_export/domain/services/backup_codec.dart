@@ -4,9 +4,6 @@ import '../../../../core/enums/http_method.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../collections/domain/entities/collection_entity.dart';
 import '../../../collections/domain/entities/collection_variable_entity.dart';
-import '../../../defaults/domain/entities/defaults_chain.dart';
-import '../../../defaults/domain/entities/level_defaults.dart';
-import '../../../defaults/domain/services/defaults_codec.dart';
 import '../../../environments/domain/entities/environment_entity.dart';
 import '../../../environments/domain/entities/global_variable_entity.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
@@ -113,13 +110,6 @@ final class BackupCollection {
   final String? uid;
   final Map<int, String> folderUids;
 
-  /// What the collection passes down to every request: its headers and tests. Its own [auth] and
-  /// [variables] are the fields above, so they are not repeated in here.
-  final LevelDefaults defaults;
-
-  /// What each folder passes down, by file-local folder id. A folder that sets nothing has no entry.
-  final Map<int, LevelDefaults> folderDefaults;
-
   const BackupCollection({
     required this.name,
     this.auth,
@@ -131,21 +121,7 @@ final class BackupCollection {
     this.git,
     this.uid,
     this.folderUids = const {},
-    this.defaults = LevelDefaults.empty,
-    this.folderDefaults = const {},
   });
-
-  /// Whether the collection or one of its folders passes anything down.
-  bool get hasDefaults => !defaults.isEmpty || folderDefaults.values.any((d) => !d.isEmpty);
-
-  /// Every level of this collection, for resolving what a request inherits the way the app does
-  /// (see `DefaultsResolver`). The collection's auth takes part as the level above the folders.
-  DefaultsTree get defaultsTree => DefaultsTree(
-        collectionName: name,
-        collection: defaults.withAuth(auth == null ? null : DefaultsCodec.authFromJson(auth!.toJson())),
-        folders: folders,
-        folderDefaults: folderDefaults,
-      );
 }
 
 final class BackupEnvironment {
@@ -181,20 +157,10 @@ final class BackupSnapshot {
 /// (see [BackupGit]); it is written only when a file actually carries them, so
 /// every other file stays readable by older apps, which refuse a version 3 file
 /// loudly instead of quietly dropping the links.
-/// Version 4 adds the defaults a collection and its folders pass down to their
-/// requests (headers, tests and, on folders, variables and auth: the keys
-/// `headers`, `tests`, `variables`, `auth` on the collection's and folder's
-/// map, see `DefaultsCodec`); likewise written only when a file carries some,
-/// so an older app refuses it instead of quietly dropping them. Versions 1 to
-/// 3 still read, with no defaults.
 abstract final class BackupCodec {
   static const formatId = 'postpilot-backup';
   static const currentVersion = 2;
   static const gitVersion = 3;
-  static const defaultsVersion = 4;
-
-  /// The newest version this app reads.
-  static const maxVersion = defaultsVersion;
   static const _notice =
       'This file contains secrets (variable values, tokens, passwords, API keys) in plain text. Keep it private.';
 
@@ -203,10 +169,9 @@ abstract final class BackupCodec {
   /// database needs them.
   static String encode(BackupSnapshot snapshot, {bool includeGit = false}) {
     final withGit = includeGit && snapshot.collections.any((c) => c.git != null);
-    final withDefaults = snapshot.collections.any((c) => c.hasDefaults);
     return const JsonEncoder.withIndent('  ').convert({
       'format': formatId,
-      'version': withDefaults ? defaultsVersion : (withGit ? gitVersion : currentVersion),
+      'version': withGit ? gitVersion : currentVersion,
       'sensitive': true,
       'notice': _notice,
       'exportedAt': snapshot.exportedAt.toUtc().toIso8601String(),
@@ -237,20 +202,14 @@ abstract final class BackupCodec {
       'variables': [
         for (final v in c.variables) {'key': v.key, 'value': v.value, 'enabled': v.enabled},
       ],
-      // The collection's own auth and variables are the two keys above.
-      ...DefaultsCodec.toDoc(c.defaults, includeVariablesAndAuth: false),
       'folders': [
         for (final f in c.folders)
           {
             'id': f.id,
             'parentId': f.parentFolderId,
             'name': f.name,
-            // Where it sits among the folders and requests of its parent. Optional on reading: a file without it
-            // lists folders first, then requests, in file order.
-            'order': f.orderIndex,
             ..._encodeNotes(c.folderNotes[f.id] ?? BackupNotes.none),
             'uid': ?(git == null ? null : c.folderUids[f.id]),
-            ...DefaultsCodec.toDoc(c.folderDefaults[f.id] ?? LevelDefaults.empty),
           },
       ],
       'requests': [for (final r in c.requests) _encodeRequest(r, includeGit && git != null)],
@@ -284,7 +243,6 @@ abstract final class BackupCodec {
     return {
       'folderId': q.folderId,
       'name': q.name,
-      'order': q.orderIndex,
       ..._encodeNotes(r.notes),
       'uid': ?(includeGit ? r.uid : null),
       'method': q.method.name,
@@ -348,9 +306,9 @@ abstract final class BackupCodec {
     }
     final version = root['version'];
     if (version is! int || version < 1) throw const ImportException('the backup has no valid version number.');
-    if (version > maxVersion) {
+    if (version > gitVersion) {
       throw ImportException(
-        'it was made by a newer PostPilot (backup version $version; this app reads up to $maxVersion).',
+        'it was made by a newer PostPilot (backup version $version; this app reads up to $gitVersion).',
       );
     }
     try {
@@ -377,9 +335,6 @@ abstract final class BackupCodec {
 
   static BackupCollection _decodeCollection(Map<String, dynamic> c) {
     final git = _decodeGit(c['git']);
-    final folderMaps = [for (final f in _maps(c['folders'])) if (f['id'] is int) f];
-    final requestMaps = _maps(c['requests']);
-    final orders = _decodeOrders(folderMaps, requestMaps);
     return BackupCollection(
       git: git,
       // uids mean nothing without the link they belong to
@@ -404,65 +359,21 @@ abstract final class BackupCodec {
             ),
       ],
       folders: [
-        for (final (i, f) in folderMaps.indexed)
-          FolderEntity(
-            id: f['id'] as int,
-            collectionId: 0,
-            parentFolderId: f['parentId'] is int ? f['parentId'] as int : null,
-            name: _name(f['name'], 'Folder'),
-            orderIndex: orders.folders[i],
-          ),
+        for (final f in _maps(c['folders']))
+          if (f['id'] is int)
+            FolderEntity(
+              id: f['id'] as int,
+              collectionId: 0,
+              parentFolderId: f['parentId'] is int ? f['parentId'] as int : null,
+              name: _name(f['name'], 'Folder'),
+            ),
       ],
       folderNotes: {
         for (final f in _maps(c['folders']))
           if (f['id'] is int && !_decodeNotes(f).isEmpty) f['id'] as int: _decodeNotes(f),
       },
-      requests: [
-        for (final (i, r) in requestMaps.indexed) _decodeRequest(r, withUid: git != null, order: orders.requests[i]),
-      ],
-      defaults: DefaultsCodec.fromDoc(c, includeVariablesAndAuth: false),
-      folderDefaults: {
-        for (final f in _maps(c['folders']))
-          if (f['id'] is int && !DefaultsCodec.fromDoc(f).isEmpty) f['id'] as int: DefaultsCodec.fromDoc(f),
-      },
+      requests: [for (final r in _maps(c['requests'])) _decodeRequest(r, withUid: git != null)],
     );
-  }
-
-  /// The position of every folder and request. A level in which every entry has an integer `order` keeps those.
-  /// Any other level (a file from before `order` was written) lists its folders first and then its requests,
-  /// each in file order: the way such a collection has always been shown.
-  static ({List<int> folders, List<int> requests}) _decodeOrders(
-    List<Map<String, dynamic>> folders,
-    List<Map<String, dynamic>> requests,
-  ) {
-    final folderLevels = <int?, List<int>>{};
-    final requestLevels = <int?, List<int>>{};
-    for (var i = 0; i < folders.length; i++) {
-      final parent = folders[i]['parentId'];
-      (folderLevels[parent is int ? parent : null] ??= []).add(i);
-    }
-    for (var i = 0; i < requests.length; i++) {
-      final parent = requests[i]['folderId'];
-      (requestLevels[parent is int ? parent : null] ??= []).add(i);
-    }
-    final folderOrders = List<int>.filled(folders.length, 0);
-    final requestOrders = List<int>.filled(requests.length, 0);
-    for (final parent in {...folderLevels.keys, ...requestLevels.keys}) {
-      final inFolders = folderLevels[parent] ?? const <int>[];
-      final inRequests = requestLevels[parent] ?? const <int>[];
-      final explicit = [
-        for (final i in inFolders) folders[i]['order'],
-        for (final i in inRequests) requests[i]['order'],
-      ].every((order) => order is int);
-      var next = 0;
-      for (final i in inFolders) {
-        folderOrders[i] = explicit ? folders[i]['order'] as int : next++;
-      }
-      for (final i in inRequests) {
-        requestOrders[i] = explicit ? requests[i]['order'] as int : next++;
-      }
-    }
-    return (folders: folderOrders, requests: requestOrders);
   }
 
   /// A damaged section is dropped whole: half a link (or a base missing some
@@ -517,7 +428,7 @@ abstract final class BackupCodec {
     ],
   );
 
-  static BackupRequest _decodeRequest(Map<String, dynamic> r, {bool withUid = false, int order = 0}) {
+  static BackupRequest _decodeRequest(Map<String, dynamic> r, {bool withUid = false}) {
     final scripts = r['scripts'];
     final settings = r['settings'] is Map ? RequestSettings.fromJson(_map(r['settings'])) : null;
     return BackupRequest(
@@ -535,7 +446,6 @@ abstract final class BackupCodec {
         queryParams: _decodeItems(r['queryParams']),
         body: _decodeBody(_map(r['body'])),
         auth: r['auth'] is Map ? RequestAuth.fromJson(_map(r['auth'])) : const RequestAuth(),
-        orderIndex: order,
       ),
       scripts: scripts is Map
           ? RequestScriptsEntity(

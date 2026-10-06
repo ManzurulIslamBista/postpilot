@@ -5,9 +5,6 @@ import '../../../../core/enums/body_type.dart';
 import '../../../../core/enums/http_method.dart';
 import '../../../collections/domain/entities/collection_entity.dart';
 import '../../../collections/domain/entities/collection_variable_entity.dart';
-import '../../../defaults/domain/entities/defaults_chain.dart';
-import '../../../defaults/domain/services/defaults_resolver.dart';
-import '../../../defaults/domain/services/header_inheritance.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/entities/key_value_item.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
@@ -57,7 +54,6 @@ abstract final class OpenApiExporter {
     required List<ApiRequestEntity> requests,
     List<CollectionVariableEntity> variables = const [],
     RequestAuth? collectionAuth,
-    DefaultsTree? defaults,
   }) =>
       _Exporter(
         collectionName: collectionName,
@@ -65,7 +61,6 @@ abstract final class OpenApiExporter {
         requests: requests,
         variables: {for (final v in variables) if (v.enabled) v.key: v.value},
         collectionAuth: collectionAuth,
-        defaults: defaults,
       ).run();
 }
 
@@ -88,10 +83,6 @@ final class _Exporter {
   final Map<String, String> variables;
   final RequestAuth? collectionAuth;
 
-  /// What the collection and its folders pass down: a request that inherits takes the nearest
-  /// folder's auth rather than the collection's, and carries the headers they pass down as parameters.
-  final DefaultsTree? defaults;
-
   final _schemes = <String, Map<String, dynamic>>{};
   final _schemeKeysByDefinition = <String, String>{};
   final _operationIds = <String>{};
@@ -103,7 +94,6 @@ final class _Exporter {
     required this.requests,
     required this.variables,
     required this.collectionAuth,
-    this.defaults,
   });
 
   OpenApiExport run() {
@@ -180,13 +170,10 @@ final class _Exporter {
     String? primaryServer,
     _SchemeRef? globalScheme,
   ) {
-    final inherited = defaults == null ? null : DefaultsResolver.resolve(defaults!.chainFor(request.folderId));
-    final inheritedAuth = inherited?.auth ?? collectionAuth;
-    final auth = request.auth.resolveInherited(inheritedAuth);
-    final headers = HeaderInheritance.materialize(inherited?.headerRows ?? const [], request.headers);
-    final parameters = _parameters(request, headers, target, path, auth);
-    final body = _requestBody(request, headers);
-    final security = _operationSecurity(request.auth, globalScheme, inheritedAuth);
+    final auth = request.auth.resolveInherited(collectionAuth);
+    final parameters = _parameters(request, target, path, auth);
+    final body = _requestBody(request);
+    final security = _operationSecurity(request.auth, globalScheme);
     return {
       'tags': ?(tag == null ? null : [tag]),
       'summary': request.name.trim().isEmpty ? 'Untitled request' : request.name.trim(),
@@ -225,14 +212,7 @@ final class _Exporter {
 
   // ---- parameters ---------------------------------------------------------
 
-  /// [headers] are the request's own rows with the ones it inherits written in (see `HeaderInheritance.materialize`).
-  List<Map<String, dynamic>> _parameters(
-    ApiRequestEntity request,
-    List<KeyValueItem> headers,
-    _Target target,
-    String path,
-    RequestAuth auth,
-  ) {
+  List<Map<String, dynamic>> _parameters(ApiRequestEntity request, _Target target, String path, RequestAuth auth) {
     final parameters = <Map<String, dynamic>>[];
     final seen = <String>{};
     void add(Map<String, dynamic> parameter) {
@@ -259,7 +239,7 @@ final class _Exporter {
     for (final (name, value) in target.query) {
       if (!coveredByAuth('query', name)) add(_parameter('query', name, value, required: true, infer: true));
     }
-    for (final header in headers) {
+    for (final header in request.headers) {
       final name = header.key.trim();
       if (name.isEmpty || _reservedHeaders.contains(name.toLowerCase()) || coveredByAuth('header', name)) continue;
       add(_parameter('header', name, header.value, required: header.enabled, infer: false));
@@ -299,14 +279,14 @@ final class _Exporter {
 
   // ---- request body -------------------------------------------------------
 
-  Map<String, dynamic>? _requestBody(ApiRequestEntity request, List<KeyValueItem> headers) {
+  Map<String, dynamic>? _requestBody(ApiRequestEntity request) {
     if (!_bodyMethods.contains(request.method)) return null;
     final body = request.body;
     switch (body.type) {
       case BodyType.none:
         return null;
       case BodyType.raw:
-        return body.rawText.trim().isEmpty ? null : _rawBody(request, headers);
+        return body.rawText.trim().isEmpty ? null : _rawBody(request);
       case BodyType.urlEncoded:
         return _formBody('application/x-www-form-urlencoded', body.urlEncodedFields);
       case BodyType.formData:
@@ -326,9 +306,9 @@ final class _Exporter {
     }
   }
 
-  Map<String, dynamic> _rawBody(ApiRequestEntity request, List<KeyValueItem> headers) {
+  Map<String, dynamic> _rawBody(ApiRequestEntity request) {
     final body = request.body;
-    final mediaType = _declaredMediaType(headers) ?? body.rawContentType.mimeType;
+    final mediaType = _declaredMediaType(request.headers) ?? body.rawContentType.mimeType;
     final json = mediaType.contains('json') ? _decodeJson(body.rawText) : null;
     if (json != null) return _content(mediaType, _schemaOf(json), json);
     return _content(mediaType, {'type': 'string'}, body.rawText);
@@ -422,19 +402,15 @@ final class _Exporter {
   // ---- security -----------------------------------------------------------
 
   /// Null when the request follows the document-wide `security`; `[]` for an
-  /// explicit "no auth" where a default exists. A request that inherits is judged by the auth it
-  /// inherits ([inheritedAuth]: the nearest folder's, else the collection's), which is
-  /// the document-wide one unless a folder sets another.
-  List<Map<String, List<String>>>? _operationSecurity(RequestAuth auth, _SchemeRef? globalScheme, RequestAuth? inheritedAuth) {
-    final effective = auth.type == AuthType.inherit ? inheritedAuth : auth;
-    if (effective == null) return null;
-    switch (effective.type) {
+  /// explicit "no auth" where a default exists.
+  List<Map<String, List<String>>>? _operationSecurity(RequestAuth auth, _SchemeRef? globalScheme) {
+    switch (auth.type) {
       case AuthType.inherit:
         return null;
       case AuthType.none:
         return globalScheme == null ? null : const [];
       default:
-        final scheme = _schemeOf(effective);
+        final scheme = _schemeOf(auth);
         if (scheme == null || scheme == globalScheme) return null;
         return [_requirement(scheme)];
     }

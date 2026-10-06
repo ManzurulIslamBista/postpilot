@@ -463,8 +463,7 @@ class _ResultTile extends StatelessWidget {
   String? _testsSummary() {
     final scripts = result.scripts;
     if (scripts == null) return null;
-    // A test inherited from a folder or the collection says where it was set.
-    final failedTests = scripts.assertions.where((a) => !a.passed).map((a) => a.origin == null ? a.name : '${a.name} (from ${a.origin})');
+    final failedTests = scripts.assertions.where((a) => !a.passed).map((a) => a.name);
     final failedSaves = scripts.extracted.where((e) => !e.ok);
     final parts = [
       if (scripts.assertions.isNotEmpty) '${scripts.passedCount}/${scripts.assertions.length} tests passed',

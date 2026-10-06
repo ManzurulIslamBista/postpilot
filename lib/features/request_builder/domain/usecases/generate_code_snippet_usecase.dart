@@ -1,6 +1,5 @@
 import '../../../../core/usecases/usecase.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
-import '../../../defaults/domain/usecases/resolve_request_defaults_usecase.dart';
 import '../../../settings/domain/repositories/request_settings_repository.dart';
 import '../../../settings/domain/repositories/settings_repository.dart';
 import '../entities/api_request_entity.dart';
@@ -17,12 +16,10 @@ final class GenerateCodeSnippetParams {
 
 /// Renders a request as a ready-to-paste snippet in another language/tool —
 /// built by the same [PrepareRequestUseCase] that [SendRequestUseCase] sends
-/// with (variable scopes, headers and auth inherited from the folders and the
-/// collection, trimming and the no-cache header from the settings), so the
-/// snippet always matches what the app actually transmits. Pass [settings] and
-/// [requestSettings] to apply them; without them the defaults do. Pass [defaults]
-/// to inherit from folders and collection headers; without it only the collection's
-/// auth is inherited.
+/// with (variable scopes, inherited collection auth, trimming and the no-cache
+/// header from the settings), so the snippet always matches what the app
+/// actually transmits. Pass [settings] and [requestSettings] to apply them;
+/// without them the defaults do.
 final class GenerateCodeSnippetUseCase implements UseCase<String, GenerateCodeSnippetParams> {
   final PrepareRequestUseCase _prepareRequestUseCase;
 
@@ -32,14 +29,12 @@ final class GenerateCodeSnippetUseCase implements UseCase<String, GenerateCodeSn
     SettingsRepository? settings,
     RequestSettingsRepository? requestSettings,
     RequestSpecBuilder specBuilder = const RequestSpecBuilder(),
-    ResolveRequestDefaultsUseCase? defaults,
   }) : _prepareRequestUseCase = PrepareRequestUseCase(
           buildVariableResolverUseCase,
           collectionAuthRepository,
           settings: settings,
           requestSettings: requestSettings,
           specBuilder: specBuilder,
-          defaults: defaults,
         );
 
   @override

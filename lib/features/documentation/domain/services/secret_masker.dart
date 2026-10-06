@@ -199,7 +199,7 @@ abstract final class SecretMasker {
   }
 
   static List<ApiDocsField> _fields(List<ApiDocsField> fields) =>
-      [for (final field in fields) ApiDocsField(field.key, maskValue(field.key, field.value), origin: field.origin)];
+      [for (final field in fields) ApiDocsField(field.key, maskValue(field.key, field.value))];
 
   /// A value under an ordinary name: a URL keeps its host and path but loses
   /// its password and secret parameters; anything else loses a known token.

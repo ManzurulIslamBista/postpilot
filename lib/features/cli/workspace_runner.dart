@@ -5,11 +5,8 @@ import 'dart:typed_data';
 import '../../core/enums/auth_type.dart';
 import '../../core/enums/body_type.dart';
 import '../../core/utils/variable_resolver.dart';
-import '../defaults/domain/entities/inherited_defaults.dart';
-import '../defaults/domain/services/defaults_resolver.dart';
 import '../documentation/domain/services/secret_masker.dart';
 import '../import_export/domain/services/backup_codec.dart';
-import '../import_export/domain/services/backup_order.dart';
 import '../request_builder/domain/entities/api_request_entity.dart';
 import '../request_builder/domain/entities/api_response_entity.dart';
 import '../request_builder/domain/entities/request_auth.dart';
@@ -62,10 +59,6 @@ final class RunOptions {
   final Map<String, String> agentVariables;
   final String? collection;
   final String? folder;
-
-  /// `--request` (repeatable): only the requests with this name, or this `folder/path/name`. Together with
-  /// [folder] a request must match both. They still run in the collection's order, not in the order given.
-  final List<String> requests;
   final bool bail;
   final Duration timeout;
   final bool verifySsl;
@@ -83,7 +76,6 @@ final class RunOptions {
     this.agentVariables = const {},
     this.collection,
     this.folder,
-    this.requests = const [],
     this.bail = false,
     this.timeout = const Duration(seconds: 30),
     this.verifySsl = true,
@@ -151,8 +143,7 @@ final class RequestOutcome {
         if (error case final message?) SecretMasker.maskMessage(message),
         if (error == null && scripts.assertions.isEmpty && !isSuccess && status != null) 'HTTP $status ${statusMessage ?? ''}'.trim(),
         for (final a in scripts.assertions.where((a) => !a.passed)) failureText(a),
-        for (final e in scripts.extracted.where((e) => !e.ok))
-          'variable ${e.key}: ${SecretMasker.maskMessage('${e.error}')}${_from(e.origin)}',
+        for (final e in scripts.extracted.where((e) => !e.ok)) 'variable ${e.key}: ${SecretMasker.maskMessage('${e.error}')}',
       ];
 
   /// What the evaluator says every `actual` is when it is not a value of the response.
@@ -180,11 +171,7 @@ final class RequestOutcome {
   }
 
   /// `Status equals 200 (got 500)`, masked.
-  /// A check inherited from a folder or the collection says where it was set.
-  static String failureText(AssertionResult a) =>
-      '${SecretMasker.maskMessage(a.name)} (got ${shownActual(a)})${_from(a.origin)}';
-
-  static String _from(String? origin) => origin == null ? '' : ' (from ${SecretMasker.maskMessage(origin)})';
+  static String failureText(AssertionResult a) => '${SecretMasker.maskMessage(a.name)} (got ${shownActual(a)})';
 }
 
 final class RunSummary {
@@ -245,11 +232,10 @@ final class WorkspaceRunner {
   List<String> get environmentNames => [for (final e in snapshot.environments) e.name];
   List<String> get collectionNames => [for (final c in snapshot.collections) c.name];
 
-  /// The requests in the order a run sends them (the collection's canonical order, the sidebar's).
   List<RequestRef> listRequests({String? collection}) => [
         for (final c in snapshot.collections)
           if (collection == null || c.name == collection)
-            for (final r in c.orderedRequests) RequestRef(c.name, _folderPath(c, r.request.folderId), r.request.name, r.request.method.label, r.request.url),
+            for (final r in c.requests) RequestRef(c.name, _folderPath(c, r.request.folderId), r.request.name, r.request.method.label, r.request.url),
       ];
 
   String _folderPath(BackupCollection c, int? folderId) {
@@ -265,38 +251,19 @@ final class WorkspaceRunner {
     return names.join('/');
   }
 
-  /// The requests [options] select (collection, folder and request filters), in the collection's canonical order:
-  /// depth-first, folders and requests interleaved by their position, the same order the app's runner uses.
+  /// The requests [options] select (collection and folder filters), in file order.
   Iterable<(BackupCollection, BackupRequest)> _selected(RunOptions options) sync* {
     for (final collection in snapshot.collections) {
       if (options.collection != null && collection.name != options.collection) continue;
-      for (final item in collection.orderedRequests) {
+      for (final item in collection.requests) {
         final folder = _folderPath(collection, item.request.folderId);
         if (options.folder != null && folder != options.folder && !folder.startsWith('${options.folder}/')) continue;
-        if (options.requests.isNotEmpty && !options.requests.any((s) => _matchesRequest(s, folder, item.request.name))) continue;
         yield (collection, item);
       }
     }
   }
 
-  /// A `--request` selector names a request alone (`Login`) or with its folder (`Auth/Login`).
-  static bool _matchesRequest(String selector, String folder, String name) =>
-      selector == name || selector == (folder.isEmpty ? name : '$folder/$name');
-
-  /// The `--request` selectors of [options] that match no request of the selected collections and folder, so a typo
-  /// stops the run before anything is sent instead of quietly running less than was asked for.
-  List<String> unmatchedRequestSelectors(RunOptions options) {
-    final unfiltered = RunOptions(collection: options.collection, folder: options.folder);
-    final candidates = [
-      for (final (collection, item) in _selected(unfiltered)) (_folderPath(collection, item.request.folderId), item.request.name),
-    ];
-    return [
-      for (final selector in options.requests)
-        if (!candidates.any((c) => _matchesRequest(selector, c.$1, c.$2))) selector,
-    ];
-  }
-
-  /// Runs every selected request in the collection's canonical order. [onResult] is called as each finishes.
+  /// Runs every selected request in file order. [onResult] is called as each finishes.
   /// The production lock is checked per request as it is sent; call
   /// [productionBlocks] first to refuse a whole run before anything leaves.
   Future<RunSummary> run(RunOptions options, {void Function(RequestOutcome outcome)? onResult, Map<String, String> processVariables = const {}}) async {
@@ -322,29 +289,18 @@ final class WorkspaceRunner {
     return [
       for (final (collection, item) in _selected(options))
         if (!_isSkippedForAuth(collection, item.request))
-          ?_blockFor(
-            collection,
-            item,
-            options,
-            _preview(collection, item.request, state.resolver(collection, agent: options.agentVariables, folderId: item.request.folderId)),
-          ),
+          ?_blockFor(collection, item, options, _preview(collection, item.request, state.resolver(collection, agent: options.agentVariables))),
     ];
   }
 
-  /// What a request inherits from its collection and folders: the same rules, from the same
-  /// levels, as the app (see `DefaultsResolver`), so a request is built identically in both.
-  InheritedDefaults _inherited(BackupCollection collection, int? folderId) =>
-      DefaultsResolver.resolve(collection.defaultsTree.chainFor(folderId));
-
   bool _isSkippedForAuth(BackupCollection collection, ApiRequestEntity request) =>
-      request.auth.resolveInherited(_inherited(collection, request.folderId).auth).type == AuthType.oauth2;
+      request.auth.resolveInherited(collection.auth).type == AuthType.oauth2;
 
   /// The wire form of a request for the lock to judge. The built request when it
   /// can be built, otherwise the URL and body resolved by hand.
   _Wire _preview(BackupCollection collection, ApiRequestEntity request, VariableResolver resolver) {
     try {
-      final inherited = _inherited(collection, request.folderId);
-      final spec = _builder.build(request, resolver, inheritedAuth: inherited.auth, inheritedHeaders: inherited.headerRows);
+      final spec = _builder.build(request, resolver, inheritedAuth: collection.auth);
       return _Wire(spec.url, spec.bodyBytes == null ? null : utf8.decode(spec.bodyBytes!, allowMalformed: true));
     } catch (_) {
       final body = request.body;
@@ -400,8 +356,8 @@ final class WorkspaceRunner {
   String? _hostOverride(ApiRequestEntity request, RunState state, BackupCollection collection, RunOptions options) {
     final agent = options.agentVariables;
     if (agent.isEmpty) return null;
-    final trusted = state.resolver(collection, folderId: request.folderId).resolve(request.url);
-    final actual = state.resolver(collection, agent: agent, folderId: request.folderId).resolve(request.url);
+    final trusted = state.resolver(collection).resolve(request.url);
+    final actual = state.resolver(collection, agent: agent).resolve(request.url);
     final trustedOrigin = _origin(trusted);
     final mentioned = [
       for (final m in _unresolvedToken.allMatches(request.url))
@@ -436,9 +392,8 @@ final class WorkspaceRunner {
           blocked: blocked == null ? null : SecretMasker.maskMessage(blocked),
         );
 
-    // The auth, headers, variables and tests the request inherits from its folders and collection.
-    final inherited = _inherited(collection, request.folderId);
-    final effective = request.auth.resolveInherited(inherited.auth);
+    final inherited = collection.auth;
+    final effective = request.auth.resolveInherited(inherited);
     if (effective.type == AuthType.oauth2) {
       return outcome(skipped: 'oauth2 auth needs the app (it gets its token through a browser or a token request); skipped');
     }
@@ -446,10 +401,10 @@ final class WorkspaceRunner {
     final override = _hostOverride(request, state, collection, options);
     if (override != null) return outcome(error: override, blocked: override);
 
-    final resolver = state.resolver(collection, agent: options.agentVariables, folderId: request.folderId);
+    final resolver = state.resolver(collection, agent: options.agentVariables);
     final ResolvedRequestSpec spec;
     try {
-      spec = _builder.build(request, resolver, inheritedAuth: inherited.auth, inheritedHeaders: inherited.headerRows);
+      spec = _builder.build(request, resolver, inheritedAuth: inherited);
     } catch (e) {
       return outcome(error: 'Could not build the request: $e');
     }
@@ -485,7 +440,7 @@ final class WorkspaceRunner {
       bodyBytes: Uint8List.fromList(response.bodyBytes),
       duration: response.duration,
     );
-    final scripts = _runScripts(item, inherited, entity, resolver, state);
+    final scripts = _runScripts(item, entity, resolver, state);
     final reader = ResponseReader(entity);
     return RequestOutcome(
       collection: collection.name,
@@ -537,41 +492,28 @@ final class WorkspaceRunner {
     return uri.hasQuery ? '$path?${uri.query}' : path;
   }
 
-  /// The tests of the collection and of the folders above the request run first, outermost level first, then
-  /// the request's own (the order the app runs them in); each result of an inherited one says where it comes from.
-  ScriptRunResult _runScripts(
-    BackupRequest item,
-    InheritedDefaults inherited,
-    ApiResponseEntity response,
-    VariableResolver resolver,
-    RunState state,
-  ) {
+  ScriptRunResult _runScripts(BackupRequest item, ApiResponseEntity response, VariableResolver resolver, RunState state) {
     final scripts = item.scripts;
-    if (scripts == null && inherited.tests.isEmpty) return ScriptRunResult.empty;
-    final assertions = <AssertionResult>[
-      for (final level in inherited.tests)
-        for (final result in _evaluator.evaluate(response, level.assertions, resolver)) result.fromOrigin(level.origin.label),
-      if (scripts != null) ..._evaluator.evaluate(response, ScriptsJsonCodec.decodeAssertions(scripts.assertionsJson), resolver),
-    ];
+    if (scripts == null) return ScriptRunResult.empty;
+    final assertions = _evaluator.evaluate(response, ScriptsJsonCodec.decodeAssertions(scripts.assertionsJson), resolver);
     final reader = ResponseReader(response);
-
-    ExtractionResult extract(ExtractorEntity raw) {
+    final extracted = <ExtractionResult>[];
+    for (final raw in ScriptsJsonCodec.decodeExtractors(scripts.extractorsJson)) {
       final extractor = raw.copyWith(path: resolver.resolve(raw.path));
       final key = extractor.variableKey.trim();
       final configError = extractor.keyError ?? extractor.pathError;
-      if (configError != null) return ExtractionResult(key: key, scope: extractor.scope, error: configError);
+      if (configError != null) {
+        extracted.add(ExtractionResult(key: key, scope: extractor.scope, error: configError));
+        continue;
+      }
       final value = ExtractorValueResolver.resolve(reader, extractor);
-      if (value == null) return ExtractionResult(key: key, scope: extractor.scope, error: 'Not found in response');
+      if (value == null) {
+        extracted.add(ExtractionResult(key: key, scope: extractor.scope, error: 'Not found in response'));
+        continue;
+      }
       (extractor.scope == ExtractorScope.environment ? state.environment : state.globals)[key] = value;
-      return ExtractionResult(key: key, scope: extractor.scope, value: value);
+      extracted.add(ExtractionResult(key: key, scope: extractor.scope, value: value));
     }
-
-    final extracted = <ExtractionResult>[
-      for (final level in inherited.tests)
-        for (final extractor in level.extractors) extract(extractor).fromOrigin(level.origin.label),
-      if (scripts != null)
-        for (final extractor in ScriptsJsonCodec.decodeExtractors(scripts.extractorsJson)) extract(extractor),
-    ];
     return ScriptRunResult(assertions: assertions, extracted: extracted);
   }
 
@@ -606,14 +548,11 @@ final class RunState {
 
   /// [agent] are the variables an agent passed with this one call. They go on top
   /// of everything, and belong to the call, not to the state: the next call
-  /// brings its own (or none). The variables of the request's folders ([folderId]) sit between the
-  /// environment and the collection's, the innermost folder first, as in the app.
-  VariableResolver resolver(BackupCollection collection, {Map<String, String> agent = const {}, int? folderId}) =>
-      VariableResolver.layered([
+  /// brings its own (or none).
+  VariableResolver resolver(BackupCollection collection, {Map<String, String> agent = const {}}) => VariableResolver.layered([
         if (agent.isNotEmpty) agent,
         overrides,
         environment,
-        ...DefaultsResolver.resolve(collection.defaultsTree.chainFor(folderId)).variableScopes,
         {for (final v in collection.variables) if (v.enabled) v.key: v.value},
         globals,
       ]);

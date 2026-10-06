@@ -15,10 +15,6 @@ final class ApiRequestEntity {
   final RequestBody body;
   final RequestAuth auth;
 
-  /// Position among the folders and requests that sit in the same parent (see `CollectionOrder`). Only read
-  /// back from the database: saving a request never writes it.
-  final int orderIndex;
-
   const ApiRequestEntity({
     required this.id,
     required this.collectionId,
@@ -30,7 +26,6 @@ final class ApiRequestEntity {
     required this.queryParams,
     required this.body,
     required this.auth,
-    this.orderIndex = 0,
   });
 
   ApiRequestEntity copyWith({
@@ -53,23 +48,6 @@ final class ApiRequestEntity {
         queryParams: queryParams ?? this.queryParams,
         body: body ?? this.body,
         auth: auth ?? this.auth,
-        orderIndex: orderIndex,
-      );
-
-  /// The same request in another folder ([folderId] null = the collection's top level), which
-  /// [copyWith] cannot say. What the request inherits follows the folder it is in.
-  ApiRequestEntity inFolder(int? folderId) => ApiRequestEntity(
-        id: id,
-        collectionId: collectionId,
-        folderId: folderId,
-        name: name,
-        method: method,
-        url: url,
-        headers: headers,
-        queryParams: queryParams,
-        body: body,
-        auth: auth,
-        orderIndex: orderIndex,
       );
 }
 
@@ -79,14 +57,5 @@ final class RequestSummaryEntity {
   final String name;
   final HttpMethod method;
 
-  /// Position among the folders and requests that sit in the same parent (see `CollectionOrder`).
-  final int orderIndex;
-
-  const RequestSummaryEntity({
-    required this.id,
-    required this.folderId,
-    required this.name,
-    required this.method,
-    this.orderIndex = 0,
-  });
+  const RequestSummaryEntity({required this.id, required this.folderId, required this.name, required this.method});
 }

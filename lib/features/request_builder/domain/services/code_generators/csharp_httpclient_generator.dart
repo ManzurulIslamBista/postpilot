@@ -1,4 +1,5 @@
 import '../resolved_request_spec.dart';
+import '../../../../../core/network/upload_body.dart';
 import 'code_generator.dart';
 import 'string_literals.dart';
 
@@ -27,6 +28,7 @@ final class CSharpHttpClientGenerator implements CodeGenerator {
 
   @override
   String generate(ResolvedRequestSpec spec) {
+    if (spec.upload != null) return _generateUpload(spec);
     final body = bodyTextOf(spec);
     final requestHeaders = spec.headers.entries.where((e) => !_contentHeaders.contains(e.key.toLowerCase()));
     final contentHeaders = spec.headers.entries.where((e) => _contentHeaders.contains(e.key.toLowerCase()));
@@ -72,4 +74,54 @@ final class CSharpHttpClientGenerator implements CodeGenerator {
         'TRACE' => 'HttpMethod.Trace',
         _ => 'new HttpMethod(${csharpString(method)})',
       };
+
+  /// A form is a `MultipartFormDataContent` (it writes the boundary and the header); a binary body is a
+  /// `StreamContent` over the open file, typed by the request's own `Content-Type`.
+  String _generateUpload(ResolvedRequestSpec spec) {
+    final multipart = multipartOf(spec);
+    final headers = snippetHeadersOf(spec);
+    final requestHeaders = headers.entries.where((e) => !_contentHeaders.contains(e.key.toLowerCase()));
+    final contentHeaders = headers.entries.where((e) => _contentHeaders.contains(e.key.toLowerCase()));
+
+    final buffer = StringBuffer()
+      ..writeln('using System;')
+      ..writeln('using System.IO;')
+      ..writeln('using System.Net.Http;')
+      ..writeln('using System.Net.Http.Headers;')
+      ..writeln()
+      ..writeln('using var client = new HttpClient();')
+      ..writeln('using var request = new HttpRequestMessage(${_method(spec.method)}, ${csharpString(spec.url)});');
+    for (final e in requestHeaders) {
+      buffer.writeln('request.Headers.TryAddWithoutValidation(${csharpString(e.key)}, ${csharpString(e.value)});');
+    }
+    if (multipart != null) {
+      buffer.writeln('using var form = new MultipartFormDataContent();');
+      var index = 0;
+      for (final part in multipart.parts) {
+        switch (part) {
+          case UploadTextPart(:final name, :final value):
+            buffer.writeln('form.Add(new StringContent(${csharpString(value)}), ${csharpString(name)});');
+          case UploadFilePart(:final name, :final file):
+            index++;
+            buffer
+              ..writeln('var file$index = new StreamContent(File.OpenRead(${csharpString(file.path)}));')
+              ..writeln('file$index.Headers.ContentType = MediaTypeHeaderValue.Parse(${csharpString(file.contentType)});')
+              ..writeln('form.Add(file$index, ${csharpString(name)}, ${csharpString(file.fileName)});');
+        }
+      }
+      buffer.writeln('request.Content = form;');
+    } else {
+      buffer.writeln('request.Content = new StreamContent(File.OpenRead(${csharpString(binaryFileOf(spec)!.path)}));');
+    }
+    for (final e in contentHeaders) {
+      buffer.writeln(
+        'request.Content.Headers.TryAddWithoutValidation(${csharpString(e.key)}, ${csharpString(e.value)});',
+      );
+    }
+    buffer
+      ..writeln()
+      ..writeln('using var response = await client.SendAsync(request);')
+      ..write('Console.WriteLine(await response.Content.ReadAsStringAsync());');
+    return buffer.toString();
+  }
 }

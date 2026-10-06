@@ -3,7 +3,11 @@ enum BodyType {
   raw,
   formData,
   urlEncoded,
-  graphql;
+  graphql,
+
+  /// One file sent as the whole body (an S3 `PUT`, `application/octet-stream`). Added after the others: a build that
+  /// does not know it reads a stored `binary` as [none] (every store falls back to it for an unknown name).
+  binary;
 
   String get label => switch (this) {
         BodyType.none => 'None',
@@ -11,6 +15,7 @@ enum BodyType {
         BodyType.formData => 'Form Data',
         BodyType.urlEncoded => 'x-www-form-urlencoded',
         BodyType.graphql => 'GraphQL',
+        BodyType.binary => 'Binary',
       };
 }
 

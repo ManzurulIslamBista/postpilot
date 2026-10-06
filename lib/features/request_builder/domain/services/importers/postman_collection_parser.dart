@@ -10,6 +10,7 @@ import '../../entities/key_value_item.dart';
 import '../../entities/request_auth.dart';
 import '../../entities/request_body.dart';
 import 'postman_script_translator.dart';
+import 'upload_path_note.dart';
 
 sealed class PostmanItem {
   final String name;
@@ -159,8 +160,10 @@ final class ParsedPostmanCollection {
 /// this app itself supports (bearer/basic/api key/digest/AWS SigV4/JWT/OAuth
 /// 2.0) and the common `pm.test` / `pm.environment.set` test scripts, which
 /// become the request's assertions and extractors (see
-/// [PostmanScriptTranslator]). Anything else — oauth1/hawk/ntlm/etc,
-/// file-type form fields, pre-request scripts, statements it cannot translate,
+/// [PostmanScriptTranslator]). File form fields (`type: file`, `src`) and a body
+/// sent from a file (`mode: file`) come in as file references, with a note when a
+/// path belongs to one machine. Anything else — oauth1/hawk/ntlm/etc,
+/// pre-request scripts, statements it cannot translate,
 /// `protocolProfileBehavior` — is skipped, not rejected, and reported in
 /// [ParsedPostmanCollection.notes]: a partially-imported collection beats a
 /// failed import, but only if it says what is missing.
@@ -203,6 +206,7 @@ final class _Parser {
       if (rawItems is List)
         for (final raw in rawItems) ?_parseItem(raw),
     ];
+    if (UploadPathNote.of(_machinePathsIn(items)) case final paths?) _adjust(paths);
     return ParsedPostmanCollection(
       name is String && name.isNotEmpty ? name : 'Imported collection',
       items,
@@ -212,6 +216,19 @@ final class _Parser {
       extractors: scripts.extractors,
       notes: _notes,
     );
+  }
+
+  static int _machinePathsIn(List<PostmanItem> items) {
+    var total = 0;
+    for (final item in items) {
+      switch (item) {
+        case PostmanFolderItem():
+          total += _machinePathsIn(item.children);
+        case PostmanRequestItem():
+          total += UploadPathNote.machineSpecificRows(item.body.formFields);
+      }
+    }
+    return total;
   }
 
   static List<KeyValueItem> _variablesOf(dynamic variables) {
@@ -446,6 +463,36 @@ final class _Parser {
     return items;
   }
 
+  /// The `src` of a file entry: one path, a list of them, or nothing (no file was picked in Postman).
+  static List<String> _sourcesOf(dynamic src) =>
+      src is List ? [for (final s in src) if (s is String) s] : [if (src is String) src];
+
+  /// Text rows, and file rows (`type: file`) with the path of `src`. A file row that lists several files takes the first.
+  List<KeyValueItem> _formDataOf(dynamic list, String label) {
+    if (list is! List) return const [];
+    final items = <KeyValueItem>[];
+    for (final entry in list.whereType<Map>()) {
+      final key = entry['key'] as String? ?? '';
+      final enabled = entry['disabled'] != true;
+      if (entry['type'] != 'file') {
+        items.add(KeyValueItem(key: key, value: entry['value'] as String? ?? '', enabled: enabled));
+        continue;
+      }
+      final sources = _sourcesOf(entry['src']);
+      if (sources.length > 1) _adjust('$label: file field "$key" lists ${sources.length} files; only the first was imported.');
+      items.add(
+        KeyValueItem(
+          key: key,
+          value: sources.firstOrNull ?? '',
+          enabled: enabled,
+          kind: FormFieldKind.file,
+          contentType: entry['contentType'] as String? ?? '',
+        ),
+      );
+    }
+    return items;
+  }
+
   RequestBody _bodyOf(dynamic body, String label) {
     if (body is! Map) return RequestBody.empty;
     switch (body['mode'] as String?) {
@@ -465,7 +512,7 @@ final class _Parser {
       case 'urlencoded':
         return RequestBody(type: BodyType.urlEncoded, urlEncodedFields: _keyValueListOf(body['urlencoded'], 'field', label));
       case 'formdata':
-        return RequestBody(type: BodyType.formData, formFields: _keyValueListOf(body['formdata'], 'field', label));
+        return RequestBody(type: BodyType.formData, formFields: _formDataOf(body['formdata'], label));
       case 'graphql':
         final graphql = body['graphql'] as Map?;
         final variables = graphql?['variables'];
@@ -475,8 +522,15 @@ final class _Parser {
           graphqlVariables: variables is String ? variables : jsonEncode(variables ?? {}),
         );
       case 'file':
-        _skip('$label: a body sent from a file was not imported.');
-        return RequestBody.empty;
+        final file = body['file'];
+        final src = file is Map ? _sourcesOf(file['src']).firstOrNull : null;
+        if (src == null || src.isEmpty) {
+          if (file is Map && file['content'] is String) _skip('$label: a body typed in as file content was not imported.');
+          return const RequestBody(type: BodyType.binary);
+        }
+        return const RequestBody(type: BodyType.binary).withBinaryFile(
+          KeyValueItem(key: '', value: src, kind: FormFieldKind.file),
+        );
       default:
         return RequestBody.empty;
     }

@@ -153,12 +153,34 @@ abstract final class PostmanCollectionExporter {
             },
           },
         BodyType.urlEncoded => {'mode': 'urlencoded', 'urlencoded': _keyValueList(body.urlEncodedFields)},
-        BodyType.formData => {'mode': 'formdata', 'formdata': _keyValueList(body.formFields)},
+        BodyType.formData => {'mode': 'formdata', 'formdata': _formDataList(body.formFields)},
         BodyType.graphql => {
             'mode': 'graphql',
             'graphql': {'query': body.graphqlQuery, 'variables': body.graphqlVariables},
           },
+        // Postman's `file` mode holds one `src` path (no name or type of its own, those two are not exported).
+        BodyType.binary => {
+            'mode': 'file',
+            'file': {'src': body.binaryFile?.value ?? ''},
+          },
       };
+
+  /// A text row is `{key, value}`; a file row is `{key, type: file, src}` (and the type it is sent with).
+  static List<Map<String, dynamic>> _formDataList(List<KeyValueItem> items) => [
+        for (final i in items)
+          // The file of a binary body is kept as a form row without a key: it is not a form field.
+          if (!(i.isFile && i.key.isEmpty))
+            if (i.isFile)
+              {
+                'key': i.key,
+                'type': 'file',
+                'src': i.value,
+                if (i.contentType.isNotEmpty) 'contentType': i.contentType,
+                'disabled': !i.enabled,
+              }
+            else
+              {'key': i.key, 'value': i.value, 'disabled': !i.enabled},
+      ];
 
   static List<Map<String, dynamic>> _keyValueList(List<KeyValueItem> items) =>
       [for (final i in items) {'key': i.key, 'value': i.value, 'disabled': !i.enabled}];

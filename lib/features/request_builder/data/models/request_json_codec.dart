@@ -6,12 +6,11 @@ import '../../domain/entities/request_auth.dart';
 /// Encodes/decodes the JSON columns Requests are persisted with in SQLite —
 /// an internal storage detail, not a domain type.
 abstract final class RequestJsonCodec {
-  static String encodeKeyValues(List<KeyValueItem> items) =>
-      jsonEncode([for (final i in items) {'key': i.key, 'value': i.value, 'enabled': i.enabled}]);
+  /// A text row is `{key, value, enabled}`; a form-data file row also says `kind: file` (see [KeyValueItem.toJson]).
+  static String encodeKeyValues(List<KeyValueItem> items) => jsonEncode([for (final i in items) i.toJson()]);
 
   static List<KeyValueItem> decodeKeyValues(String json) => [
-        for (final e in (jsonDecode(json) as List))
-          KeyValueItem(key: e['key'] as String, value: e['value'] as String, enabled: e['enabled'] as bool? ?? true),
+        for (final e in (jsonDecode(json) as List)) ?KeyValueItem.tryFromJson(e),
       ];
 
   static String encodeAuth(RequestAuth auth) => jsonEncode(auth.toJson());

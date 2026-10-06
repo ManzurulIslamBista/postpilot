@@ -1,4 +1,7 @@
 import 'package:flutter/foundation.dart';
+import '../../../auth_renewal/domain/services/oauth2_token_manager.dart';
+import '../../../auth_renewal/domain/services/token_status.dart';
+import '../../../documentation/domain/services/secret_masker.dart';
 import '../../domain/entities/request_auth.dart';
 import '../../domain/services/oauth2_token_service.dart';
 import '../../domain/usecases/build_variable_resolver_usecase.dart';
@@ -7,11 +10,16 @@ import '../../domain/usecases/build_variable_resolver_usecase.dart';
 /// It never owns the [RequestAuth]: the freshly fetched token is handed back
 /// through the `onToken` callback so the request (or collection) that owns
 /// the auth can apply it to its own current auth and persist it.
+///
+/// [_manager] is what keeps tokens valid on every send (see [OAuth2TokenManager]); here it serves the
+/// "Renew now" button, which picks the grant the same way (the refresh token when there is one, else the
+/// configured grant) and says specifically what went wrong.
 final class RequestOAuth2ViewModel with ChangeNotifier {
   final OAuth2TokenService _tokenService;
   final BuildVariableResolverUseCase _buildVariableResolverUseCase;
+  final OAuth2TokenManager? _manager;
 
-  RequestOAuth2ViewModel(this._tokenService, this._buildVariableResolverUseCase);
+  RequestOAuth2ViewModel(this._tokenService, this._buildVariableResolverUseCase, [this._manager]);
 
   /// The folder the auth being edited belongs to; its variables (and those of the folders above it)
   /// resolve in the token request as they do when the auth is used in a send. Set by the editor.
@@ -31,6 +39,24 @@ final class RequestOAuth2ViewModel with ChangeNotifier {
 
   Future<void> refreshToken(RequestAuth auth, ValueChanged<OAuth2Token> onToken, {int? collectionId}) =>
       _run(onToken, () async => _tokenService.refreshToken(await _resolved(auth, collectionId)));
+
+  /// "Renew now": a new token from the refresh token when there is one, else from the configured grant.
+  /// Without the manager (a test wiring) it falls back to the refresh grant.
+  Future<void> renewNow(RequestAuth auth, ValueChanged<OAuth2Token> onToken, {int? collectionId}) {
+    final manager = _manager;
+    if (manager == null) return refreshToken(auth, onToken, collectionId: collectionId);
+    return _run(onToken, () async {
+      final resolver = await _buildVariableResolverUseCase(collectionId ?? 0, folderId: folderId);
+      return manager.obtainNow(auth, resolver);
+    });
+  }
+
+  /// Called when the token is cleared by hand: a token the app renewed and still remembers must not come back
+  /// on the next send in place of the fresh one the person asked for.
+  void forgetRenewedTokens() => _manager?.forgetAll();
+
+  /// What the Auth tab shows about [auth]'s token: whether there is one, when it ends, whether it renews itself.
+  TokenStatus statusOf(RequestAuth auth) => TokenStatus.of(auth, DateTime.now());
 
   Future<void> startAuthorizationCodeFlow(RequestAuth auth, {int? collectionId}) async {
     final pkce = _tokenService.generatePkcePair();
@@ -83,14 +109,7 @@ final class RequestOAuth2ViewModel with ChangeNotifier {
     );
   }
 
-  String describeTokenStatus(RequestAuth auth) {
-    if (!auth.hasOAuth2Token) return 'No token yet';
-    final expiry = auth.oauth2TokenExpiry;
-    if (expiry == null) return 'Token present (no expiry reported)';
-    final now = DateTime.now();
-    if (auth.isOAuth2TokenExpiredAt(now)) return 'Token expired';
-    return 'Token valid for ${_describeDuration(expiry.difference(now))}';
-  }
+  String describeTokenStatus(RequestAuth auth) => statusOf(auth).headline;
 
   Future<void> _run(ValueChanged<OAuth2Token> onToken, Future<OAuth2Token> Function() fetch) async {
     if (isFetching) return;
@@ -108,7 +127,8 @@ final class RequestOAuth2ViewModel with ChangeNotifier {
       _codeVerifier = null;
       _state = null;
     } on Exception catch (e) {
-      errorMessage = e.toString();
+      // A server's error text can echo what was sent to it.
+      errorMessage = SecretMasker.maskMessage(e.toString());
     }
 
     isFetching = false;
@@ -126,23 +146,7 @@ final class RequestOAuth2ViewModel with ChangeNotifier {
   /// (a request not yet saved anywhere) only environment + globals apply.
   Future<RequestAuth> _resolved(RequestAuth auth, int? collectionId) async {
     final resolver = await _buildVariableResolverUseCase(collectionId ?? 0, folderId: folderId);
-    return auth.copyWith(
-      oauth2AccessTokenUrl: resolver.resolve(auth.oauth2AccessTokenUrl),
-      oauth2AuthorizationUrl: resolver.resolve(auth.oauth2AuthorizationUrl),
-      oauth2RedirectUri: resolver.resolve(auth.oauth2RedirectUri),
-      oauth2ClientId: resolver.resolve(auth.oauth2ClientId),
-      oauth2ClientSecret: resolver.resolve(auth.oauth2ClientSecret),
-      oauth2Scope: resolver.resolve(auth.oauth2Scope),
-      oauth2Username: resolver.resolve(auth.oauth2Username),
-      oauth2Password: resolver.resolve(auth.oauth2Password),
-      oauth2Audience: resolver.resolve(auth.oauth2Audience),
-    );
-  }
-
-  static String _describeDuration(Duration d) {
-    if (d.inHours >= 1) return '${d.inHours}h ${d.inMinutes % 60}m';
-    if (d.inMinutes >= 1) return '${d.inMinutes}m';
-    return '${d.inSeconds}s';
+    return OAuth2TokenService.resolveFields(auth, resolver);
   }
 
   @override

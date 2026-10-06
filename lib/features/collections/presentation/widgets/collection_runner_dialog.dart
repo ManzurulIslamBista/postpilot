@@ -7,6 +7,9 @@ import '../../../safety/domain/services/production_guard.dart';
 import '../../../safety/presentation/production_confirm_dialog.dart';
 import '../../../request_builder/domain/services/collection_run_report.dart';
 import '../../../request_builder/domain/services/collection_runner_service.dart';
+import '../../../run_triage/presentation/run_results_tabs.dart';
+import '../../../run_triage/presentation/run_triage_controller.dart';
+import '../../../run_triage/presentation/run_triage_wiring.dart';
 import '../view_models/collection_runner_view_model.dart';
 
 class CollectionRunnerDialog extends StatefulWidget {
@@ -14,11 +17,14 @@ class CollectionRunnerDialog extends StatefulWidget {
 
   /// Opens with only this folder's requests (and those of the folders under it) ticked; null ticks everything.
   final int? folderId;
-  const CollectionRunnerDialog({super.key, required this.collectionId, this.folderId});
 
-  static Future<void> show(BuildContext context, {required int collectionId, int? folderId}) => showDialog(
+  /// Opens with exactly these requests ticked (the run history's "Re-run failed only"); null leaves the choice as it is.
+  final List<int>? onlyRequestIds;
+  const CollectionRunnerDialog({super.key, required this.collectionId, this.folderId, this.onlyRequestIds});
+
+  static Future<void> show(BuildContext context, {required int collectionId, int? folderId, List<int>? onlyRequestIds}) => showDialog(
         context: context,
-        builder: (_) => CollectionRunnerDialog(collectionId: collectionId, folderId: folderId),
+        builder: (_) => CollectionRunnerDialog(collectionId: collectionId, folderId: folderId, onlyRequestIds: onlyRequestIds),
       );
 
   @override
@@ -27,6 +33,8 @@ class CollectionRunnerDialog extends StatefulWidget {
 
 class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
   late final CollectionRunnerViewModel _viewModel;
+  // Groups the failures of a finished run by cause and stores the run in the run history.
+  late final RunTriageController _triage;
   final _iterations = TextEditingController(text: '1');
   final _delay = TextEditingController(text: '0');
   final _data = TextEditingController();
@@ -36,7 +44,11 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
   void initState() {
     super.initState();
     _viewModel = locator<CollectionRunnerViewModel>();
-    _viewModel.load(widget.collectionId, folderId: widget.folderId);
+    _triage = createRunTriageController(_viewModel, widget.collectionId);
+    _viewModel.load(widget.collectionId, folderId: widget.folderId).then((_) {
+      final only = widget.onlyRequestIds;
+      if (only != null && mounted) _viewModel.selectOnly(only);
+    });
   }
 
   @override
@@ -44,8 +56,15 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
     _iterations.dispose();
     _delay.dispose();
     _data.dispose();
+    _triage.dispose();
     _viewModel.dispose();
     super.dispose();
+  }
+
+  /// "Re-run failed only" in the Triage tab: tick exactly those requests and run (the production lock asks as usual).
+  Future<void> _rerunFailed(List<int> requestIds) async {
+    _viewModel.selectOnly(requestIds);
+    await _run();
   }
 
   Future<void> _run() async {
@@ -110,7 +129,7 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
                   Expanded(
                     child: _showSetup
                         ? _Setup(vm: vm, iterations: _iterations, delay: _delay, data: _data)
-                        : _Results(vm: vm),
+                        : RunResultsTabs(results: _Results(vm: vm), triage: _triage, onRerunFailed: _rerunFailed),
                   ),
                   const SizedBox(height: 8),
                   _buildActions(vm),
@@ -301,7 +320,11 @@ class _Settings extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Checkbox(value: vm.stopOnFailure, onChanged: (value) => vm.setStopOnFailure(value ?? false)),
-                  const Text('Stop on first failure'),
+                  const Tooltip(
+                    message: 'Requests marked "Always run" in their Flow tab (cleanups) are still sent afterwards. '
+                        'Pressing Stop yourself stops them too. A skipped request is not a failure.',
+                    child: Text('Stop on first failure'),
+                  ),
                   const SizedBox(width: 8),
                 ],
               ),
@@ -473,6 +496,7 @@ class _SummaryStrip extends StatelessWidget {
           value: '${summary.failed}',
           color: summary.failed > 0 ? context.colors.statusError : null,
         ),
+        if (summary.skipped > 0) _Stat(label: 'Skipped', value: '${summary.skipped}'),
         if (summary.assertions > 0) _Stat(label: 'Tests', value: '${summary.passedAssertions}/${summary.assertions}'),
         _Stat(label: 'Total time', value: _formatDuration(summary.totalTime)),
         _Stat(label: 'Avg time', value: _formatDuration(summary.averageTime)),
@@ -524,7 +548,7 @@ class _IterationHeader extends StatelessWidget {
           Text('Iteration ${iteration.number}', style: context.textStyles.body.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(width: 12),
           Text(
-            '${iteration.passedCount}/${iteration.results.length} passed',
+            '${iteration.passedCount}/${iteration.results.length} passed${iteration.skippedCount > 0 ? ', ${iteration.skippedCount} skipped' : ''}',
             style: context.textStyles.caption.copyWith(color: passedColor),
           ),
           if (iteration.data.isNotEmpty) ...[
@@ -554,10 +578,20 @@ class _ResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final response = result.response;
-    final statusText = response == null ? 'Error' : '${response.statusCode} · ${response.duration.inMilliseconds}ms';
-    final statusColor = result.isSuccess ? context.colors.statusSuccess : context.colors.statusError;
-    final passedColor = result.passed ? context.colors.statusSuccess : context.colors.statusError;
-    final subtitle = result.error ?? _testsSummary();
+    final statusText = result.isSkipped
+        ? 'Skipped'
+        : response == null
+            ? 'Error'
+            : '${response.statusCode} · ${response.duration.inMilliseconds}ms';
+    final statusColor = result.isSkipped
+        ? context.colors.secondaryText
+        : result.isSuccess ? context.colors.statusSuccess : context.colors.statusError;
+    final passedColor = result.isSkipped
+        ? context.colors.secondaryText
+        : result.passed ? context.colors.statusSuccess : context.colors.statusError;
+    // What retrying, polling or fetching pages did (or why the request was skipped), then a token renewed for it or a
+    // re-login that ran, are said on the lines below its result.
+    final subtitle = [?(result.error ?? _testsSummary()), ?result.flowText, ...result.authNotes].join('\n');
 
     return ListTile(
       dense: true,
@@ -566,11 +600,17 @@ class _ResultTile extends StatelessWidget {
         children: [
           SizedBox(width: 26, child: Text('$number', textAlign: TextAlign.end, style: context.textStyles.caption)),
           const SizedBox(width: 6),
-          Icon(result.passed ? Icons.check_circle_outline : Icons.error_outline, color: passedColor, size: 18),
+          Icon(
+            result.isSkipped
+                ? Icons.remove_circle_outline
+                : result.passed ? Icons.check_circle_outline : Icons.error_outline,
+            color: passedColor,
+            size: 18,
+          ),
         ],
       ),
       title: Text(result.request.name, overflow: TextOverflow.ellipsis),
-      subtitle: subtitle == null ? null : Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis),
       trailing: Text(statusText, style: TextStyle(color: statusColor)),
     );
   }

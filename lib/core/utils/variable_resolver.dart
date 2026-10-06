@@ -8,9 +8,19 @@ import 'dynamic_variables.dart';
 /// expanded inside its own value, so cycles stay as-is. A name no scope holds
 /// falls back to a built-in `{{$guid}}`-style [DynamicVariables]; anything
 /// still unresolved is left as-is so the user can see what's missing.
+///
+/// Odoo's smart references `{{xmlid:base.main_company}}` and `{{ref:res.country:BD}}` are looked up like variables
+/// under their whole inner text as the name, but only a scope that was filled in from the live server holds them
+/// (see `SmartReferenceResolver`); until then they are undefined, which blocks a send like any undefined variable.
 final class VariableResolver {
   /// Longest chain of variables referencing variables that is expanded.
   static const _maxDepth = 10;
+
+  /// `{{xmlid:module.name}}` and `{{ref:model:name}}`: the name may hold spaces and punctuation, never a brace.
+  static final smartTokenPattern = RegExp(r'\{\{((?:xmlid|ref):[^{}]+?)\}\}');
+
+  /// A plain `{{name}}` (group 1) or a smart reference (group 2).
+  static final _token = RegExp('${AppConstants.variablePattern.pattern}|${smartTokenPattern.pattern}');
 
   final List<Map<String, String>> scopes;
 
@@ -47,11 +57,12 @@ final class VariableResolver {
   }
 
   String _resolve(String input, Set<String> expanding, _Budget budget, Set<String>? undefined) =>
-      input.replaceAllMapped(AppConstants.variablePattern, (m) {
-        final key = m[1]!;
+      input.replaceAllMapped(_token, (m) {
+        final key = m[1] ?? m[2]!;
         final value = lookup(key);
         if (value == null) {
-          final generated = (dynamicVariables ?? DynamicVariables.shared).resolve(key);
+          // A smart reference is no built-in: only the server can say what it stands for.
+          final generated = m[1] == null ? null : (dynamicVariables ?? DynamicVariables.shared).resolve(key);
           if (generated == null) undefined?.add(key);
           return generated ?? m[0]!;
         }

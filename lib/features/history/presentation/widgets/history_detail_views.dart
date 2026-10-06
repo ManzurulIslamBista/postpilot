@@ -64,8 +64,14 @@ class HistoryRequestView extends StatelessWidget {
         ],
         if (body.type == BodyType.urlEncoded && body.urlEncodedFields.isNotEmpty)
           ToolSection(title: 'Form fields', child: _Pairs(items: body.urlEncodedFields, needle: needle)),
-        if (body.type == BodyType.formData && body.formFields.isNotEmpty)
-          ToolSection(title: 'Form data', child: _Pairs(items: body.formFields, needle: needle)),
+        if (body.type == BodyType.formData && body.formFields.any((f) => !(f.isFile && f.key.isEmpty)))
+          ToolSection(
+            title: 'Form data',
+            child: _Pairs(items: [for (final f in body.formFields) if (!(f.isFile && f.key.isEmpty)) f], needle: needle),
+          ),
+        // Only the reference to the file is in History, never the file.
+        if (body.type == BodyType.binary && body.binaryFile != null)
+          ToolSection(title: 'Body (binary file)', child: _Pairs(items: [body.binaryFile!.copyWith(key: 'file')], needle: needle)),
         if (snapshot.headers.isEmpty &&
             snapshot.queryParams.isEmpty &&
             body.type == BodyType.none &&
@@ -102,7 +108,7 @@ class _Pairs extends StatelessWidget {
                     needle,
                     style: TextStyle(color: item.enabled ? colors.syntaxKey : colors.secondaryText, fontWeight: FontWeight.w600),
                   ),
-                  ...highlightedSpans(context, item.value, needle),
+                  ...highlightedSpans(context, item.isFile ? '@${item.value}' : item.value, needle),
                 ],
               ),
             ),

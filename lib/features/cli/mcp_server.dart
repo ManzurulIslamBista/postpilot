@@ -93,6 +93,7 @@ final class McpServer {
       'name': 'run_request',
       'description': 'Send one request by name and return its status, timing, response body and test results. '
           'Variables extracted by earlier calls in this session stay available. '
+          'A request with retry, poll-until or fetch-all-pages settings is sent that way (the reply says how many attempts, polls and pages it took); its Run if is not checked, you chose to run it. '
           'Production lock: in an environment that looks like production (prod, production, prd, live) only read-only requests are sent; '
           'a request that changes data is refused unless the person who started the server passed --allow-production, and you cannot lift that. '
           'The variables you pass can never change the scheme, host or port a request is sent to.',
@@ -115,7 +116,8 @@ final class McpServer {
       'name': 'run_collection',
       'description': 'Run every request of a collection in order and return a pass/fail summary with each failure. '
           'In an environment that looks like production the whole run is refused, and nothing is sent, if any selected request changes data '
-          'and the server was not started with --allow-production. Skipped requests are listed with the reason; a run in which everything was skipped is not ok.',
+          'and the server was not started with --allow-production. Skipped requests (a request whose Run if does not hold is skipped and not sent, so the lock is not asked about it) are listed with the reason; a run in which everything was skipped is not ok. '
+          'With bail, requests marked always-run still run after a failure.',
       'inputSchema': {
         'type': 'object',
         'properties': {
@@ -190,6 +192,7 @@ final class McpServer {
         if (summary.total == 0) throw ArgumentError('No request ran: check the collection name.');
         final failed = [for (final o in summary.outcomes) if (!o.passed) {'request': o.name, 'status': o.status, 'failures': o.failures}];
         final skipped = [for (final o in summary.outcomes) if (o.skipped != null) {'request': o.name, 'reason': o.skipped}];
+        final authNotes = [for (final o in summary.outcomes) if (o.notes.isNotEmpty) {'request': o.name, 'notes': o.notes}];
         return const JsonEncoder.withIndent('  ').convert({
           'ok': summary.ok,
           'total': summary.total,
@@ -199,6 +202,7 @@ final class McpServer {
           if (summary.allSkipped) 'warning': 'Every selected request was skipped, so nothing was sent or checked.',
           'failures': failed,
           if (skipped.isNotEmpty) 'skippedRequests': skipped,
+          if (authNotes.isNotEmpty) 'authNotes': authNotes,
           'report': RunReporters.console(summary).trim(),
         });
       default:
@@ -250,6 +254,8 @@ final class McpServer {
       'durationMs': o.duration.inMilliseconds,
       'passed': o.passed,
       if (o.failures.isNotEmpty) 'failures': o.failures,
+      if (o.notes.isNotEmpty) 'notes': o.notes,
+      'flow': ?RunReporters.flowJson(o.flow),
       if (o.scripts.assertions.isNotEmpty) 'tests': [for (final a in o.scripts.assertions) a.passed ? 'PASS ${SecretMasker.maskMessage(a.name)}' : 'FAIL ${RequestOutcome.failureText(a)}'],
       if (o.scripts.extracted.isNotEmpty) 'savedVariables': [for (final e in o.scripts.extracted) '${e.key}${e.ok ? '' : ': ${SecretMasker.maskMessage('${e.error}')}'}'],
       'responseHeaders': {for (final e in o.responseHeaders.entries) e.key: SecretMasker.maskValue(e.key, e.value)},

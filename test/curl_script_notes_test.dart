@@ -30,16 +30,16 @@ curl -F 'name=Ann' -F 'file=@/tmp/a.png' https://api.test/up
       expect(login.headers.map((h) => (h.key, h.value)), [('Content-Type', 'application/x-www-form-urlencoded')]);
       final upload = parsed.requests[2];
       expect(upload.body.type, BodyType.formData);
-      expect(upload.body.formFields.map((f) => (f.key, f.enabled)), [('name', true), ('file', false)]);
+      expect(upload.body.formFields.map((f) => (f.key, f.enabled, f.isFile, f.value)), [('name', true, false, 'Ann'), ('file', true, true, '/tmp/a.png')]);
       expect(parsed.skipped, 0);
     });
 
     test('what a command asks for and PostPilot cannot do is listed with the request name', () {
-      final parsed = CurlScriptParser.parse('# Send\ncurl -d @body.json https://api.test/send\ncurl -T a.csv https://api.test/put');
+      final parsed = CurlScriptParser.parse('# Send\ncurl -d @body.json https://api.test/send\ncurl -T - https://api.test/put');
 
       expect(parsed.notes, [
         'Send: The body is read from a file or standard input ("@body.json"), which cannot be imported.',
-        'PUT /put: The command uploads a file ("a.csv"), which cannot be imported; the body is empty.',
+        'PUT /put: The command uploads standard input ("-"), which cannot be imported; the body is empty.',
       ]);
     });
 

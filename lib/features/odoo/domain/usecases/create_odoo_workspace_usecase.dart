@@ -8,7 +8,9 @@ import '../../../environments/domain/repositories/environment_repository.dart';
 import '../../../request_builder/domain/entities/key_value_item.dart';
 import '../../../request_builder/domain/entities/request_body.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
+import '../entities/odoo_connection.dart';
 import '../services/odoo_json2.dart';
+import '../services/odoo_jsonrpc.dart';
 
 class OdooWorkspaceResult {
   final int? environmentId;
@@ -32,12 +34,16 @@ final class CreateOdooWorkspaceUseCase {
 
   const CreateOdooWorkspaceUseCase(this._environments, this._collections, this._requests, [this._documentation]);
 
+  /// With [OdooProtocol.jsonRpc] (Odoo 18 and older) the environment holds `odooLogin` and `odooPassword` (secret)
+  /// instead of the API key, and `odooProtocol`; [apiKey] is then the password.
   Future<int> createEnvironment({
     required String name,
     required String url,
     required String database,
     required String apiKey,
     bool activate = true,
+    OdooProtocol protocol = OdooProtocol.json2,
+    String login = '',
   }) async {
     final id = await _environments.create(name);
     Future<void> add(String key, String value, {bool secret = false}) => _environments.upsertVariable(
@@ -45,37 +51,54 @@ final class CreateOdooWorkspaceUseCase {
         );
     await add(OdooVars.url, url);
     await add(OdooVars.database, database);
-    await add(OdooVars.apiKey, apiKey, secret: true);
+    if (protocol == OdooProtocol.jsonRpc) {
+      await add(OdooVars.protocol, protocol.id);
+      await add(OdooVars.login, login);
+      await add(OdooVars.password, apiKey, secret: true);
+    } else {
+      await add(OdooVars.apiKey, apiKey, secret: true);
+    }
     if (activate) await _environments.setActive(id);
     return id;
   }
 
   /// A collection named [name] with one folder per model, each holding the
-  /// standard JSON-2 requests for that model. [fieldsByModel] gives the
+  /// standard requests for that model: JSON-2 ones, or with [OdooProtocol.jsonRpc] the `call_kw` ones of Odoo 18 and
+  /// older, plus a "Log in" request at the top that opens the session they use. [fieldsByModel] gives the
   /// `fields` used in the examples.
   Future<OdooWorkspaceResult> createCollection({
     required String name,
     required List<String> models,
     Map<String, List<String>> fieldsByModel = const {},
+    OdooProtocol protocol = OdooProtocol.json2,
   }) async {
     final collectionId = await _collections.createCollection(name);
     var count = 0;
+    Future<int?> save(OdooRequestDraft draft, {int? folderId}) async {
+      final id = await _requests.createRequest(collectionId: collectionId, folderId: folderId, name: draft.name);
+      final created = await _requests.findById(id);
+      if (created == null) return null;
+      await _requests.saveRequest(created.copyWith(
+        method: HttpMethod.post,
+        url: draft.url,
+        headers: [for (final e in draft.headers.entries) KeyValueItem(key: e.key, value: e.value)],
+        body: RequestBody(type: BodyType.raw, rawContentType: RawContentType.json, rawText: draft.bodyText),
+      ));
+      // The note says what a request returns and, for write and delete, that the record
+      // id is left for the user to set.
+      if (draft.note != null) await _documentation?.setMarkdown(EntityKind.request, id, draft.note!);
+      return id;
+    }
+
+    if (protocol == OdooProtocol.jsonRpc && await save(OdooJsonRpc.loginDraft()) != null) count++;
     for (final model in models) {
       final folderId = await _collections.createFolder(collectionId: collectionId, name: model);
-      for (final draft in OdooJson2.templatesFor(model, sampleFields: fieldsByModel[model] ?? const ['display_name'])) {
-        final id = await _requests.createRequest(collectionId: collectionId, folderId: folderId, name: draft.name);
-        final created = await _requests.findById(id);
-        if (created == null) continue;
-        await _requests.saveRequest(created.copyWith(
-          method: HttpMethod.post,
-          url: draft.url,
-          headers: [for (final e in draft.headers.entries) KeyValueItem(key: e.key, value: e.value)],
-          body: RequestBody(type: BodyType.raw, rawContentType: RawContentType.json, rawText: draft.bodyText),
-        ));
-        // The note says what a request returns and, for write and delete, that the record
-        // id is left for the user to set.
-        if (draft.note != null) await _documentation?.setMarkdown(EntityKind.request, id, draft.note!);
-        count++;
+      final sample = fieldsByModel[model] ?? const ['display_name'];
+      final drafts = protocol == OdooProtocol.jsonRpc
+          ? OdooJsonRpc.templatesFor(model, sampleFields: sample)
+          : OdooJson2.templatesFor(model, sampleFields: sample);
+      for (final draft in drafts) {
+        if (await save(draft, folderId: folderId) != null) count++;
       }
     }
     return OdooWorkspaceResult(collectionId: collectionId, requestCount: count);

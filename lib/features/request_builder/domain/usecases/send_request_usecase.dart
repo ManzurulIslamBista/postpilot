@@ -6,12 +6,17 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_http_response.dart';
 import '../../../../core/usecases/usecase.dart';
 import '../../../../core/utils/variable_resolver.dart';
+import '../../../auth_renewal/domain/services/oauth2_token_manager.dart';
+import '../../../auth_renewal/domain/usecases/relogin_usecase.dart';
+import '../../../auth_renewal/domain/usecases/renew_request_auth_usecase.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
 import '../../../defaults/domain/usecases/resolve_request_defaults_usecase.dart';
 import '../../../documentation/domain/services/secret_masker.dart';
 import '../../../history/domain/repositories/history_repository.dart';
 import '../../../history/domain/repositories/history_store.dart';
 import '../../../history/domain/services/history_run_budget.dart';
+import '../../../odoo/domain/services/odoo_jsonrpc.dart';
+import '../../../odoo/domain/services/smart_references.dart';
 import '../../../settings/domain/repositories/request_settings_repository.dart';
 import '../../../settings/domain/repositories/settings_repository.dart';
 import '../entities/api_request_entity.dart';
@@ -37,6 +42,12 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
   final ApiClient _apiClient;
   final HistoryRepository _historyRepository;
   final PrepareRequestUseCase _prepareRequestUseCase;
+  final RenewRequestAuthUseCase? _renewAuth;
+  final ReloginUseCase? _relogin;
+
+  /// Looks `{{xmlid:...}}` / `{{ref:...}}` tokens up on the Odoo server a request goes to; without it a request that
+  /// holds one is refused (the literal token is never sent).
+  final SmartReferenceResolver? _smartReferences;
 
   SendRequestUseCase(
     this._apiClient,
@@ -47,7 +58,13 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
     RequestSettingsRepository? requestSettingsRepository,
     RequestSpecBuilder specBuilder = const RequestSpecBuilder(),
     ResolveRequestDefaultsUseCase? defaults,
-  ]) : _prepareRequestUseCase = PrepareRequestUseCase(
+    RenewRequestAuthUseCase? renewAuth,
+    ReloginUseCase? relogin,
+    SmartReferenceResolver? smartReferences,
+  ])  : _renewAuth = renewAuth,
+        _relogin = relogin,
+        _smartReferences = smartReferences,
+        _prepareRequestUseCase = PrepareRequestUseCase(
           buildVariableResolverUseCase,
           collectionAuthRepository,
           settings: settingsRepository,
@@ -61,19 +78,80 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
   /// [dataVariables] are a collection run's data row: variables that beat
   /// every other scope for this send. [historyRun] is the budget of the collection
   /// run this send belongs to: once it is spent the send is no longer recorded.
+  /// A request with OAuth 2.0 auth gets its token fetched or renewed first when it is missing or about to
+  /// expire. A request that comes back rejected (401/403) is sent once more after the login request its
+  /// collection or folder names has run, unless [reLogin] is off (it is for the login request itself).
   @override
   Future<ApiResponseEntity> call(
     ApiRequestEntity request, {
     ApiCancelToken? cancelToken,
     Map<String, String> dataVariables = const {},
     HistoryRunBudget? historyRun,
+    bool reLogin = true,
   }) async {
-    final prepared = await _prepareRequestUseCase(request, dataVariables: dataVariables);
-    final spec = prepared.spec;
-    if (prepared.undefinedVariables.isNotEmpty) {
-      throw UndefinedVariables.exception(prepared.undefinedVariables, spec.url);
+    final sentAt = DateTime.now();
+    final answer = await _sendOnce(request, cancelToken, dataVariables, historyRun);
+    final relogin = _relogin;
+    // Odoo 18 and older answer an expired session with 200 and an error in the body: for the re-login that is a 401.
+    final expired = answer.statusCode < 400 && OdooSessionExpiry.isExpiredBytes(answer.bodyBytes);
+    if (!reLogin || relogin == null || (answer.statusCode < 400 && !expired)) return answer;
+    final rejected = expired
+        ? ApiResponseEntity(
+            statusCode: 401,
+            statusMessage: answer.statusMessage,
+            headers: answer.headers,
+            bodyBytes: answer.bodyBytes,
+            duration: answer.duration,
+            truncated: answer.truncated,
+            setCookies: answer.setCookies,
+            authNotes: answer.authNotes,
+          )
+        : answer;
+    final outcome = await relogin.afterFailure(
+      request,
+      rejected,
+      sentAt: sentAt,
+      dataVariables: dataVariables,
+      cancelToken: cancelToken,
+      login: (login) => call(login, cancelToken: cancelToken, dataVariables: dataVariables, historyRun: historyRun, reLogin: false),
+      retry: () => _sendOnce(request, cancelToken, dataVariables, historyRun),
+    );
+    // The 401 only started the re-login. When nothing was sent again the answer Odoo really gave stands, with the notes.
+    if (expired && identical(outcome.bodyBytes, answer.bodyBytes)) {
+      return answer.withAuthNotes(outcome.authNotes.skip(answer.authNotes.length).toList());
+    }
+    return outcome;
+  }
+
+  Future<ApiResponseEntity> _sendOnce(
+    ApiRequestEntity request,
+    ApiCancelToken? cancelToken,
+    Map<String, String> dataVariables,
+    HistoryRunBudget? historyRun,
+  ) async {
+    var prepared = await _prepareRequestUseCase(request, dataVariables: dataVariables);
+    var spec = prepared.spec;
+    final plainUndefined = SmartReferences.ordinary(prepared.undefinedVariables);
+    if (plainUndefined.isNotEmpty) {
+      throw UndefinedVariables.exception(plainUndefined, spec.url);
+    }
+    // `{{xmlid:...}}` / `{{ref:...}}` are looked up on the Odoo server now, once nothing else is missing, and
+    // join the data row's scope; a token that cannot be resolved stops the send like an undefined variable.
+    var variables = dataVariables;
+    final pending = SmartReferences.pendingKeys(prepared.undefinedVariables);
+    if (pending.isNotEmpty) {
+      variables = {...dataVariables, ...await _resolveSmartReferences(prepared, pending)};
+      prepared = await _prepareRequestUseCase(request, dataVariables: variables);
+      spec = prepared.spec;
     }
     _requireSendableUrl(spec.url);
+    final authNotes = <String>[];
+    final renewal = await _renewToken(request, prepared);
+    if (renewal.replacesAuth) {
+      prepared = await _prepareRequestUseCase(request, dataVariables: variables, authOverride: renewal.auth);
+      spec = prepared.spec;
+    }
+    if (renewal.note case final note?) authNotes.add(note);
     final apiOptions = prepared.options.toApiOptions();
 
     ApiHttpResponse response;
@@ -83,7 +161,7 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
           method: spec.method,
           url: spec.url,
           headers: spec.headers,
-          body: spec.bodyBytes,
+          body: spec.wireBody,
           cancelToken: cancelToken,
           options: apiOptions,
         ),
@@ -101,7 +179,32 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
 
     await _recordToHistory(request, prepared, response, historyRun);
 
-    return _toEntity(response);
+    return _toEntity(response, authNotes);
+  }
+
+  Future<Map<String, String>> _resolveSmartReferences(PreparedRequest prepared, List<String> keys) async {
+    final resolver = _smartReferences;
+    if (resolver == null) throw InvalidRequestException(SmartReferences.unavailable(keys));
+    try {
+      return await resolver.resolve(
+        SmartReferenceContext(url: prepared.spec.url, headers: prepared.spec.headers, variable: prepared.resolver.lookup),
+        keys,
+      );
+    } on SmartReferenceException catch (e) {
+      throw InvalidRequestException('${e.message} The request was not sent.');
+    }
+  }
+
+  /// A missing or expiring OAuth 2.0 token is renewed before the send (see [RenewRequestAuthUseCase]). When it
+  /// cannot be, the request is not sent: a request with a dead token would only come back 401.
+  Future<TokenRenewal> _renewToken(ApiRequestEntity request, PreparedRequest prepared) async {
+    final renew = _renewAuth;
+    if (renew == null) return TokenRenewal.none(prepared.auth);
+    try {
+      return await renew(request, prepared);
+    } on OAuth2RenewalException catch (e) {
+      throw InvalidRequestException('${e.message} The request was not sent.');
+    }
   }
 
   /// History is a convenience: a failure to write it (a full disk, a locked
@@ -204,7 +307,7 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
       method: spec.method,
       url: spec.url,
       headers: {...spec.headers, 'Authorization': digestHeader},
-      body: spec.bodyBytes,
+      body: spec.wireBody,
       cancelToken: cancelToken,
       options: options,
     ));
@@ -217,7 +320,7 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
     return null;
   }
 
-  ApiResponseEntity _toEntity(ApiHttpResponse response) => ApiResponseEntity(
+  ApiResponseEntity _toEntity(ApiHttpResponse response, List<String> authNotes) => ApiResponseEntity(
         statusCode: response.statusCode,
         statusMessage: response.statusMessage,
         headers: response.headers,
@@ -225,6 +328,7 @@ final class SendRequestUseCase implements UseCase<ApiResponseEntity, ApiRequestE
         duration: response.duration,
         truncated: response.truncated,
         setCookies: response.setCookies,
+        authNotes: authNotes,
       );
 }
 

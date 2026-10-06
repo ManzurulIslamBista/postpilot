@@ -23,6 +23,10 @@ abstract final class JsonPathResolver {
     return current;
   }
 
+  /// The steps of [path] in order: a `String` for a key, an `int` for an index. A leading `$` is dropped. Lets a
+  /// caller that writes at a path (the page parameter of a JSON body) walk it the way [resolve] reads it.
+  static List<Object> segmentsOf(String path) => _segments(path.trim());
+
   static List<Object> _segments(String path) {
     final result = <Object>[];
     final buffer = StringBuffer();

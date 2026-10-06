@@ -166,12 +166,12 @@ paths:
       expect(parsed.rootRequests[0].url, '{{baseUrl}}/login');
     });
 
-    test('form bodies map to urlencoded / form-data and skip binary fields', () {
+    test('form bodies map to urlencoded / form-data; a binary property is a file field only in a multipart form', () {
       final requests = OpenApiParser.parse(yaml).rootRequests;
       expect(requests[0].body.type, BodyType.urlEncoded);
       expect(requests[0].body.urlEncodedFields.map((f) => f.key), ['username', 'password']);
       expect(requests[1].body.type, BodyType.formData);
-      expect(requests[1].body.formFields.map((f) => f.key), ['title']);
+      expect(requests[1].body.formFields.map((f) => (f.key, f.isFile, f.value)), [('title', false, 'string'), ('file', true, '')]);
     });
 
     test('unsupported cookie apiKey is skipped in favour of the header apiKey', () {
@@ -242,11 +242,10 @@ paths:
       expect(jsonDecode(update.body.rawText), {'id': 0, 'name': 'string'});
     });
 
-    test('formData with a file parameter becomes multipart form-data without the file field', () {
+    test('formData with a file parameter becomes multipart form-data with a file field to choose a file for', () {
       final avatar = OpenApiParser.parse(swagger).folders.single.requests[1];
       expect(avatar.body.type, BodyType.formData);
-      expect(avatar.body.formFields.single.key, 'caption');
-      expect(avatar.body.formFields.single.value, 'hi');
+      expect(avatar.body.formFields.map((f) => (f.key, f.value, f.isFile)), [('caption', 'hi', false), ('image', '', true)]);
     });
 
     test('basic security definition maps to Basic auth', () {

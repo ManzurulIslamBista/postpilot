@@ -1,6 +1,7 @@
 import '../../../../core/enums/auth_type.dart';
 import '../../../../core/enums/body_type.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../../../../core/network/upload_body.dart';
 import '../../../../core/usecases/usecase.dart';
 import '../../../collections/domain/entities/collection_entity.dart' show FolderEntity;
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
@@ -147,7 +148,9 @@ final class BuildApiDocsUseCase implements UseCase<ApiDocsModel, int> {
 
   static List<ApiDocsField> _fields(List<KeyValueItem> items) => [
         for (final item in items)
-          if (item.enabled && item.key.trim().isNotEmpty) ApiDocsField(item.key, item.value),
+          if (item.enabled && item.key.trim().isNotEmpty)
+            // A file row shows the name of its file, not the path of one machine.
+            ApiDocsField(item.key, item.isFile ? 'File: ${FilePaths.baseName(item.value)}' : item.value),
       ];
 
   static ApiDocsBody? _body(RequestBody body) {
@@ -165,8 +168,16 @@ final class BuildApiDocsUseCase implements UseCase<ApiDocsModel, int> {
         };
         return ApiDocsBody(typeLabel: label, language: language, text: body.rawText);
       case BodyType.formData:
-        final fields = _fields(body.formFields);
+        final fields = _fields([for (final f in body.formFields) if (!(f.isFile && f.key.isEmpty)) f]);
         return fields.isEmpty ? null : ApiDocsBody(typeLabel: BodyType.formData.label, fields: fields);
+      case BodyType.binary:
+        final file = body.binaryFile;
+        if (file == null) return null;
+        // Only the name of the file: its path belongs to one machine, and nothing of its content is read.
+        return ApiDocsBody(
+          typeLabel: BodyType.binary.label,
+          fields: [ApiDocsField('File', FilePaths.baseName(file.value))],
+        );
       case BodyType.urlEncoded:
         final fields = _fields(body.urlEncodedFields);
         return fields.isEmpty ? null : ApiDocsBody(typeLabel: BodyType.urlEncoded.label, fields: fields);

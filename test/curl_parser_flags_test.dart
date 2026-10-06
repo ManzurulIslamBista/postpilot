@@ -183,19 +183,20 @@ void main() {
   });
 
   group('multipart form (-F)', () {
-    test('text fields, a file field kept switched off, quotes and ;type= stripped', () {
+    test('text fields, a file field with its type, quotes and ;type= stripped from text', () {
       final request = _parse(
         "curl -F 'name=Ann' -F 'avatar=@/tmp/a.png;type=image/png' -F 'note=\"hi there\";type=text/plain' https://x.test/up",
       );
       expect(request.method, HttpMethod.post);
       expect(request.body, isNull);
-      expect(request.formFields.map((f) => (f.key, f.value, f.enabled)), [
-        ('name', 'Ann', true),
-        ('avatar', '@/tmp/a.png;type=image/png', false),
-        ('note', 'hi there', true),
+      expect(request.formFields.map((f) => (f.key, f.value, f.enabled, f.isFile, f.contentType)), [
+        ('name', 'Ann', true, false, ''),
+        ('avatar', '/tmp/a.png', true, true, 'image/png'),
+        ('note', 'hi there', true, false, ''),
       ]);
       expect(request.notes, [
-        'Form field "avatar" sends a file ("@/tmp/a.png;type=image/png"); PostPilot form fields hold text only, so it was kept switched off.',
+        '1 file path points to this machine, so it will not work for a teammate. '
+            'Replace the start of the path with a variable, for example {{uploadDir}}/avatar.png.',
       ]);
       final body = request.requestBody;
       expect(body.type, BodyType.formData);
@@ -212,12 +213,14 @@ void main() {
   });
 
   group('method flags', () {
-    test('-I is HEAD, -T is PUT with a note, -X still wins', () {
+    test('-I is HEAD, -T is a PUT of that file as a binary body, -X still wins', () {
       expect(_parse('curl -I https://x.test').method, HttpMethod.head);
       expect(_parse('curl --head https://x.test').method, HttpMethod.head);
       final upload = _parse('curl -T report.csv https://x.test/up');
       expect(upload.method, HttpMethod.put);
-      expect(upload.notes, ['The command uploads a file ("report.csv"), which cannot be imported; the body is empty.']);
+      expect(upload.notes, isEmpty);
+      expect(upload.requestBody.type, BodyType.binary);
+      expect(upload.requestBody.binaryFile!.value, 'report.csv');
       expect(_parse('curl -I -X GET https://x.test').method, HttpMethod.get);
     });
   });

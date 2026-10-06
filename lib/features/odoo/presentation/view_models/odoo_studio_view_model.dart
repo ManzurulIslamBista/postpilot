@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../data/odoo_client.dart';
+import '../../data/odoo_schema_service.dart';
 import '../../domain/entities/odoo_model_info.dart';
 import '../../domain/services/odoo_error_parser.dart';
 import '../../domain/services/odoo_json2.dart';
@@ -9,7 +10,9 @@ import '../../../environments/domain/repositories/environment_repository.dart';
 /// State behind Odoo Studio: the connection, the model being explored, its
 /// fields and the rows of a test search. Everything that talks to Odoo goes
 /// through [OdooClient] and reports failures as [error] (with Odoo's own
-/// explanation in [errorInfo]) instead of throwing into the UI.
+/// explanation in [errorInfo]) instead of throwing into the UI. The connection
+/// is either Odoo 19's JSON-2 API (an API key) or the JSON-RPC session of Odoo 18
+/// and older (a login and a password or API key): every tool works through both.
 final class OdooStudioViewModel with ChangeNotifier {
   final OdooClient _client;
   final EnvironmentRepository _environments;
@@ -19,13 +22,23 @@ final class OdooStudioViewModel with ChangeNotifier {
 
   String url = '';
   String database = '';
+
+  /// The API key with JSON-2; the password (or an API key used as one) with JSON-RPC.
   String apiKey = '';
+  OdooProtocol protocol = OdooProtocol.json2;
+
+  /// The login of a JSON-RPC connection.
+  String login = '';
 
   bool isBusy = false;
   String? busyLabel;
   String? error;
   OdooErrorInfo? errorInfo;
   String? connectionOk;
+
+  /// The databases the server lists (`/web/database/list`), and why there is no list when it is switched off.
+  List<String> databases = const [];
+  String? databaseNote;
 
   List<String> modelNames = const [];
   Map<String, String> modelLabels = const {};
@@ -40,7 +53,14 @@ final class OdooStudioViewModel with ChangeNotifier {
   List<Map<String, Object?>> rows = const [];
   Duration? lastDuration;
 
-  OdooConnection get connection => OdooConnection(baseUrl: url, database: database, apiKey: apiKey);
+  OdooConnection get connection =>
+      OdooConnection(baseUrl: url, database: database, apiKey: apiKey, protocol: protocol, login: login);
+
+  /// The client, for the tabs that talk to the server themselves (the payload builder, the checker).
+  OdooClient get client => _client;
+
+  /// What was read from the server so far (fields, models), shared by every tool and kept for the session.
+  OdooSchemaService get schema => _client.schema;
 
   /// Picks up the URL, database and key of the active environment when it has
   /// them, so the connection does not have to be typed again.
@@ -48,15 +68,21 @@ final class OdooStudioViewModel with ChangeNotifier {
     final vars = await _environments.getActiveVariables();
     url = vars[OdooVars.url] ?? url;
     database = vars[OdooVars.database] ?? database;
-    apiKey = vars[OdooVars.apiKey] ?? apiKey;
+    if (vars.containsKey(OdooVars.protocol)) protocol = OdooProtocol.fromId(vars[OdooVars.protocol]);
+    login = vars[OdooVars.login] ?? login;
+    apiKey = (protocol == OdooProtocol.jsonRpc ? vars[OdooVars.password] : null) ?? vars[OdooVars.apiKey] ?? apiKey;
     notifyListeners();
   }
 
-  void setConnection({String? url, String? database, String? apiKey}) {
+  void setConnection({String? url, String? database, String? apiKey, String? login, OdooProtocol? protocol}) {
     this.url = url ?? this.url;
     this.database = database ?? this.database;
     this.apiKey = apiKey ?? this.apiKey;
+    this.login = login ?? this.login;
+    final changed = protocol != null && protocol != this.protocol;
+    this.protocol = protocol ?? this.protocol;
     connectionOk = null;
+    if (changed) notifyListeners();
   }
 
   Future<T?> _run<T>(String label, Future<T> Function() body) async {
@@ -88,16 +114,15 @@ final class OdooStudioViewModel with ChangeNotifier {
 
   /// A call that succeeded, or null after recording why it did not.
   Future<OdooResult?> _call(OdooCall call) async {
-    if (!connection.isComplete) {
-      error = 'Enter the server URL and an API key first.';
+    final missing = connection.missing;
+    if (missing != null) {
+      error = missing;
       return null;
     }
     final result = await _client.call(connection, call);
     if (!result.ok) {
       errorInfo = result.error;
-      error = result.error?.message.isNotEmpty == true
-          ? result.error!.message
-          : 'The server answered ${result.status}. ${result.json == null ? 'The body is not JSON: is this an Odoo 19+ server with the JSON-2 API?' : ''}';
+      error = result.failureText(jsonRpc: protocol == OdooProtocol.jsonRpc);
       return null;
     }
     lastDuration = result.duration;
@@ -105,53 +130,82 @@ final class OdooStudioViewModel with ChangeNotifier {
   }
 
   Future<void> testConnection() => _run('Testing connection', () async {
-        final r = await _call(const OdooCall(model: 'res.users', method: 'context_get'));
-        if (r == null) return;
+        final missing = connection.missing;
+        if (missing != null) {
+          error = missing;
+          return;
+        }
+        final r = await _client.connect(connection);
+        if (!r.ok) {
+          errorInfo = r.error;
+          error = r.failureText(jsonRpc: protocol == OdooProtocol.jsonRpc);
+          return;
+        }
+        lastDuration = r.duration;
         final ctx = r.json is Map ? r.json as Map : const {};
-        connectionOk = 'Connected${ctx['lang'] != null ? ' · language ${ctx['lang']}' : ''}'
-            '${ctx['tz'] != null ? ' · ${ctx['tz']}' : ''} · ${r.duration.inMilliseconds} ms';
+        final user = ctx['username'] ?? ctx['name'];
+        final context = ctx['user_context'] is Map ? ctx['user_context'] as Map : ctx;
+        final version = ctx['server_version'];
+        connectionOk = 'Connected'
+            '${user != null ? ' as $user' : ''}'
+            '${version != null ? ' · Odoo $version' : ''}'
+            '${context['lang'] != null ? ' · language ${context['lang']}' : ''}'
+            '${context['tz'] != null ? ' · ${context['tz']}' : ''} · ${r.duration.inMilliseconds} ms';
+      });
+
+  /// Asks the server which databases it has, so one can be picked instead of typed. Many servers switch the list off;
+  /// [databaseNote] then says so.
+  Future<void> findDatabases() => _run('Finding databases', () async {
+        if (url.trim().isEmpty) {
+          error = 'Enter the server URL first.';
+          return;
+        }
+        final found = await _client.databases(connection);
+        databases = found.names;
+        databaseNote = found.problem;
+        if (found.names.length == 1 && database.trim().isEmpty) database = found.names.single;
       });
 
   Future<void> loadModels() => _run('Loading models', () async {
-        final r = await _call(const OdooCall(
-          model: 'ir.model',
-          method: 'search_read',
-          params: {'domain': <Object?>[], 'fields': ['model', 'name'], 'order': 'model'},
-        ));
-        if (r == null || r.json is! List) return;
-        final names = <String>[];
-        final labels = <String, String>{};
-        for (final m in r.json as List) {
-          if (m is Map && m['model'] is String) {
-            names.add(m['model'] as String);
-            labels[m['model'] as String] = '${m['name'] ?? ''}';
-          }
-        }
-        modelNames = names;
-        modelLabels = labels;
-      });
-
-  Future<void> loadFields(String modelName) => _run('Reading fields of $modelName', () async {
-        model = modelName.trim();
-        final r = await _call(OdooCall(
-          model: model,
-          method: 'fields_get',
-          params: const {
-            'attributes': ['string', 'type', 'required', 'relation', 'selection', 'readonly', 'store', 'help'],
-          },
-        ));
-        if (r == null) return;
-        final parsed = OdooModelInfo.parse(model, r.body);
-        if (parsed == null) {
-          error = 'The server did not return a field list for $model.';
+        final missing = connection.missing;
+        if (missing != null) {
+          error = missing;
           return;
         }
+        final found = await schema.models(connection, refresh: true);
+        if (!found.ok) {
+          error = found.error;
+          errorInfo = found.info;
+          return;
+        }
+        final models = found.value!;
+        modelNames = [for (final m in models) m.model];
+        modelLabels = {for (final m in models) m.model: m.label};
+      });
+
+  Future<void> loadFields(String modelName, {bool refresh = false}) => _run('Reading fields of $modelName', () async {
+        model = modelName.trim();
+        final missing = connection.missing;
+        if (missing != null) {
+          error = missing;
+          return;
+        }
+        final found = await schema.fields(connection, model, refresh: refresh);
+        if (!found.ok) {
+          error = found.error;
+          errorInfo = found.info;
+          return;
+        }
+        final parsed = found.value!;
         info = parsed;
         chosenFields
           ..clear()
           ..addAll(parsed.fields.where((f) => f.stored && (f.name == 'id' || f.name == 'name' || f.name == 'display_name' || f.required)).map((f) => f.name).take(8));
         rows = const [];
       });
+
+  /// Reads the fields of the model being explored again, bypassing what was remembered.
+  Future<void> refreshFields() => loadFields(model, refresh: true);
 
   /// Pastes a `fields_get` response instead of asking the server (offline use).
   bool useFieldsJson(String modelName, String json) {
@@ -202,6 +256,8 @@ final class OdooStudioViewModel with ChangeNotifier {
         url: connection.normalizedUrl,
         database: database.trim(),
         apiKey: apiKey.trim(),
+        protocol: protocol,
+        login: login.trim(),
       ));
 
   Future<OdooWorkspaceResult?> createCollection(String name, List<String> models) => _run(
@@ -210,6 +266,7 @@ final class OdooStudioViewModel with ChangeNotifier {
           name: name,
           models: models,
           fieldsByModel: {if (info != null) info!.model: chosenFields.toList()},
+          protocol: protocol,
         ),
       );
 

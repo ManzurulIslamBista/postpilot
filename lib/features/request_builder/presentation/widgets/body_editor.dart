@@ -2,11 +2,17 @@ import 'variables/variable_text_controller.dart';
 import 'variables/variable_text_form_field.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/enums/body_type.dart';
+import '../../../../core/network/upload_file_source.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../graphql/presentation/graphql_explorer_dialog.dart';
 import '../view_models/request_builder_view_model.dart';
+import '../../domain/entities/key_value_item.dart';
 import '../../domain/entities/request_body.dart';
+import '../file_picker_service.dart';
+import 'file_field.dart';
+import '../../../odoo/domain/services/odoo_snippets.dart';
+import '../../../odoo/presentation/widgets/odoo_request_tools.dart';
 import 'json_body_format.dart';
 import 'key_value_editor.dart';
 
@@ -22,7 +28,13 @@ class BodyEditor extends StatefulWidget {
   final RequestBody body;
   final ValueChanged<RequestBody> onChanged;
 
-  const BodyEditor({super.key, required this.body, required this.onChanged});
+  /// Opens the file dialog for a form-data file row and a binary body; the platform's own when null.
+  final FilePickerService? picker;
+
+  /// Looks at the files of file rows and of a binary body; the platform's own when null.
+  final UploadFileSource? uploadSource;
+
+  const BodyEditor({super.key, required this.body, required this.onChanged, this.picker, this.uploadSource});
 
   @override
   State<BodyEditor> createState() => _BodyEditorState();
@@ -30,6 +42,7 @@ class BodyEditor extends StatefulWidget {
 
 class _BodyEditorState extends State<BodyEditor> {
   late final _rawController = VariableTextEditingController(text: widget.body.rawText);
+  late final FilePickerService _picker = widget.picker ?? FileSelectorPicker();
   final _rawFocus = FocusNode();
   String? _jsonError;
 
@@ -63,6 +76,28 @@ class _BodyEditorState extends State<BodyEditor> {
   void _onRawChanged(String text) {
     if (_jsonError != null) setState(() => _jsonError = null);
     widget.onChanged(widget.body.copyWith(rawText: text));
+  }
+
+  /// Puts [snippet] (a field picked from the Odoo fields list) into the body where the cursor is.
+  void _insertSnippet(String snippet) {
+    final selection = _rawController.selection;
+    final text = _rawController.text;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    final inserted = OdooSnippets.insert(text, start, end, snippet);
+    _rawController.value = TextEditingValue(text: inserted.text, selection: TextSelection.collapsed(offset: inserted.cursor));
+    _rawFocus.requestFocus();
+    widget.onChanged(widget.body.copyWith(rawText: inserted.text));
+  }
+
+  /// The URL of the request being edited, when it is a call to Odoo: the body then gets the "Check against Odoo" and
+  /// "Odoo fields" buttons. Null outside a request page.
+  String? _odooUrl() {
+    try {
+      return context.read<RequestBuilderViewModel?>()?.request?.url;
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 
   void _reformat(JsonFormatResult Function(String source) format) {
@@ -114,6 +149,16 @@ class _BodyEditorState extends State<BodyEditor> {
                 icon: const Icon(Icons.compress, size: 16),
                 label: const Text('Minify'),
               ),
+              if (_odooUrl() case final url?)
+                OdooBodyTools(
+                  url: url,
+                  bodyText: () => _rawController.text,
+                  onReplaceBody: (text) {
+                    _setRawText(text);
+                    widget.onChanged(widget.body.copyWith(rawText: text));
+                  },
+                  onInsert: _insertSnippet,
+                ),
             ],
           ],
         ),
@@ -151,6 +196,9 @@ class _BodyEditorState extends State<BodyEditor> {
         key: const ValueKey('form-data-fields'),
         child: KeyValueEditor(
           items: body.formFields,
+          allowFiles: true,
+          picker: _picker,
+          uploadSource: widget.uploadSource,
           onChanged: (v) => widget.onChanged(body.copyWith(formFields: v)),
         ),
       ),
@@ -162,7 +210,40 @@ class _BodyEditorState extends State<BodyEditor> {
         ),
       ),
       BodyType.graphql => _graphqlEditor(context),
+      BodyType.binary => SingleChildScrollView(key: const ValueKey('binary-body'), child: _binaryEditor(context)),
     };
+  }
+
+  /// One file sent as the whole body. Its reference is a nameless file row of the form fields (see
+  /// [RequestBody.binaryFile]); emptying it removes the row again.
+  Widget _binaryEditor(BuildContext context) {
+    final file = widget.body.binaryFile;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'The file is sent as the whole request body, byte for byte (an S3 PUT, an octet-stream upload). '
+          'Set a Content-Type header to send another type than the one below.',
+          style: context.textStyles.caption,
+        ),
+        const SizedBox(height: 8),
+        FileField(
+          key: const ValueKey('binary-file'),
+          path: file?.value ?? '',
+          fileName: file?.fileName ?? '',
+          contentType: file?.contentType ?? '',
+          picker: _picker,
+          source: widget.uploadSource,
+          showFileName: false,
+          onChanged: ({path, fileName, contentType}) {
+            final current = widget.body.binaryFile ?? KeyValueItem(key: '', value: '', kind: FormFieldKind.file);
+            final next = current.copyWith(value: path, fileName: fileName, contentType: contentType);
+            final empty = next.value.isEmpty && next.fileName.isEmpty && next.contentType.isEmpty;
+            widget.onChanged(widget.body.withBinaryFile(empty ? null : next));
+          },
+        ),
+      ],
+    );
   }
 
   /// Opens the schema explorer for this request's endpoint; "Use in request" fills the query and variables.

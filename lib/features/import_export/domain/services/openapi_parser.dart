@@ -56,9 +56,11 @@ final class ParsedOpenApiDocument {
 /// request, and a spec with a relative or missing server still imports.
 /// Bodies are best-effort: an explicit example wins, otherwise a skeleton is
 /// built from the schema with placeholder values, bounded so cyclic or
-/// densely cross-linked schemas can't blow up. Anything the app can't
-/// represent (cookie API keys, file fields, `trace`, external `$ref`s, ...)
-/// is skipped rather than rejected — a partially-imported API beats a failed
+/// densely cross-linked schemas can't blow up. A `multipart/form-data` property
+/// of `format: binary` becomes a file field, and an `application/octet-stream`
+/// (or any binary) body becomes a binary body, both with no file chosen yet.
+/// Anything the app can't represent (cookie API keys, `trace`, external `$ref`s,
+/// ...) is skipped rather than rejected — a partially-imported API beats a failed
 /// import.
 final class OpenApiParser {
   static const baseUrlVariable = 'baseUrl';
@@ -88,6 +90,17 @@ final class OpenApiParser {
       throw const ImportException('no "openapi: 3.x" or "swagger: 2.0" version field found.');
     }
     return OpenApiParser._(root)._parse();
+  }
+
+  /// The document decoded (JSON or YAML) with this parser's own `$ref` and `allOf` handling, for features that need
+  /// more than requests (the mock server fakes answers from the response schemas). Same version check as [parse].
+  static OpenApiDocumentView view(String text) {
+    final root = _decode(text);
+    final version = '${root['openapi'] ?? root['swagger'] ?? ''}';
+    if (!version.startsWith('3') && !version.startsWith('2')) {
+      throw const ImportException('no "openapi: 3.x" or "swagger: 2.0" version field found.');
+    }
+    return OpenApiDocumentView._(OpenApiParser._(root));
   }
 
   static Map<String, dynamic> _decode(String text) {
@@ -229,10 +242,25 @@ final class OpenApiParser {
       return (RequestBody(type: BodyType.urlEncoded, urlEncodedFields: _formFieldsOf(schema)), null);
     }
     if (mediaType.contains('multipart')) {
-      return (RequestBody(type: BodyType.formData, formFields: _formFieldsOf(schema)), null);
+      return (
+        RequestBody(type: BodyType.formData, formFields: _formFieldsOf(schema, files: true, encoding: _map(media['encoding']))),
+        null,
+      );
+    }
+    if (_isBinary(schema) || mediaType.split(';').first.trim().toLowerCase() == 'application/octet-stream') {
+      return (_binaryBody(mediaType), null);
     }
     final example = media['example'] ?? _firstExampleValue(media['examples']) ?? _example(schema);
     return _rawBody(mediaType, example);
+  }
+
+  /// A body that is one file (`format: binary`, `application/octet-stream`): a binary body with no file chosen yet,
+  /// typed as the document says when that is not the generic octet-stream.
+  static RequestBody _binaryBody(String mediaType) {
+    final type = mediaType.split(';').first.trim();
+    const empty = RequestBody(type: BodyType.binary);
+    if (type.isEmpty || type.contains('*') || type.toLowerCase() == 'application/octet-stream') return empty;
+    return empty.withBinaryFile(KeyValueItem(key: '', value: '', kind: FormFieldKind.file, contentType: type));
   }
 
   (RequestBody, String?) _swagger2BodyOf(Map<String, dynamic> operation, List<Map<String, dynamic>> params) {
@@ -243,7 +271,10 @@ final class OpenApiParser {
       final hasFile = formParams.any((p) => p['type'] == 'file');
       final fields = [
         for (final p in formParams)
-          if (p['type'] != 'file') KeyValueItem(key: _str(p['name']) ?? '', value: _paramValue(p)),
+          if (p['type'] != 'file')
+            KeyValueItem(key: _str(p['name']) ?? '', value: _paramValue(p))
+          else
+            KeyValueItem(key: _str(p['name']) ?? '', value: '', kind: FormFieldKind.file),
       ];
       final body = hasFile || consumes.any((c) => c.contains('multipart'))
           ? RequestBody(type: BodyType.formData, formFields: fields)
@@ -254,6 +285,9 @@ final class OpenApiParser {
     if (bodyParam.isEmpty) return (RequestBody.empty, null);
     final schema = _map(bodyParam.first['schema']);
     final mediaType = consumes.isEmpty ? 'application/json' : _pickMediaType(consumes);
+    if (_isBinary(schema) || mediaType.split(';').first.trim().toLowerCase() == 'application/octet-stream') {
+      return (_binaryBody(mediaType), null);
+    }
     return _rawBody(mediaType, bodyParam.first['x-example'] ?? _example(schema));
   }
 
@@ -284,13 +318,34 @@ final class OpenApiParser {
     return (RequestBody(type: BodyType.raw, rawContentType: contentType, rawText: text), explicit);
   }
 
-  List<KeyValueItem> _formFieldsOf(Map<String, dynamic> rawSchema) {
+  /// The properties of a form schema as rows. A `format: binary` property (or an array of them) is a file row,
+  /// with no file chosen yet and the type its `encoding` names, when [files]; a urlencoded form cannot hold one.
+  List<KeyValueItem> _formFieldsOf(Map<String, dynamic> rawSchema, {bool files = false, Map<String, dynamic> encoding = const {}}) {
     final schema = _flatten(rawSchema);
     return [
       for (final e in _map(schema['properties']).entries)
-        if (_flatten(_map(e.value))['format'] != 'binary')
-          KeyValueItem(key: e.key, value: _text(_example(_map(e.value)) ?? '')),
+        if (!_isBinary(_map(e.value)))
+          KeyValueItem(key: e.key, value: _text(_example(_map(e.value)) ?? ''))
+        else if (files)
+          KeyValueItem(
+            key: e.key,
+            value: '',
+            kind: FormFieldKind.file,
+            contentType: _encodedType(_map(encoding[e.key])),
+          ),
     ];
+  }
+
+  bool _isBinary(Map<String, dynamic> raw) {
+    final schema = _flatten(raw);
+    if (schema['format'] == 'binary') return true;
+    return schema['type'] == 'array' && _flatten(_map(schema['items']))['format'] == 'binary';
+  }
+
+  /// The one content type an `encoding` entry names; none when it lists several or a wildcard.
+  static String _encodedType(Map<String, dynamic> entry) {
+    final type = entry['contentType'];
+    return type is String && !type.contains(',') && !type.contains('*') ? type.trim() : '';
   }
 
   dynamic _example(Map<String, dynamic> schema) {
@@ -519,6 +574,29 @@ final class OpenApiParser {
   /// The variable resolver only matches `\w+`, so `{user-id}` has to become
   /// `{{user_id}}` to ever be substituted.
   static String _placeholder(String name) => '{{${name.replaceAll(_nonWord, '_')}}}';
+}
+
+/// A decoded OpenAPI 3 / Swagger 2 document: the raw maps plus the parser's reference handling, so a feature that
+/// reads more of the document than [ParsedOpenApiDocument] keeps (response schemas, parameter schemas) does not
+/// need its own `$ref` resolver. See [OpenApiParser.view].
+final class OpenApiDocumentView {
+  final OpenApiParser _parser;
+
+  const OpenApiDocumentView._(this._parser);
+
+  /// The whole document as decoded.
+  Map<String, dynamic> get root => _parser._root;
+
+  bool get isSwagger2 => _parser._isSwagger2;
+
+  /// The document's server as the importer reads it: absolute, or a path such as `/api/v3`; empty when none is declared.
+  String get baseUrl => _parser._baseUrl();
+
+  /// [node] with a local `$ref` followed one hop (anything else comes back as it is).
+  Map<String, dynamic> resolve(Map<String, dynamic> node) => _parser._resolve(node);
+
+  /// [node] with its `$ref` followed and its `allOf` members merged into one flat schema.
+  Map<String, dynamic> flatten(Map<String, dynamic> node) => _parser._flatten(node);
 }
 
 /// State for expanding one schema into an example. [visiting] holds the

@@ -50,9 +50,10 @@ abstract final class HistoryMasker {
           item.copyWith(value: _named(item.key, item.value, SecretNames.isSecretQuery(item.key))),
       ];
 
+  /// A file row holds the path of its file, not a value, so it is kept as it is.
   static List<KeyValueItem> formFields(List<KeyValueItem> items) => [
         for (final item in items)
-          item.copyWith(value: _named(item.key, item.value, SecretNames.looksSecretKey(item.key))),
+          item.isFile ? item : item.copyWith(value: _named(item.key, item.value, SecretNames.looksSecretKey(item.key))),
       ];
 
   /// The auth with its credentials masked. The OAuth 2.0 tokens are blanked, not

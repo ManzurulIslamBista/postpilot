@@ -17,6 +17,9 @@ final class EffectiveRequestOptions {
   final bool trimKeysAndValues;
   final ProxyConfig proxy;
 
+  /// Null sends any size of upload.
+  final int? maxUploadBytes;
+
   const EffectiveRequestOptions({
     required this.timeout,
     required this.followRedirects,
@@ -26,6 +29,7 @@ final class EffectiveRequestOptions {
     required this.maxResponseBytes,
     required this.trimKeysAndValues,
     required this.proxy,
+    this.maxUploadBytes,
   });
 
   factory EffectiveRequestOptions.resolve(AppSettings app, RequestSettings? request) {
@@ -39,6 +43,7 @@ final class EffectiveRequestOptions {
       maxResponseBytes: app.maxResponseSizeMb > 0 ? app.maxResponseSizeMb * 1024 * 1024 : null,
       trimKeysAndValues: app.trimKeysAndValues,
       proxy: app.proxy.toConfig(),
+      maxUploadBytes: app.maxUploadSizeMb > 0 ? app.maxUploadSizeMb * 1024 * 1024 : null,
     );
   }
 
@@ -49,5 +54,6 @@ final class EffectiveRequestOptions {
         verifySsl: verifySsl,
         proxy: proxy,
         maxResponseBytes: maxResponseBytes,
+        maxUploadBytes: maxUploadBytes,
       );
 }

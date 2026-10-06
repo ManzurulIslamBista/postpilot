@@ -4,6 +4,10 @@ import 'package:provider/provider.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
 import '../../../../core/widgets/method_badge.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../ci/presentation/ci_setup_dialog.dart';
+import '../../../run_triage/presentation/monitor_dialog.dart';
+import '../../../run_triage/presentation/monitor_status_panel.dart';
+import '../../../run_triage/presentation/run_history_dialog.dart';
 import '../../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
 import '../../../defaults/presentation/defaults_dialog.dart';
 import '../../../documentation/domain/entities/entity_kind.dart';
@@ -17,6 +21,7 @@ import '../../../import_export/presentation/export_collection_dialog.dart';
 import '../../../import_export/presentation/export_postman_dialog.dart';
 import '../../../import_export/presentation/import_any_dialog.dart';
 import '../../../import_export/presentation/openapi_refresh_dialog.dart';
+import '../../../test_suggestions/presentation/widgets/openapi_tests_dialog.dart';
 import '../../../mock_server/presentation/mock_server_dialog.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../shell/presentation/shell_view_model.dart';
@@ -66,6 +71,8 @@ class _CollectionsSidebarState extends State<CollectionsSidebar> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const WorkplaceSidebarHeader(),
+          // "Monitor: 2 failing" and the banner for a collection that started failing; nothing while none is monitored.
+          const MonitorStatusPanel(),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
             child: Row(
@@ -367,6 +374,8 @@ class _CollectionTile extends StatelessWidget {
                 PopupMenuItem(value: 'import_curl', child: Text('Import cURL')),
                 PopupMenuDivider(),
                 PopupMenuItem(value: 'run', child: Text('Run collection')),
+                PopupMenuItem(value: 'run_history', child: Text('Run history…')),
+                PopupMenuItem(value: 'monitor', child: Text('Monitor…')),
                 PopupMenuItem(value: 'variables', child: Text('Variables')),
                 PopupMenuItem(value: 'auth', child: Text('Collection auth')),
                 PopupMenuItem(value: 'defaults', child: Text('Defaults (headers, tests)…')),
@@ -376,8 +385,10 @@ class _CollectionTile extends StatelessWidget {
                 PopupMenuItem(value: 'git_sync', child: Text('Git sync…')),
                 PopupMenuDivider(),
                 PopupMenuItem(value: 'openapi_refresh', child: Text('Update from OpenAPI…')),
+                PopupMenuItem(value: 'openapi_tests', child: Text('Generate tests from OpenAPI…')),
                 PopupMenuItem(value: 'dart_api', child: Text('Generate Dart API layer…')),
                 PopupMenuItem(value: 'mock_server', child: Text('Mock server…')),
+                PopupMenuItem(value: 'ci', child: Text('Set up CI…')),
                 PopupMenuDivider(),
                 PopupMenuItem(value: 'export', child: Text('Export as Postman JSON')),
                 PopupMenuItem(value: 'export_openapi', child: Text('Export as OpenAPI')),
@@ -413,10 +424,18 @@ class _CollectionTile extends StatelessWidget {
         await CollectionRunnerDialog.show(context, collectionId: collection.id);
       case 'openapi_refresh':
         await OpenApiRefreshDialog.show(context, collectionId: collection.id);
+      case 'openapi_tests':
+        await OpenApiTestsDialog.show(context, collectionId: collection.id);
       case 'dart_api':
         await DartStudioDialog.show(context, collectionId: collection.id, initialTab: 1);
       case 'mock_server':
         await MockServerDialog.show(context, collectionId: collection.id);
+      case 'ci':
+        await CiSetupDialog.show(context, collectionName: collection.name);
+      case 'run_history':
+        await RunHistoryDialog.show(context, collectionId: collection.id, collectionName: collection.name);
+      case 'monitor':
+        await MonitorDialog.show(context, collectionId: collection.id, collectionName: collection.name);
       case 'variables':
         await CollectionVariablesDialog.show(context, collectionId: collection.id, collectionName: collection.name);
       case 'auth':

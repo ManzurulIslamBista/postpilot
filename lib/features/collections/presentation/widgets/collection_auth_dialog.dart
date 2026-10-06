@@ -114,6 +114,7 @@ class _CollectionAuthDialogState extends State<CollectionAuthDialog> {
                           auth: auth,
                           allowInherit: false,
                           collectionId: widget.collectionId,
+                          showRelogin: true,
                           onChanged: (updated) => setState(() => _auth = updated),
                         ),
                       ),

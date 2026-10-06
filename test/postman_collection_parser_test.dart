@@ -116,7 +116,7 @@ void main() {
     expect(request.body.graphqlQuery, '{ me { id } }');
   });
 
-  test('file-type form fields are skipped rather than crashing', () {
+  test('file-type form fields come in as file rows rather than crashing or being dropped', () {
     const json = '''
     {
       "info": { "name": "C" },
@@ -136,8 +136,7 @@ void main() {
 
     final request = PostmanCollectionParser.parse(json).items.single as PostmanRequestItem;
     expect(request.body.type, BodyType.formData);
-    expect(request.body.formFields, hasLength(1));
-    expect(request.body.formFields.single.key, 'title');
+    expect(request.body.formFields.map((f) => (f.key, f.value, f.isFile)), [('title', 'hello', false), ('file', '/some/local/path.png', true)]);
   });
 
   test('collection-level variables are parsed, tolerating disabled and non-string values', () {

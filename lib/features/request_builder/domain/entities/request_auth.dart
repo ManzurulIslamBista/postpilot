@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../../../../core/enums/auth_type.dart';
+import '../../../auth_renewal/domain/entities/relogin_config.dart';
 
 final class RequestAuth {
   final AuthType type;
@@ -45,6 +46,15 @@ final class RequestAuth {
   final String oauth2RefreshToken;
   final DateTime? oauth2TokenExpiry;
 
+  /// Whether a send gets (or renews) the OAuth 2.0 token by itself when it is missing or about to expire.
+  /// On unless the user switched it off in the Auth tab.
+  final bool oauth2AutoRenew;
+
+  /// "On 401/403 run this login request first, then retry once", for every request below the level this
+  /// auth belongs to (the collection, or a folder). Independent of [type]: it also serves a Bearer token
+  /// that a login request writes into a variable. Null when none is set.
+  final ReloginConfig? relogin;
+
   const RequestAuth({
     this.type = AuthType.inherit,
     this.apiKeyName = '',
@@ -76,6 +86,8 @@ final class RequestAuth {
     this.oauth2AccessToken = '',
     this.oauth2RefreshToken = '',
     this.oauth2TokenExpiry,
+    this.oauth2AutoRenew = true,
+    this.relogin,
   });
 
   RequestAuth copyWith({
@@ -106,6 +118,7 @@ final class RequestAuth {
     String? oauth2Username,
     String? oauth2Password,
     String? oauth2Audience,
+    bool? oauth2AutoRenew,
   }) =>
       RequestAuth(
         type: type ?? this.type,
@@ -138,6 +151,44 @@ final class RequestAuth {
         oauth2AccessToken: oauth2AccessToken,
         oauth2RefreshToken: oauth2RefreshToken,
         oauth2TokenExpiry: oauth2TokenExpiry,
+        oauth2AutoRenew: oauth2AutoRenew ?? this.oauth2AutoRenew,
+        relogin: relogin,
+      );
+
+  /// [relogin] may be null here, which [copyWith] cannot express.
+  RequestAuth withRelogin(ReloginConfig? relogin) => RequestAuth(
+        type: type,
+        apiKeyName: apiKeyName,
+        apiKeyValue: apiKeyValue,
+        apiKeyLocation: apiKeyLocation,
+        bearerToken: bearerToken,
+        basicUsername: basicUsername,
+        basicPassword: basicPassword,
+        awsAccessKey: awsAccessKey,
+        awsSecretKey: awsSecretKey,
+        awsRegion: awsRegion,
+        awsService: awsService,
+        awsSessionToken: awsSessionToken,
+        jwtSecret: jwtSecret,
+        jwtAlgorithm: jwtAlgorithm,
+        jwtPayload: jwtPayload,
+        jwtHeaderPrefix: jwtHeaderPrefix,
+        oauth2GrantType: oauth2GrantType,
+        oauth2AccessTokenUrl: oauth2AccessTokenUrl,
+        oauth2AuthorizationUrl: oauth2AuthorizationUrl,
+        oauth2RedirectUri: oauth2RedirectUri,
+        oauth2ClientId: oauth2ClientId,
+        oauth2ClientSecret: oauth2ClientSecret,
+        oauth2ClientAuthentication: oauth2ClientAuthentication,
+        oauth2Scope: oauth2Scope,
+        oauth2Username: oauth2Username,
+        oauth2Password: oauth2Password,
+        oauth2Audience: oauth2Audience,
+        oauth2AccessToken: oauth2AccessToken,
+        oauth2RefreshToken: oauth2RefreshToken,
+        oauth2TokenExpiry: oauth2TokenExpiry,
+        oauth2AutoRenew: oauth2AutoRenew,
+        relogin: relogin,
       );
 
   /// The cached tokens and their expiry always change together, and `null`
@@ -174,9 +225,24 @@ final class RequestAuth {
         oauth2AccessToken: accessToken,
         oauth2RefreshToken: refreshToken,
         oauth2TokenExpiry: expiry,
+        oauth2AutoRenew: oauth2AutoRenew,
+        relogin: relogin,
       );
 
   RequestAuth clearOAuth2Token() => withOAuth2Token('', null);
+
+  /// This auth with the OAuth 2.0 token (and refresh token) of [latest] put in, when [latest] holds a newer
+  /// one: this has none, or [latest] expires later. Null when there is nothing newer. How an open request
+  /// picks up a token that was renewed behind its back without losing the edits made to the rest of its auth.
+  RequestAuth? takeNewerOAuth2Token(RequestAuth latest) {
+    if (type != AuthType.oauth2 || latest.type != AuthType.oauth2 || !latest.hasOAuth2Token) return null;
+    if (latest.oauth2AccessToken == oauth2AccessToken) return null;
+    final mine = oauth2TokenExpiry;
+    final theirs = latest.oauth2TokenExpiry;
+    final newer = !hasOAuth2Token || (theirs != null && (mine == null || theirs.isAfter(mine)));
+    if (!newer) return null;
+    return withOAuth2Token(latest.oauth2AccessToken, theirs, refreshToken: latest.oauth2RefreshToken);
+  }
 
   bool get hasOAuth2Token => oauth2AccessToken.isNotEmpty;
 
@@ -222,6 +288,9 @@ final class RequestAuth {
         'oauth2AccessToken': oauth2AccessToken,
         'oauth2RefreshToken': oauth2RefreshToken,
         'oauth2TokenExpiry': oauth2TokenExpiry?.toIso8601String(),
+        // Written only when they differ from the defaults, so auth saved before they existed reads back identical.
+        if (!oauth2AutoRenew) 'oauth2AutoRenew': false,
+        if (relogin != null) 'relogin': relogin!.toJson(),
       };
 
   /// Tolerates JSON written before any given key existed: every field falls
@@ -261,6 +330,8 @@ final class RequestAuth {
         oauth2AccessToken: map['oauth2AccessToken'] as String? ?? '',
         oauth2RefreshToken: map['oauth2RefreshToken'] as String? ?? '',
         oauth2TokenExpiry: DateTime.tryParse(map['oauth2TokenExpiry'] as String? ?? ''),
+        oauth2AutoRenew: map['oauth2AutoRenew'] as bool? ?? true,
+        relogin: ReloginConfig.fromJson(map['relogin']),
       );
 
   String toJsonString() => jsonEncode(toJson());

@@ -196,6 +196,34 @@ final class Device {
       ),
       auth: authFor(AuthType.apiKey),
     );
+    // Files travel as references only: a form-data file row, and a binary body (its file is a nameless file row).
+    await add(
+      'Upload photo',
+      folder: admin,
+      method: HttpMethod.post,
+      url: 'https://api.test/photo',
+      body: RequestBody(
+        type: BodyType.formData,
+        formFields: [
+          KeyValueItem(
+            key: 'photo',
+            value: '{{uploadDir}}/me.png',
+            kind: FormFieldKind.file,
+            fileName: 'portrait.png',
+            contentType: 'image/png',
+          ),
+        ],
+      ),
+    );
+    await add(
+      'Upload backup',
+      folder: docs,
+      method: HttpMethod.put,
+      url: 'https://api.test/backup',
+      body: const RequestBody(type: BodyType.binary).withBinaryFile(
+        KeyValueItem(key: '', value: '{{backupDir}}/backup.tar', kind: FormFieldKind.file, contentType: 'application/x-tar'),
+      ),
+    );
     await add(
       'GraphQL',
       folder: v1,

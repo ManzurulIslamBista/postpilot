@@ -1,9 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
+import '../request_builder/domain/services/collection_run_options.dart';
+import '../request_builder/domain/services/run_data_parser.dart';
+import '../test_suggestions/domain/services/baseline_file.dart';
 import 'dart_io_sender.dart';
+import 'iterated_run.dart';
+import 'markdown_reporter.dart';
 import 'mcp_server.dart';
 import 'production_lock.dart';
 import 'reporters.dart';
+import 'run_records_export.dart';
 import 'workspace_runner.dart';
 
 const cliVersion = '1.0.0';
@@ -26,9 +32,18 @@ Options for run and mcp:
   --timeout <seconds>   Per-request timeout (default 30)
   --delay <ms>          Wait between requests
   --insecure            Do not verify TLS certificates
-  --report <kind>       console (default), junit or json
-  --out <file>          Write the junit/json report to a file
-  --fail-on-skip        Fail the run when any request was skipped (OAuth 2.0 requests need the app)
+  --report <kind>       console (default), junit, json or markdown
+  --out <file>          Write the junit/json/markdown report to a file
+  --markdown-out <file> Also write a Markdown summary to this file (for an issue or a pull request comment)
+  --iterations <n>      Repeat the whole run n times (1-1000)
+  --data <file>         CSV (header row) or JSON (array of objects): one pass per row, {{column}} in a
+                        request becomes that row's value; it replaces --iterations
+  --records-dir <dir>   Write a run record (JSON) per collection into this folder; the app imports it with
+                        "Import CLI run" in the collection's Run history
+  --baseline-file <f>   Recorded response baselines ("Export baselines..." in the app's Response tools): a request
+                        that turned on "Enforce baseline in runs" fails when its response drifted in a breaking
+                        way, e.g. a field was removed or changed type
+  --fail-on-skip       Fail the run when any request was skipped (for example OAuth 2.0 Authorization Code without a token)
   --no-color            Plain output
 
 Requests run in the order the app shows them: folders and requests as arranged in
@@ -48,13 +63,38 @@ Secrets: the shared workspace.json holds none of your secret values. If
 workspace.local.json sits beside it, it is read too. In CI, pass secrets as
 environment variables named POSTPILOT_VAR_<name> (for example POSTPILOT_VAR_odooApiKey).
 
+OAuth 2.0: Client Credentials and Password requests get their token by themselves (a stored token that
+is still valid is used as it is, a refresh token is used when there is one), also when it expires during
+the run. Tokens renewed in a run are kept in memory only, never written back. Authorization Code needs
+a person to sign in once in the app; without a token in the workspace it is skipped.
+Re-login: a collection or folder set to "on 401/403 run request X" does so here too, once per request.
+
+Flow (the Flow tab of a request, no script needed): Retry sends again on a network error or chosen statuses
+(waiting longer each time, honouring Retry-After); Poll until repeats a request until a condition holds; Fetch
+all pages follows a paged list to its end and gives one merged response. Each try is shown, e.g. "3 attempts",
+"polled 5 times", "5 pages, 482 items". POST, PATCH and DELETE are only repeated when the request says so.
+Run if skips a request (shown as skipped with the reason, never as failed) unless its condition holds: a variable,
+the --env name, or how the previous request ended. A skipped request is not sent, so the production lock is not
+asked about it, and --fail-on-skip does not count it. "Always run" requests (cleanups) still run after --bail
+stopped the run, with their own Run if still applying.
+
+GitHub Actions: when \$GITHUB_STEP_SUMMARY is set, a Markdown summary of the run (what broke, grouped by cause)
+is appended to the job summary by itself, whatever --report says.
+
 Exit code: 0 all passed, 1 a request or test failed (or nothing was verified:
 every request was skipped, or --fail-on-skip and one was), 2 usage or file error,
 a production lock refusal, a --request that matches nothing, or no request matched.
 ''';
 
 /// Parses the command line and runs it. Returns the process exit code.
-Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err, Map<String, String>? environment}) async {
+Future<int> runCli(
+  List<String> args, {
+  CliSend? sender,
+  IOSink? out,
+  IOSink? err,
+  Map<String, String>? environment,
+  DateTime Function()? now,
+}) async {
   final stdoutSink = out ?? stdout;
   final stderrSink = err ?? stderr;
   final env = environment ?? Platform.environment;
@@ -91,6 +131,22 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
     return 2;
   }
 
+  var baselines = BaselineFile.empty;
+  final baselinePath = parsed.options['baseline-file'];
+  if (baselinePath != null) {
+    final baselineFile = File(baselinePath);
+    if (!baselineFile.existsSync()) {
+      stderrSink.writeln('Baseline file not found: $baselinePath');
+      return 2;
+    }
+    try {
+      baselines = BaselineFile.parse(baselineFile.readAsStringSync());
+    } on FormatException catch (e) {
+      stderrSink.writeln('"$baselinePath": ${e.message}');
+      return 2;
+    }
+  }
+
   final WorkspaceRunner runner;
   try {
     final localFile = File('${file.parent.path}${Platform.pathSeparator}workspace.local.json');
@@ -98,6 +154,9 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
       file.readAsStringSync(),
       sender ?? sendWithDartIo,
       localSecrets: localFile.existsSync() ? localFile.readAsStringSync() : null,
+      // A file a request uploads is found from the folder of the workspace file when its path is relative.
+      baseDir: file.absolute.parent.path,
+      baselines: baselines,
     );
   } catch (e) {
     stderrSink.writeln('"$path" is not a PostPilot workspace: $e');
@@ -117,9 +176,10 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
     return 0;
   }
 
-  final options = RunOptions(
+  // One RunOptions per pass: a data row's columns go on top of --var, as the data row is the top scope in the app.
+  RunOptions optionsFor(Map<String, String> row) => RunOptions(
     environment: parsed.options['env'],
-    variables: parsed.variables,
+    variables: {...parsed.variables, ...row},
     collection: parsed.options['collection'],
     folder: parsed.options['folder'],
     requests: parsed.lists['request'] ?? const [],
@@ -134,6 +194,7 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
     ),
     failOnSkip: parsed.flags.contains('fail-on-skip'),
   );
+  final options = optionsFor(const {});
 
   if (command == 'mcp') {
     try {
@@ -146,10 +207,17 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
   }
 
   final report = parsed.options['report'] ?? 'console';
-  if (!const {'console', 'junit', 'json'}.contains(report)) {
-    stderrSink.writeln('Unknown report "$report". Use console, junit or json.');
+  if (!const {'console', 'junit', 'json', 'markdown'}.contains(report)) {
+    stderrSink.writeln('Unknown report "$report". Use console, junit, json or markdown.');
     return 2;
   }
+  // --iterations and --data repeat the run; they are checked before anything is sent.
+  final repeat = _Repeat.read(parsed.options['iterations'], parsed.options['data']);
+  if (repeat.error != null) {
+    stderrSink.writeln(repeat.error);
+    return 2;
+  }
+  if (repeat.note != null) stderrSink.writeln(repeat.note);
   final color = !parsed.flags.contains('no-color') && stdoutSink == stdout && stdout.hasTerminal;
   final live = report == 'console' || parsed.options['out'] != null;
   final unmatched = runner.unmatchedRequestSelectors(options);
@@ -163,7 +231,14 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
   try {
     // The production lock refuses the whole run up front: sending half of a
     // collection to production and then stopping is worse than sending none.
-    final blocks = runner.productionBlocks(options, processVariables: processVariables);
+    // A data row can change a URL, so the lock looks at every pass; a request refused in several is listed once.
+    final blocks = <ProductionBlock>[];
+    final listed = <String>{};
+    for (final row in repeat.rows.isEmpty ? const [<String, String>{}] : repeat.rows) {
+      for (final block in runner.productionBlocks(optionsFor(row), processVariables: processVariables)) {
+        if (listed.add(block.line)) blocks.add(block);
+      }
+    }
     if (blocks.isNotEmpty) {
       stderrSink.writeln(ProductionBlock.describe(
         blocks,
@@ -171,14 +246,26 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
       ));
       return 2;
     }
-    final summary = await runner.run(
-      options,
+    final startedAt = (now ?? DateTime.now)().toUtc();
+    final run = await runIterated(
+      runner,
+      optionsFor: optionsFor,
       processVariables: processVariables,
-      onResult: live ? (o) => stdoutSink.writeln(RunReporters.line(o, color: color)) : null,
+      data: repeat.rows,
+      iterations: repeat.iterations,
+      bail: options.bail,
+      delay: options.delay,
+      failOnSkip: options.failOnSkip,
+      onPass: live && repeat.passes > 1 ? (pass, total) => stdoutSink.writeln('── Pass $pass of $total ──') : null,
+      onResult: live ? (o, pass) => stdoutSink.writeln(RunReporters.line(o, color: color, iteration: repeat.passes > 1 ? pass : null)) : null,
     );
+    final summary = run.combined;
+    // A plain run reports exactly as before; only a repeated one names the pass of each request.
+    final passes = run.repeated ? run.iterations : null;
     final text = switch (report) {
-      'junit' => RunReporters.junit(summary),
-      'json' => RunReporters.json(summary),
+      'junit' => RunReporters.junit(summary, iterations: passes),
+      'json' => RunReporters.json(summary, iterations: passes),
+      'markdown' => MarkdownReporter.summary(summary, iterations: passes, environment: options.environment ?? '', collection: options.collection ?? ''),
       _ => RunReporters.console(summary, color: color),
     };
     final target = parsed.options['out'];
@@ -191,19 +278,133 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
     } else {
       stdoutSink.write(text);
     }
+    _writeExtras(
+      parsed: parsed,
+      env: env,
+      run: run,
+      options: options,
+      markdown: report == 'markdown' ? text : null,
+      startedAt: startedAt,
+      stderrSink: stderrSink,
+      stdoutSink: stdoutSink,
+    );
     if (summary.total == 0) {
       stderrSink.writeln('Nothing ran: no request matched${options.collection == null ? '' : ' collection "${options.collection}"'}.');
       return 2;
     }
     if (summary.allSkipped) {
       stderrSink.writeln('Nothing was verified: all ${summary.total} selected request${summary.total == 1 ? ' was' : 's were'} skipped, so no request was sent or checked.');
-    } else if (options.failOnSkip && summary.skipped > 0 && summary.failed == 0) {
-      stderrSink.writeln('--fail-on-skip: ${summary.skipped} request${summary.skipped == 1 ? ' was' : 's were'} skipped.');
+    } else if (options.failOnSkip && summary.skipped > summary.skippedByRule && summary.failed == 0) {
+      // A request left out by its own Run if is not counted: that was asked for.
+      final unplanned = summary.skipped - summary.skippedByRule;
+      stderrSink.writeln('--fail-on-skip: $unplanned request${unplanned == 1 ? ' was' : 's were'} skipped.');
     }
     return summary.ok ? 0 : 1;
   } on ArgumentError catch (e) {
     stderrSink.writeln(e.message);
     return 2;
+  }
+}
+
+/// `--iterations` and `--data`: how many passes the run makes and what each is fed, checked before anything is sent.
+final class _Repeat {
+  final int iterations;
+  final List<Map<String, String>> rows;
+  final String? error;
+
+  /// Said on stderr but not an error (`--iterations` given together with `--data`).
+  final String? note;
+
+  const _Repeat(this.iterations, this.rows, {this.note}) : error = null;
+  const _Repeat.failed(String this.error)
+      : iterations = 1,
+        rows = const [],
+        note = null;
+
+  /// How many passes will run: one per data row, else the iteration count.
+  int get passes => rows.isEmpty ? iterations : rows.length;
+
+  static _Repeat read(String? iterationsText, String? dataPath) {
+    var iterations = 1;
+    if (iterationsText != null) {
+      final n = int.tryParse(iterationsText.trim());
+      if (n == null || n < 1 || n > CollectionRunOptions.maxIterations) {
+        return _Repeat.failed('--iterations needs a whole number from 1 to ${CollectionRunOptions.maxIterations}, got "$iterationsText".');
+      }
+      iterations = n;
+    }
+    if (dataPath == null) return _Repeat(iterations, const []);
+    final file = File(dataPath);
+    if (!file.existsSync()) return _Repeat.failed('Data file not found: $dataPath');
+    final String text;
+    try {
+      text = file.readAsStringSync();
+    } on FileSystemException catch (e) {
+      return _Repeat.failed('Could not read the data file "$dataPath": ${e.message}');
+    } on FormatException {
+      return _Repeat.failed('The data file "$dataPath" is not UTF-8 text. Save it as a UTF-8 CSV or JSON file.');
+    }
+    final data = const RunDataParser().parse(text);
+    if (data.error != null) return _Repeat.failed('The data file "$dataPath" cannot be used: ${data.error}');
+    if (data.rows.isEmpty) return _Repeat.failed('The data file "$dataPath" has no rows. It needs a header row and at least one row of data (CSV), or a JSON array of objects.');
+    return _Repeat(
+      data.rows.length,
+      data.rows,
+      note: iterationsText == null ? null : '--iterations is ignored: the data file has ${data.rows.length} rows, one pass each.',
+    );
+  }
+}
+
+/// What a run leaves besides its report: the Markdown file (`--markdown-out`), the job summary of GitHub Actions and
+/// the run records (`--records-dir`). One that cannot be written is said on stderr and never changes the exit code,
+/// which is about the requests.
+void _writeExtras({
+  required _Args parsed,
+  required Map<String, String> env,
+  required IteratedRun run,
+  required RunOptions options,
+  required String? markdown,
+  required DateTime startedAt,
+  required IOSink stderrSink,
+  required IOSink stdoutSink,
+}) {
+  final summary = run.combined;
+  final passes = run.repeated ? run.iterations : null;
+  String markdownText() => markdown ??= MarkdownReporter.summary(
+        summary,
+        iterations: passes,
+        environment: options.environment ?? '',
+        collection: options.collection ?? '',
+      );
+
+  void tryWrite(String what, String target, void Function() write) {
+    try {
+      write();
+    } on FileSystemException catch (e) {
+      stderrSink.writeln('Could not write $what to "$target": ${e.message}');
+    }
+  }
+
+  final markdownOut = parsed.options['markdown-out'];
+  if (markdownOut != null) {
+    tryWrite('the Markdown summary', markdownOut, () {
+      File(markdownOut).writeAsStringSync(markdownText());
+      stdoutSink.writeln('Markdown summary written to $markdownOut');
+    });
+  }
+  // GitHub Actions: the job summary is a file the steps append to.
+  final stepSummary = env['GITHUB_STEP_SUMMARY'];
+  if (stepSummary != null && stepSummary.isNotEmpty) {
+    tryWrite('the job summary', stepSummary, () => File(stepSummary).writeAsStringSync('${markdownText()}\n', mode: FileMode.append));
+  }
+  final recordsDir = parsed.options['records-dir'];
+  if (recordsDir != null) {
+    tryWrite('the run records', recordsDir, () {
+      final docs = CliRunRecords.build(run, environment: options.environment ?? '', startedAt: startedAt, bail: options.bail);
+      for (final path in CliRunRecords.write(recordsDir, docs)) {
+        stdoutSink.writeln('Run record written to $path');
+      }
+    });
   }
 }
 
@@ -217,7 +418,20 @@ final class _Args {
   final Set<String> flags = {};
   String? error;
 
-  static const _valued = {'env', 'collection', 'folder', 'timeout', 'delay', 'report', 'out'};
+  static const _valued = {
+    'env',
+    'collection',
+    'folder',
+    'timeout',
+    'delay',
+    'report',
+    'out',
+    'markdown-out',
+    'iterations',
+    'data',
+    'records-dir',
+    'baseline-file',
+  };
   static const _repeatable = {'production-word', 'production-host', 'request'};
   static const _boolean = {'bail', 'insecure', 'no-color', 'allow-production', 'fail-on-skip'};
 

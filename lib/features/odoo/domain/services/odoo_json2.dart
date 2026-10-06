@@ -7,6 +7,14 @@ abstract final class OdooVars {
   static const database = 'odooDb';
   static const apiKey = 'odooApiKey';
 
+  /// `json2` (the default) or `jsonrpc` for an Odoo 18 or older server (see `OdooProtocol`).
+  static const protocol = 'odooProtocol';
+
+  /// The login and the password (or API key) of an Odoo 18 or older server, which opens a session instead of
+  /// sending a bearer token.
+  static const login = 'odooLogin';
+  static const password = 'odooPassword';
+
   /// The record a ready-made write or delete request acts on. It is deliberately
   /// not defined anywhere: the request fails until someone sets it, instead of
   /// changing or deleting record 1 of whatever server the environment points at.
@@ -103,11 +111,17 @@ abstract final class OdooJson2 {
 
   /// The request set offered for [model]: every common operation with a
   /// sensible example body to edit.
-  static List<OdooRequestDraft> templatesFor(String model, {List<String> sampleFields = const ['display_name']}) {
+  static List<OdooRequestDraft> templatesFor(String model, {List<String> sampleFields = const ['display_name']}) => [
+        for (final t in templateCalls(model, sampleFields: sampleFields)) draft(t.call, name: t.name, note: t.note),
+      ];
+
+  /// The calls behind [templatesFor], independent of the API they are written for: an Odoo 18 or older
+  /// collection draws the same set in `call_kw` form (see `OdooJsonRpc.templatesFor`).
+  static List<OdooTemplate> templateCalls(String model, {List<String> sampleFields = const ['display_name']}) {
     final fields = sampleFields.isEmpty ? const ['display_name'] : sampleFields;
-    OdooRequestDraft d(String name, String method,
+    OdooTemplate d(String name, String method,
             {List<int> ids = const [], String? idsVariable, Map<String, Object?> params = const {}, String? note}) =>
-        draft(OdooCall(model: model, method: method, ids: ids, idsVariable: idsVariable, params: params), name: name, note: note);
+        OdooTemplate(name, OdooCall(model: model, method: method, ids: ids, idsVariable: idsVariable, params: params), note);
     // Ready-made requests that change data must not run against an id picked by us.
     const needsId = ' Set the variable {{${OdooVars.recordId}}} to the id of the record first: it is deliberately left undefined, '
         'so this request fails until you do, instead of touching a record you did not choose.';
@@ -129,4 +143,12 @@ abstract final class OdooJson2 {
       d('Defaults of $model', 'default_get', params: {'fields_list': fields}),
     ];
   }
+}
+
+/// One ready-made request as a call: its name, the call and the note saved as its description.
+final class OdooTemplate {
+  final String name;
+  final OdooCall call;
+  final String? note;
+  const OdooTemplate(this.name, this.call, this.note);
 }

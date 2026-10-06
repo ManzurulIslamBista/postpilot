@@ -8,6 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/enums/auth_type.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../auth_renewal/domain/services/token_status.dart';
+import '../../../auth_renewal/presentation/view_models/relogin_section_view_model.dart';
+import '../../../auth_renewal/presentation/widgets/relogin_section.dart';
 import '../../domain/entities/request_auth.dart';
 import '../../domain/services/oauth2_token_service.dart';
 import '../view_models/request_oauth2_view_model.dart';
@@ -27,6 +30,10 @@ class AuthEditor extends StatelessWidget {
   /// and those of the folders above it, resolve in OAuth 2.0 token requests too.
   final int? folderId;
 
+  /// Adds the "Re-login on 401/403" section: for the auth of a collection or a folder, whose requests it
+  /// applies to. Needs a [collectionId]; not shown while the auth only inherits, which holds no settings.
+  final bool showRelogin;
+
   const AuthEditor({
     super.key,
     required this.auth,
@@ -34,6 +41,7 @@ class AuthEditor extends StatelessWidget {
     this.allowInherit = true,
     this.collectionId,
     this.folderId,
+    this.showRelogin = false,
   });
 
   @override
@@ -72,6 +80,14 @@ class AuthEditor extends StatelessWidget {
             },
           ),
         ),
+        if (showRelogin &&
+            collectionId != null &&
+            auth.type != AuthType.inherit &&
+            locator.isRegistered<ReloginSectionViewModel>())
+          ChangeNotifierProvider<ReloginSectionViewModel>(
+            create: (_) => locator<ReloginSectionViewModel>()..load(collectionId!),
+            child: ReloginSection(auth: auth, onChanged: onChanged, collectionId: collectionId!),
+          ),
       ],
     );
   }
@@ -213,6 +229,7 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
     final vm = context.watch<RequestOAuth2ViewModel>()..folderId = widget.folderId;
     final grant = auth.oauth2GrantType;
     final isPkce = grant == OAuth2GrantType.authorizationCodePkce;
+    final status = vm.statusOf(auth);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,7 +308,20 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
           auth: auth,
           onChanged: onChanged,
           onRefresh: vm.isFetching ? null : () => vm.refreshToken(auth, _applyToken, collectionId: collectionId),
-          status: vm.describeTokenStatus(auth),
+          onClear: () {
+            vm.forgetRenewedTokens();
+            onChanged(auth.clearOAuth2Token());
+          },
+          status: status,
+        ),
+        SwitchListTile(
+          key: const ValueKey('oauth2-auto-renew'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Auto-renew'),
+          subtitle: Text(status.renewalLine, style: context.textStyles.caption.copyWith(color: context.colors.secondaryText)),
+          value: auth.oauth2AutoRenew,
+          onChanged: (on) => onChanged(auth.copyWith(oauth2AutoRenew: on)),
         ),
         if (vm.errorMessage != null)
           Padding(
@@ -302,18 +332,31 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
             ),
           ),
         const SizedBox(height: 12),
-        FilledButton(
-          onPressed: vm.isFetching
-              ? null
-              : () => isPkce
-                    ? _openAuthorization(context, vm)
-                    : vm.fetchToken(auth, _applyToken, collectionId: collectionId),
-          child: BusyLabel(
-            busy: vm.isFetching,
-            icon: Icons.vpn_key_outlined,
-            label: isPkce ? 'Get new access token (opens browser)' : 'Get new access token',
-            busyLabel: 'Fetching token…',
-          ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton(
+              onPressed: vm.isFetching
+                  ? null
+                  : () => isPkce
+                        ? _openAuthorization(context, vm)
+                        : vm.fetchToken(auth, _applyToken, collectionId: collectionId),
+              child: BusyLabel(
+                busy: vm.isFetching,
+                icon: Icons.vpn_key_outlined,
+                label: isPkce ? 'Get new access token (opens browser)' : 'Get new access token',
+                busyLabel: 'Fetching token…',
+              ),
+            ),
+            // The refresh token (or a one-POST grant) renews without a person; Authorization Code without one cannot.
+            if (status.selfRenewing)
+              OutlinedButton(
+                key: const ValueKey('oauth2-renew-now'),
+                onPressed: vm.isFetching ? null : () => vm.renewNow(auth, _applyToken, collectionId: collectionId),
+                child: BusyLabel(busy: vm.isFetching, icon: Icons.autorenew, label: 'Renew now', busyLabel: 'Renewing…'),
+              ),
+          ],
         ),
         if (isPkce && vm.authorizationUrl != null) ...[
           const SizedBox(height: 12),
@@ -356,19 +399,27 @@ class _TokenStatus extends StatelessWidget {
 
   /// Null while a token request is already running.
   final VoidCallback? onRefresh;
-  final String status;
+  final VoidCallback onClear;
+  final TokenStatus status;
 
-  const _TokenStatus({required this.auth, required this.onChanged, required this.onRefresh, required this.status});
+  const _TokenStatus({
+    required this.auth,
+    required this.onChanged,
+    required this.onRefresh,
+    required this.onClear,
+    required this.status,
+  });
 
   @override
   Widget build(BuildContext context) {
     final token = auth.oauth2AccessToken;
-    final expired = auth.isOAuth2TokenExpiredAt(DateTime.now());
-    final statusColor = !auth.hasOAuth2Token
-        ? context.colors.secondaryText
-        : expired
-        ? context.colors.statusError
-        : context.colors.statusSuccess;
+    final expired = status.health == TokenHealth.expired;
+    final statusColor = switch (status.health) {
+      TokenHealth.missing => context.colors.secondaryText,
+      TokenHealth.expired => context.colors.statusError,
+      TokenHealth.expiring => context.colors.statusWarning,
+      TokenHealth.valid || TokenHealth.noExpiry => context.colors.statusSuccess,
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,7 +432,7 @@ class _TokenStatus extends StatelessWidget {
               color: statusColor,
             ),
             const SizedBox(width: 6),
-            Text(status, style: context.textStyles.caption.copyWith(color: statusColor)),
+            Text(status.headline, style: context.textStyles.caption.copyWith(color: statusColor)),
             const Spacer(),
             if (auth.hasOAuth2Token) ...[
               if (auth.hasOAuth2RefreshToken)
@@ -397,7 +448,7 @@ class _TokenStatus extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 16),
                 tooltip: 'Clear token',
-                onPressed: () => onChanged(auth.clearOAuth2Token()),
+                onPressed: onClear,
               ),
             ],
           ],

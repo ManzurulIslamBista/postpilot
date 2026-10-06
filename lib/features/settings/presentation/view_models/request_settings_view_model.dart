@@ -71,7 +71,8 @@ final class RequestSettingsViewModel with ChangeNotifier {
         _overrides.withTimeoutSeconds(seconds == null ? null : math.min(math.max(seconds, 0), AppSettings.maxTimeoutSeconds)),
       );
 
-  void clear() => _update(RequestSettings.none);
+  /// Drops the four overrides. The request's flow and pagination are not settings to reset: they stay.
+  void clear() => _update(_overrides.withoutOverrides());
 
   /// Completes once every edit made so far has been written.
   Future<void> flush() => _lastSave;

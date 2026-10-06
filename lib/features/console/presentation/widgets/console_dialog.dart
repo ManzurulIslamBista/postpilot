@@ -84,6 +84,21 @@ class _ConsoleEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (entry.isNote) {
+      // What the flow around a send did: it explains the request listed just above it.
+      return ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        leading: SizedBox(
+          width: 52,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Icon(Icons.subdirectory_arrow_right, size: 16, color: context.colors.secondaryText),
+          ),
+        ),
+        title: Text(entry.note!, style: context.textStyles.caption.copyWith(color: context.colors.secondaryText)),
+      );
+    }
     final statusColor = entry.isPending
         ? context.colors.secondaryText
         : entry.isSuccess

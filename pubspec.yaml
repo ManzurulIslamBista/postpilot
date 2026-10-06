@@ -55,6 +55,8 @@ dependencies:
   web: ^1.1.1
   qr_flutter: ^4.1.0
   web_socket_channel: ^3.0.3
+  # The official flutter.dev picker (Windows, macOS, Linux, Android, iOS, web) for form-data file fields and binary bodies.
+  file_selector: ^1.0.3
 
 dev_dependencies:
   flutter_test:

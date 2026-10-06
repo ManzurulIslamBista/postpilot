@@ -68,7 +68,11 @@ abstract final class ProductionDetector {
         break;
     }
     final odoo = _odooMethod(url);
-    if (odoo != null) return _odooEffect(odoo);
+    final rpc = _odooRpcEffect(url, body, urlNamesMethod: odoo != null);
+    // Odoo 18 and older read the model and the method of a `call_kw` from the body, whatever the URL's tail says,
+    // so what the body does can make a request stricter than its URL, never more lenient.
+    if (odoo != null) return _stricter(_odooEffect(odoo), rpc);
+    if (rpc != null) return rpc;
     final documents = _graphqlDocuments(graphqlQuery, body);
     if (documents != null) return _graphqlEffect(documents);
     return RequestEffect.write;
@@ -132,6 +136,80 @@ abstract final class ProductionDetector {
     if (method.split('_').any(_odooDestructiveWords.contains)) return RequestEffect.destructive;
     return RequestEffect.write;
   }
+
+  // --- Odoo JSON-RPC (Odoo 18 and older) ---
+
+  /// The endpoints that carry the model and the method in the JSON body: `/web/dataset/call_kw` (with or without
+  /// `/<model>/<method>` after it), `/web/dataset/call_button`, `/web/dataset/search_read` and `/jsonrpc`.
+  static final _odooRpcUrl = RegExp(r'/(?:web/dataset/(call_kw|call_button|search_read)|(jsonrpc))(?=[/?#]|$)', caseSensitive: false);
+
+  /// Session endpoints that only look (logging in changes no data).
+  static final _odooSessionUrl =
+      RegExp(r'/web/(?:session/(?:authenticate|get_session_info|check)|database/list|webclient/version_info)(?=[/?#]|$)', caseSensitive: false);
+
+  static const _odooCommonReads = {'login', 'authenticate', 'version', 'about'};
+  static const _odooDbReads = {'list', 'list_lang', 'list_countries', 'server_version', 'db_exist', 'exist'};
+
+  /// What an Odoo JSON-RPC request does according to its body; `null` when [url] is no such endpoint, or when the
+  /// body says nothing and the URL already names the method ([urlNamesMethod], the old rule). A body that does not
+  /// say where nothing else does (empty, not JSON, a method held in a `{{variable}}`) counts as a write.
+  static RequestEffect? _odooRpcEffect(String url, String? body, {required bool urlNamesMethod}) {
+    if (_odooSessionUrl.hasMatch(url)) return RequestEffect.read;
+    final endpoint = _odooRpcUrl.firstMatch(url);
+    if (endpoint == null) return null;
+    if (endpoint[1]?.toLowerCase() == 'search_read') return RequestEffect.read;
+    final call = _odooRpcCall(body);
+    if (call == null) return urlNamesMethod ? null : RequestEffect.write;
+    return _odooRpcCallEffect(call.service, call.method);
+  }
+
+  /// The service (`''` for `call_kw`, `object`, `common`, `db`) and the method a JSON-RPC body calls, lower-cased.
+  static ({String service, String method})? _odooRpcCall(String? body) {
+    final text = body?.trim() ?? '';
+    if (text.isEmpty) return null;
+    Object? json;
+    try {
+      json = jsonDecode(text);
+    } on FormatException {
+      // A bare {{variable}} stands for a number in a body that is JSON once its variables are filled in.
+      try {
+        json = jsonDecode(text.replaceAll(RegExp(r'\{\{[^{}]*\}\}'), '0'));
+      } on FormatException {
+        return null;
+      }
+    }
+    if (json is! Map) return null;
+    final params = json['params'] is Map ? json['params'] as Map : json;
+    final service = params['service'];
+    final method = params['method'];
+    if (service is String) {
+      if (service == 'object' && method is String && (method == 'execute' || method == 'execute_kw')) {
+        final args = params['args'];
+        final target = args is List && args.length >= 5 ? args[4] : null;
+        return (service: 'object', method: target is String ? target.toLowerCase() : '');
+      }
+      return (service: service.toLowerCase(), method: method is String ? method.toLowerCase() : '');
+    }
+    // The `"method": "call"` of the envelope is not the Odoo method; the Odoo method sits in `params`.
+    if (params['model'] is String && method is String && (!identical(params, json) || method != 'call')) {
+      return (service: '', method: method.toLowerCase());
+    }
+    return null;
+  }
+
+  static RequestEffect _odooRpcCallEffect(String service, String method) {
+    switch (service) {
+      case 'common':
+        return _odooCommonReads.contains(method) ? RequestEffect.read : RequestEffect.write;
+      case 'db':
+        if (_odooDbReads.contains(method)) return RequestEffect.read;
+        return method == 'drop' ? RequestEffect.destructive : RequestEffect.write;
+      default:
+        return _odooEffect(method);
+    }
+  }
+
+  static RequestEffect _stricter(RequestEffect a, RequestEffect? b) => b == null || a.index >= b.index ? a : b;
 
   // --- GraphQL ---
 

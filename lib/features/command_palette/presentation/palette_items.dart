@@ -6,6 +6,8 @@ import '../../console/presentation/widgets/console_dialog.dart';
 import '../../defaults/presentation/defaults_dialog.dart';
 import '../../cookies/presentation/widgets/cookies_dialog.dart';
 import '../../ai_assistant/presentation/ai_request_dialog.dart';
+import '../../ci/presentation/ci_setup_dialog.dart';
+import '../../run_triage/presentation/current_collection_actions.dart';
 import '../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
 import '../../device_helper/presentation/device_helper_dialog.dart';
 import '../../graphql/presentation/graphql_explorer_dialog.dart';
@@ -21,6 +23,7 @@ import '../../settings/presentation/widgets/settings_dialog.dart';
 import '../../templates/presentation/templates_dialog.dart';
 import '../../tour/presentation/tour_dialog.dart';
 import '../../shell/presentation/shell_view_model.dart';
+import '../../test_suggestions/presentation/test_intelligence_palette.dart';
 import '../domain/entities/palette_item.dart';
 
 /// Where the palette's content comes from. Adding a tool to the app means
@@ -34,6 +37,30 @@ abstract final class PaletteItems {
           icon: Icons.auto_awesome,
           keywords: const ['ai', 'claude', 'anthropic', 'generate', 'assistant', 'llm', 'gpt'],
           run: (c) => AiRequestDialog.show(c),
+        ),
+        PaletteItem(
+          id: 'ci.setup',
+          title: 'Set up CI: run this workspace on every push',
+          subtitle: 'Writes the GitHub Actions workflow (also GitLab CI and a shell script), with a schedule as a monitor',
+          icon: Icons.rocket_launch_outlined,
+          keywords: const ['ci', 'github actions', 'workflow', 'pipeline', 'gitlab', 'junit', 'monitor', 'schedule', 'cron', 'automate'],
+          run: (c) => CiSetupDialog.show(c),
+        ),
+        PaletteItem(
+          id: 'run.history',
+          title: 'Run history: triage the runs of the current collection',
+          subtitle: 'Failures grouped by cause, compared with the run before; import a command-line run',
+          icon: Icons.fact_check_outlined,
+          keywords: const ['triage', 'failures', 'runs', 'history', 'flaky', 'slow', 'compare', 'junit', 'cli', 'import'],
+          run: (c) => showCurrentCollectionRunHistory(c),
+        ),
+        PaletteItem(
+          id: 'monitor',
+          title: 'Monitor: run the current collection every few minutes',
+          subtitle: 'While PostPilot is open; a banner tells you when it starts failing',
+          icon: Icons.monitor_heart_outlined,
+          keywords: const ['monitor', 'schedule', 'uptime', 'watch', 'health', 'cron', 'every'],
+          run: (c) => showCurrentCollectionMonitor(c),
         ),
         PaletteItem(
           id: 'templates',
@@ -60,6 +87,14 @@ abstract final class PaletteItems {
           run: (c) => DartStudioDialog.show(c, initialTab: 1),
         ),
         PaletteItem(
+          id: 'dart.tests',
+          title: 'Dart Studio: generate tests for the API layer',
+          subtitle: 'Fixtures, model round trips, data source (http_mock_adapter) and repository/use case (mocktail) tests',
+          icon: Icons.science_outlined,
+          keywords: const ['flutter', 'test', 'mocktail', 'http_mock_adapter', 'fixture', 'unit test', 'dio', 'tdd'],
+          run: (c) => DartStudioDialog.show(c, initialTab: 2),
+        ),
+        PaletteItem(
           id: 'mock.server',
           title: 'Mock server: serve a collection as a live API',
           subtitle: 'Saved examples answer real HTTP calls on this computer',
@@ -75,6 +110,8 @@ abstract final class PaletteItems {
           keywords: const ['openapi', 'swagger', 'spec', 'refresh', 'sync', 'endpoints'],
           run: (c) => OpenApiRefreshDialog.show(c),
         ),
+        // Test suggestions and baselines for the open request's response (only while it has one), and the generator.
+        ...testIntelligencePaletteItems(),
         PaletteItem(
           id: 'graphql.explorer',
           title: 'GraphQL explorer',
@@ -129,7 +166,7 @@ abstract final class PaletteItems {
           subtitle: 'execute_kw, /jsonrpc and call_kw to JSON-2',
           icon: Icons.swap_horiz,
           keywords: const ['odoo', 'xmlrpc', 'jsonrpc', 'execute_kw', 'convert', 'deprecated'],
-          run: (c) => OdooStudioDialog.show(c, initialTab: 3),
+          run: (c) => OdooStudioDialog.show(c, initialTab: OdooStudioTab.migrate.index),
         ),
         PaletteItem(
           id: 'odoo.dart',
@@ -137,7 +174,23 @@ abstract final class PaletteItems {
           subtitle: 'A class that reads Odoo JSON (false for empty, [id, name] relations)',
           icon: Icons.flutter_dash,
           keywords: const ['odoo', 'flutter', 'dart', 'fields_get'],
-          run: (c) => OdooStudioDialog.show(c, initialTab: 4),
+          run: (c) => OdooStudioDialog.show(c, initialTab: OdooStudioTab.dart.index),
+        ),
+        PaletteItem(
+          id: 'odoo.payload',
+          title: 'Odoo Studio: build a create / write payload',
+          subtitle: 'A form from fields_get: many2one search, x2many commands, defaults, load from a record',
+          icon: Icons.dynamic_form_outlined,
+          keywords: const ['odoo', 'payload', 'create', 'write', 'vals', 'many2one', 'x2many', 'command', 'default_get'],
+          run: (c) => OdooStudioDialog.show(c, initialTab: OdooStudioTab.payload.index),
+        ),
+        PaletteItem(
+          id: 'odoo.check',
+          title: 'Odoo Studio: check a request body against the live schema',
+          subtitle: 'Field names, types, required fields, x2many commands and domain operators, with one-click fixes',
+          icon: Icons.fact_check_outlined,
+          keywords: const ['odoo', 'check', 'validate', 'lint', 'schema', 'typo', 'required', 'domain'],
+          run: (c) => OdooStudioDialog.show(c, initialTab: OdooStudioTab.check.index),
         ),
       ];
 

@@ -20,6 +20,7 @@ import 'package:postpilot/features/command_palette/presentation/command_palette_
 import 'package:postpilot/features/command_palette/presentation/palette_items.dart';
 import 'package:postpilot/features/dart_codegen/domain/usecases/build_api_layer_usecase.dart';
 import 'package:postpilot/features/dart_codegen/presentation/view_models/api_layer_view_model.dart';
+import 'package:postpilot/features/dart_codegen/presentation/view_models/api_tests_view_model.dart';
 import 'package:postpilot/features/dart_codegen/presentation/widgets/dart_studio_dialog.dart';
 import 'package:postpilot/features/device_helper/presentation/device_helper_dialog.dart';
 import 'package:postpilot/features/environments/presentation/view_models/environments_view_model.dart';
@@ -116,6 +117,7 @@ void main() {
       ..registerSingleton<AiSettingsStore>(_NoKeyStore())
       ..registerSingleton<AiClient>(AiClient(_NoNetwork(), _NoKeyStore()))
       ..registerFactory<ApiLayerViewModel>(() => ApiLayerViewModel(BuildApiLayerUseCase(loader, db.exampleRepository)))
+      ..registerFactory<ApiTestsViewModel>(() => ApiTestsViewModel(BuildApiLayerUseCase(loader, db.exampleRepository)))
       ..registerFactory<OdooStudioViewModel>(
         () => OdooStudioViewModel(OdooClient(_NoNetwork()), db.environmentRepository, CreateOdooWorkspaceUseCase(db.environmentRepository, db.collectionRepository, db.requestRepository)),
       )

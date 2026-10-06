@@ -5,6 +5,7 @@ import '../../../response_tools/domain/services/json_schema_tools.dart';
 import '../entities/assertion_entity.dart';
 import '../entities/assertion_result.dart';
 import 'response_reader.dart';
+import 'status_matcher.dart';
 
 final class AssertionEvaluator {
   const AssertionEvaluator();
@@ -29,7 +30,8 @@ final class AssertionEvaluator {
     final expected = assertion.expected.trim();
     final status = reader.response.statusCode.toString();
     final (passed, actual) = switch (assertion.type) {
-      AssertionType.statusEquals => (status == expected, status),
+      // One code, a class (`4xx`) or a list (`401, 403`): see StatusMatcher.
+      AssertionType.statusEquals => (StatusMatcher.matches(expected, reader.response.statusCode), status),
       AssertionType.statusIn2xx => (reader.response.isSuccess, status),
       AssertionType.bodyContains => _bodyContains(reader, expected),
       AssertionType.jsonPathEquals => _jsonPathEquals(reader, assertion.path, expected),

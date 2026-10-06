@@ -130,6 +130,60 @@ abstract final class SecretFields {
         'assertions': [for (final assertion in tests['assertions'] as List) blankAssertion(assertion)],
       };
     }
+    final settings = data['settings'];
+    if (settings is Map && settings['flow'] is Map) {
+      data['settings'] = {...settings, 'flow': _stripFlow(Map<String, Object?>.from(settings['flow'] as Map))};
+    }
+  }
+
+  /// A request's flow settings without the credentials they could hold: what a poll-until condition expects
+  /// (blanked like an assertion's expected value) and what a run-if compares a credential-named variable with.
+  static Map<String, Object?> _stripFlow(Map<String, Object?> flow) {
+    final poll = flow['poll'];
+    if (poll is Map && poll['until'] is List) {
+      flow['poll'] = {...poll, 'until': [for (final condition in poll['until'] as List) blankAssertion(condition)]};
+    }
+    final runIf = flow['runIf'];
+    if (runIf is Map && runIf['all'] is List) {
+      flow['runIf'] = {...runIf, 'all': [for (final condition in runIf['all'] as List) _blankCondition(condition)]};
+    }
+    return flow;
+  }
+
+  /// A run-if condition (`{kind, name, value}`) without the credential it compares a variable named like one with.
+  static Object? _blankCondition(Object? condition) {
+    if (condition is! Map) return condition;
+    final name = condition['name'];
+    final value = condition['value'];
+    if (name is String && value is String && looksSecretKey(name) && SecretNames.hasLiteralSecret(value)) {
+      return Map<String, Object?>.from(condition)..['value'] = '';
+    }
+    return condition;
+  }
+
+  /// [target] conditions (stripped) with the values [local] has for the same conditions put back: same kind and
+  /// name, and the same text once [local] is blanked.
+  static List<Object?> restoreConditions(List<Object?> target, List<Object?> local) {
+    final unused = [for (final item in local) if (item is Map) item];
+    return [
+      for (final item in target)
+        if (item is Map && item['value'] == '') _restoreCondition(item, unused) else item,
+    ];
+  }
+
+  static Object? _restoreCondition(Map target, List<Map> unused) {
+    for (final candidate in unused) {
+      final original = candidate['value'];
+      if (original is! String || original.isEmpty || candidate['kind'] != target['kind'] || candidate['name'] != target['name']) {
+        continue;
+      }
+      // Only a value that blanking would have emptied is put back.
+      final blanked = _blankCondition(candidate);
+      if (blanked is! Map || blanked['value'] != '') continue;
+      unused.remove(candidate);
+      return Map<String, Object?>.from(target)..['value'] = original;
+    }
+    return target;
   }
 
   /// [assertion] (`{type, path, expected}`) without a credential it expects:

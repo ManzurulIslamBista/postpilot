@@ -262,6 +262,7 @@ class _AuthTab extends StatelessWidget {
           allowInherit: vm.isFolder,
           collectionId: vm.collectionId,
           folderId: vm.folderId,
+          showRelogin: true,
           onChanged: vm.setAuth,
         ),
       ],

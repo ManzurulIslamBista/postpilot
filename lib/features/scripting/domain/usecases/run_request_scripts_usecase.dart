@@ -11,6 +11,7 @@ import '../../../git_sync/domain/services/secret_fields.dart';
 import '../../../request_builder/domain/entities/api_response_entity.dart';
 import '../../../request_builder/domain/repositories/request_scripts_repository.dart';
 import '../../../request_builder/domain/usecases/build_variable_resolver_usecase.dart';
+import '../../../test_suggestions/domain/usecases/baseline_guard.dart';
 import '../../data/models/scripts_json_codec.dart';
 import '../entities/assertion_result.dart';
 import '../entities/extractor_entity.dart';
@@ -35,12 +36,17 @@ final class RunRequestScriptsParams {
   /// and folder variables come from. The stored request wins if it has moved since.
   final int? folderId;
 
+  /// A collection run: a request that turned on "Enforce baseline in runs" gets a `Baseline: N breaking changes`
+  /// result row. A send from the editor leaves it off, where the response shows its drift in a chip instead.
+  final bool enforceBaseline;
+
   const RunRequestScriptsParams({
     required this.requestId,
     required this.collectionId,
     required this.response,
     this.dataVariables = const {},
     this.folderId,
+    this.enforceBaseline = false,
   });
 }
 
@@ -59,6 +65,9 @@ final class RunRequestScriptsUseCase implements UseCase<ScriptRunResult, RunRequ
   final AssertionEvaluator _evaluator;
   final ResolveRequestDefaultsUseCase? _defaults;
 
+  /// Holds a request to its recorded baseline when a run asks for it (see [RunRequestScriptsParams.enforceBaseline]).
+  final BaselineGuard? _baseline;
+
   const RunRequestScriptsUseCase(
     this._scriptsRepository,
     this._buildVariableResolverUseCase,
@@ -66,10 +75,18 @@ final class RunRequestScriptsUseCase implements UseCase<ScriptRunResult, RunRequ
     this._globalVariableRepository, [
     this._evaluator = const AssertionEvaluator(),
     this._defaults,
+    this._baseline,
   ]);
 
   @override
   Future<ScriptRunResult> call(RunRequestScriptsParams params) async {
+    final result = await _evaluate(params);
+    final row = params.enforceBaseline ? await _baseline?.rowFor(params.requestId, params.response) : null;
+    if (row == null) return result;
+    return ScriptRunResult(assertions: [...result.assertions, row], extracted: result.extracted);
+  }
+
+  Future<ScriptRunResult> _evaluate(RunRequestScriptsParams params) async {
     final scripts = await _scriptsRepository.get(params.requestId);
     final inherited = await _defaults?.forRequest(
       requestId: params.requestId,

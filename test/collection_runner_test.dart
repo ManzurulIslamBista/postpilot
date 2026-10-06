@@ -11,6 +11,7 @@ import 'package:postpilot/core/enums/http_method.dart';
 import 'package:postpilot/core/errors/app_exception.dart';
 import 'package:postpilot/core/network/api_client.dart';
 import 'package:postpilot/core/network/api_http_response.dart';
+import 'package:postpilot/core/network/upload_body.dart';
 import 'package:postpilot/core/theme/app_theme.dart';
 import 'package:postpilot/core/utils/safe_file_name.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
@@ -652,6 +653,37 @@ void main() {
 
       expect(results.single.error, isNull);
       expect(harness.sentUrls, ['https://api.test/7']);
+    });
+
+    test('a request that uploads a file reaches the client as a plan, its {{variable}} path resolved', () async {
+      final upload = _request(1, 'https://api.test/up').copyWith(
+        method: HttpMethod.post,
+        body: RequestBody(
+          type: BodyType.formData,
+          formFields: [KeyValueItem(key: 'avatar', value: '{{uploadDir}}/a.png', kind: FormFieldKind.file)],
+        ),
+      );
+      final harness = _Harness([upload], environment: const {'uploadDir': '/srv/up'});
+
+      final results = await _runAll(harness);
+
+      expect(results.single.error, isNull);
+      final body = harness.client.sent.single.body;
+      expect(body, isA<MultipartUpload>());
+      expect(((body! as MultipartUpload).parts.single as UploadFilePart).file.path, '/srv/up/a.png');
+    });
+
+    test('a file that cannot be sent is that request\'s error, masked, and the run goes on', () async {
+      final harness = _Harness([_request(1, 'https://api.test/a'), _request(2, 'https://api.test/b')]);
+      harness.client.failWith = const InvalidRequestException(
+        'The form field "avatar" sends the file "https://u:hunter2@files.test/a.png", which was not found. Choose the file again.',
+      );
+
+      final results = await _runAll(harness);
+
+      expect(results, hasLength(2), reason: 'one failed upload does not end the run');
+      expect(results.first.error, contains('was not found'));
+      expect(results.first.error, isNot(contains('hunter2')));
     });
 
     test('a request deleted mid-run is skipped', () async {

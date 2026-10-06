@@ -10,6 +10,8 @@ import 'api_http_response.dart';
 import 'http_adapter_config.dart';
 import 'lenient_cookie_manager.dart';
 import 'network_failure.dart';
+import 'upload_body.dart';
+import 'upload_file_source.dart';
 
 typedef NetworkAdapterFactory = HttpClientAdapter Function({required bool verifySsl, required ProxyConfig proxy});
 
@@ -19,10 +21,17 @@ final class DioApiClient implements ApiClient {
   final Dio _dio;
   final CookieJar cookieJar;
 
+  /// Where the files of an upload are read from; the disk, or in a browser the files picked for the session.
+  final UploadFileSource _uploads;
+
   // dio_cookie_manager asserts against use on web — the browser owns cookie
   // handling for XHR/fetch requests there, so a manual CookieJar doesn't apply.
-  DioApiClient({CookieJar? cookieJar, NetworkAdapterFactory adapterFactory = createNetworkAdapter})
-      : cookieJar = cookieJar ?? CookieJar(),
+  DioApiClient({
+    CookieJar? cookieJar,
+    NetworkAdapterFactory adapterFactory = createNetworkAdapter,
+    UploadFileSource? uploads,
+  })  : cookieJar = cookieJar ?? CookieJar(),
+        _uploads = uploads ?? createUploadFileSource(),
         _dio = Dio(BaseOptions(
           // The body is read by hand so a size cap can stop the download.
           responseType: ResponseType.stream,
@@ -68,7 +77,12 @@ final class DioApiClient implements ApiClient {
     final options = spec.options;
     var method = spec.method.toUpperCase();
     var url = spec.url;
-    var body = spec.body;
+    // Files are looked at once, before the first hop: a missing one or a body over the limit stops the request here.
+    // The prepared body opens a fresh stream per hop, so a 307 or 308 redirect can send the file again.
+    final upload = spec.body;
+    var body = upload is UploadBody
+        ? await UploadPreparer.prepare(upload, _uploads, maxBytes: options.maxUploadBytes)
+        : upload;
     final headers = {...spec.headers};
     final timeout = options.timeout ?? Duration.zero;
 
@@ -78,12 +92,13 @@ final class DioApiClient implements ApiClient {
       // dropped without downloading it.
       final hopToken = CancelToken();
       unawaited(spec.cancelToken?.whenCancelled.then((_) => hopToken.cancel()));
+      final sending = body;
       final response = await _dio.request<ResponseBody>(
         url,
-        data: body,
+        data: sending is PreparedUpload ? sending.open() : sending,
         options: Options(
           method: method,
-          headers: headers,
+          headers: sending is PreparedUpload ? _uploadHeaders(headers, sending) : headers,
           connectTimeout: timeout,
           receiveTimeout: timeout,
           extra: {_ConfiguredAdapter.networkKey: (verifySsl: options.verifySsl, proxy: options.proxy)},
@@ -122,6 +137,15 @@ final class DioApiClient implements ApiClient {
       url = target.toString();
     }
   }
+
+  /// A stream has no length of its own, and without one `dart:io` would send the body chunked (many servers refuse
+  /// that for an upload). A browser sets the length itself and refuses to be told it. The type is the one the body
+  /// names unless the request set its own.
+  Map<String, String> _uploadHeaders(Map<String, String> headers, PreparedUpload upload) => {
+        ...headers,
+        if (!kIsWeb) 'Content-Length': '${upload.length}',
+        if (!headers.keys.any((name) => name.toLowerCase() == 'content-type')) 'Content-Type': upload.contentType,
+      };
 
   Future<({Uint8List bytes, bool truncated})> _readBody(
     Response<ResponseBody> response,

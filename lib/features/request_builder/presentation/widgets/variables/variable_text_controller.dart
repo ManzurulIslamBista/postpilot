@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/theme/app_colors.dart';
+import '../../../../../core/utils/variable_resolver.dart';
+import '../../../../odoo/domain/services/smart_references.dart';
 import '../../view_models/variable_scope.dart';
 import '../json_syntax.dart' show maxHighlightedChars;
 
@@ -10,6 +12,10 @@ import '../json_syntax.dart' show maxHighlightedChars;
 /// generators) sees the raw `{{name}}`.
 class VariableTextEditingController extends TextEditingController {
   VariableTextEditingController({super.text});
+
+  /// A `{{variable}}` (group 1) or an Odoo smart reference `{{xmlid:...}}` / `{{ref:...}}` (group 2), which is looked
+  /// up on the server when the request is sent and is drawn in its own colour.
+  static final tokenPattern = RegExp('${AppConstants.variablePattern.pattern}|${VariableResolver.smartTokenPattern.pattern}');
 
   VariableScope? _scope;
 
@@ -43,11 +49,15 @@ class VariableTextEditingController extends TextEditingController {
 
     final spans = <InlineSpan>[];
     var cursor = 0;
-    for (final match in AppConstants.variablePattern.allMatches(text)) {
+    for (final match in tokenPattern.allMatches(text)) {
       if (match.start > cursor) spans.add(TextSpan(text: text.substring(cursor, match.start)));
-      // Until the first load nothing is flagged as undefined.
-      final defined = !scope.isLoaded || scope.isDefined(match[1]!);
-      final color = defined ? colors.mainAccent : colors.statusError;
+      // Until the first load nothing is flagged as undefined. A smart reference is never a variable: it is resolved
+      // against the server at send time, so it has a colour of its own.
+      final smart = match[1] == null;
+      final defined = smart || !scope.isLoaded || scope.isDefined(match[1]!);
+      final color = smart
+          ? (SmartReferences.problemWith(match[2]!) == null ? colors.syntaxKeyword : colors.statusError)
+          : (defined ? colors.mainAccent : colors.statusError);
       spans.add(
         TextSpan(
           text: match[0],

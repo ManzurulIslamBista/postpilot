@@ -10,7 +10,11 @@ class AssertionsEditor extends StatelessWidget {
   final List<AssertionEntity> items;
   final ValueChanged<List<AssertionEntity>> onChanged;
 
-  const AssertionsEditor({super.key, required this.items, required this.onChanged});
+  /// The label of the button that adds a row: "Add assertion" for a test, "Add condition" where the same rows say
+  /// what to wait for.
+  final String addLabel;
+
+  const AssertionsEditor({super.key, required this.items, required this.onChanged, this.addLabel = 'Add assertion'});
 
   void _replace(AssertionEntity item) {
     final index = items.indexWhere((i) => i.id == item.id);
@@ -37,7 +41,7 @@ class AssertionsEditor extends StatelessWidget {
         TextButton.icon(
           onPressed: _addRow,
           icon: const Icon(Icons.add, size: 16),
-          label: const Text('Add assertion'),
+          label: Text(addLabel),
         ),
       ],
     );
@@ -135,7 +139,7 @@ class _AssertionRowState extends State<_AssertionRow> {
   }
 
   String _expectedHint(AssertionType type) => switch (type) {
-        AssertionType.statusEquals => 'Status code, e.g. 200',
+        AssertionType.statusEquals => 'Status code, e.g. 200 (or 4xx, or 401, 403)',
         AssertionType.bodyContains => 'Text to find',
         AssertionType.responseTimeBelowMs => 'Milliseconds, e.g. 500',
         AssertionType.jsonSchema => 'JSON Schema, e.g. {"type":"object","required":["id"]}',

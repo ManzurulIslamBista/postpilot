@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/tool_dialog.dart';
 import 'api_layer_pane.dart';
+import 'api_tests_pane.dart';
 import 'dart_model_pane.dart';
 
 /// Everything a Flutter developer wants from an API, generated: Dart classes
@@ -30,7 +31,7 @@ class DartStudioDialog extends StatelessWidget {
     return ToolDialog(
       icon: Icons.flutter_dash,
       title: 'Dart Studio',
-      subtitle: 'Models and API layers for Flutter, generated from real responses',
+      subtitle: 'Models, API layers and their tests for Flutter, generated from real responses',
       width: 980,
       height: 680,
       child: ToolTabs(
@@ -45,6 +46,11 @@ class DartStudioDialog extends StatelessWidget {
             label: 'Collection to API layer',
             icon: Icons.account_tree_outlined,
             child: ApiLayerPane(initialCollectionId: collectionId),
+          ),
+          ToolTab(
+            label: 'Tests',
+            icon: Icons.science_outlined,
+            child: ApiTestsPane(initialCollectionId: collectionId),
           ),
         ],
       ),

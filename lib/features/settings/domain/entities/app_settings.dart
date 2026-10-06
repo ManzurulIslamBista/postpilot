@@ -13,6 +13,8 @@ final class AppSettings {
   static const maxRedirectsLimit = 100;
   static const defaultMaxResponseSizeMb = 50;
   static const maxResponseSizeMbLimit = 10240;
+  static const defaultMaxUploadSizeMb = 100;
+  static const maxUploadSizeMbLimit = 10240;
 
   final AppThemeMode themeMode;
 
@@ -25,6 +27,10 @@ final class AppSettings {
 
   /// 0 keeps whatever size the response is.
   final int maxResponseSizeMb;
+
+  /// The most a request may upload in files (form-data file parts, a binary body); a larger one is refused before
+  /// anything is sent. 0 sends any size.
+  final int maxUploadSizeMb;
   final bool trimKeysAndValues;
   final ProxySettings proxy;
 
@@ -36,6 +42,7 @@ final class AppSettings {
     this.verifySsl = true,
     this.sendNoCacheHeader = false,
     this.maxResponseSizeMb = defaultMaxResponseSizeMb,
+    this.maxUploadSizeMb = defaultMaxUploadSizeMb,
     this.trimKeysAndValues = false,
     this.proxy = const ProxySettings(),
   });
@@ -54,6 +61,12 @@ final class AppSettings {
           min: 0,
           max: maxResponseSizeMbLimit,
         ),
+        maxUploadSizeMb: SettingsJson.intOr(
+          json['maxUploadSizeMb'],
+          defaultMaxUploadSizeMb,
+          min: 0,
+          max: maxUploadSizeMbLimit,
+        ),
         trimKeysAndValues: SettingsJson.boolOr(json['trimKeysAndValues'], false),
         proxy: ProxySettings.fromJson(SettingsJson.objectOf(json['proxy'])),
       );
@@ -70,6 +83,7 @@ final class AppSettings {
         'verifySsl': verifySsl,
         'sendNoCacheHeader': sendNoCacheHeader,
         'maxResponseSizeMb': maxResponseSizeMb,
+        'maxUploadSizeMb': maxUploadSizeMb,
         'trimKeysAndValues': trimKeysAndValues,
         'proxy': proxy.toJson(),
       };
@@ -84,6 +98,7 @@ final class AppSettings {
     bool? verifySsl,
     bool? sendNoCacheHeader,
     int? maxResponseSizeMb,
+    int? maxUploadSizeMb,
     bool? trimKeysAndValues,
     ProxySettings? proxy,
   }) =>
@@ -95,6 +110,7 @@ final class AppSettings {
         verifySsl: verifySsl ?? this.verifySsl,
         sendNoCacheHeader: sendNoCacheHeader ?? this.sendNoCacheHeader,
         maxResponseSizeMb: maxResponseSizeMb ?? this.maxResponseSizeMb,
+        maxUploadSizeMb: maxUploadSizeMb ?? this.maxUploadSizeMb,
         trimKeysAndValues: trimKeysAndValues ?? this.trimKeysAndValues,
         proxy: proxy ?? this.proxy,
       );
@@ -109,6 +125,7 @@ final class AppSettings {
       other.verifySsl == verifySsl &&
       other.sendNoCacheHeader == sendNoCacheHeader &&
       other.maxResponseSizeMb == maxResponseSizeMb &&
+      other.maxUploadSizeMb == maxUploadSizeMb &&
       other.trimKeysAndValues == trimKeysAndValues &&
       other.proxy == proxy;
 
@@ -121,6 +138,7 @@ final class AppSettings {
         verifySsl,
         sendNoCacheHeader,
         maxResponseSizeMb,
+        maxUploadSizeMb,
         trimKeysAndValues,
         proxy,
       );

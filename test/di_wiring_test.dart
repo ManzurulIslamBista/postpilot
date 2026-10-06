@@ -12,9 +12,15 @@ import 'package:postpilot/core/di/injector.dart';
 import 'package:postpilot/core/layout/layout_prefs.dart';
 import 'package:postpilot/core/network/api_client.dart';
 import 'package:postpilot/features/ai_assistant/data/ai_client.dart';
+import 'package:postpilot/features/auth_renewal/domain/repositories/oauth2_token_store.dart';
+import 'package:postpilot/features/auth_renewal/domain/services/oauth2_token_manager.dart';
+import 'package:postpilot/features/auth_renewal/domain/usecases/relogin_usecase.dart';
+import 'package:postpilot/features/auth_renewal/presentation/view_models/inherited_oauth2_status_view_model.dart';
+import 'package:postpilot/features/auth_renewal/presentation/view_models/relogin_section_view_model.dart';
 import 'package:postpilot/features/ai_assistant/data/ai_settings_store.dart';
 import 'package:postpilot/features/dart_codegen/domain/usecases/build_api_layer_usecase.dart';
 import 'package:postpilot/features/dart_codegen/presentation/view_models/api_layer_view_model.dart';
+import 'package:postpilot/features/dart_codegen/presentation/view_models/api_tests_view_model.dart';
 import 'package:postpilot/features/graphql/presentation/graphql_explorer_view_model.dart';
 import 'package:postpilot/features/import_export/domain/usecases/refresh_openapi_usecase.dart';
 import 'package:postpilot/features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
@@ -24,8 +30,14 @@ import 'package:postpilot/features/odoo/domain/usecases/create_odoo_workspace_us
 import 'package:postpilot/features/odoo/presentation/view_models/odoo_studio_view_model.dart';
 import 'package:postpilot/features/realtime/presentation/realtime_view_model.dart';
 import 'package:postpilot/features/response_tools/domain/services/response_history.dart';
+import 'package:postpilot/features/run_triage/domain/repositories/run_record_repository.dart';
+import 'package:postpilot/features/run_triage/presentation/monitor_service.dart';
 import 'package:postpilot/features/safety/data/safety_prefs.dart';
 import 'package:postpilot/features/safety/domain/services/production_guard.dart';
+import 'package:postpilot/features/test_suggestions/domain/repositories/request_baseline_repository.dart';
+import 'package:postpilot/features/test_suggestions/domain/usecases/baseline_guard.dart';
+import 'package:postpilot/features/test_suggestions/domain/usecases/export_baselines_usecase.dart';
+import 'package:postpilot/features/test_suggestions/domain/usecases/generate_openapi_tests_usecase.dart';
 import 'package:postpilot/features/templates/domain/usecases/add_starter_template_usecase.dart';
 import 'package:postpilot/features/tour/presentation/tour_dialog.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
@@ -119,6 +131,8 @@ import 'package:postpilot/features/scripting/presentation/view_models/request_sc
 import 'package:postpilot/features/settings/domain/entities/app_settings.dart';
 import 'package:postpilot/features/settings/domain/repositories/request_settings_repository.dart';
 import 'package:postpilot/features/settings/domain/repositories/settings_repository.dart';
+import 'package:postpilot/features/request_flow/domain/usecases/request_flow_service.dart';
+import 'package:postpilot/features/request_flow/presentation/view_models/request_flow_view_model.dart';
 import 'package:postpilot/features/settings/presentation/view_models/request_settings_view_model.dart';
 import 'package:postpilot/features/settings/presentation/view_models/settings_view_model.dart';
 import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
@@ -147,6 +161,9 @@ final _wirings = <_Wiring>[
   _wire<CollectionAuthRepository>(),
   _wire<CollectionsViewModel>(),
   _wire<CollectionRunnerViewModel>(),
+  // run history and the monitor
+  _wire<RunRecordRepository>(),
+  _wire<MonitorService>(),
   // request builder
   _wire<RequestRepository>(),
   _wire<RequestScriptsRepository>(),
@@ -160,8 +177,18 @@ final _wirings = <_Wiring>[
   _wire<ListVariablesUseCase>(),
   _wire<VariableScope>(),
   _wire<RequestOAuth2ViewModel>(),
+  // self-renewing auth (OAuth 2.0 renewal before a send, re-login on 401/403)
+  _wire<OAuth2TokenStore>(),
+  _wire<OAuth2TokenManager>(),
+  _wire<ReloginUseCase>(),
+  _wire<ReloginSectionViewModel>(),
+  _wire<InheritedOAuth2StatusViewModel>(),
   _wire<ResponseExamplesViewModel>(),
   // scripting
+  _wire<RequestBaselineRepository>(),
+  _wire<BaselineGuard>(),
+  _wire<ExportBaselinesUseCase>(),
+  _wire<GenerateOpenApiTestsUseCase>(),
   _wire<RunRequestScriptsUseCase>(),
   _wire<RequestScriptsViewModel>(),
   // defaults of collections and folders
@@ -185,6 +212,9 @@ final _wirings = <_Wiring>[
   _wire<RequestSettingsRepository>(),
   _wire<SettingsViewModel>(),
   _wire<RequestSettingsViewModel>(),
+  // retry, poll until, run if, fetch all pages
+  _wire<RequestFlowService>(),
+  _wire<RequestFlowViewModel>(),
   // documentation
   _wire<DocumentationRepository>(),
   _wire<TagRepository>(),
@@ -247,6 +277,7 @@ final _wirings = <_Wiring>[
   // developer tools
   _wire<BuildApiLayerUseCase>(),
   _wire<ApiLayerViewModel>(),
+  _wire<ApiTestsViewModel>(),
   _wire<ResponseHistory>(),
   _wire<SafetyPrefs>(),
   _wire<ProductionGuard>(),

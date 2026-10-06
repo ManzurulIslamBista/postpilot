@@ -7,6 +7,13 @@ import '../network/api_client.dart';
 import '../network/dio_api_client.dart';
 import '../network/logging_api_client.dart';
 import '../network/strict_cookie_jar.dart';
+import '../../features/auth_renewal/data/repository_oauth2_token_store.dart';
+import '../../features/auth_renewal/domain/repositories/oauth2_token_store.dart';
+import '../../features/auth_renewal/domain/services/oauth2_token_manager.dart';
+import '../../features/auth_renewal/domain/usecases/relogin_usecase.dart';
+import '../../features/auth_renewal/domain/usecases/renew_request_auth_usecase.dart';
+import '../../features/auth_renewal/presentation/view_models/inherited_oauth2_status_view_model.dart';
+import '../../features/auth_renewal/presentation/view_models/relogin_section_view_model.dart';
 import '../../features/collections/data/repositories/collection_auth_repository_impl.dart';
 import '../../features/collections/data/repositories/collection_order_repository_impl.dart';
 import '../../features/collections/data/repositories/collection_repository_impl.dart';
@@ -47,7 +54,10 @@ import '../../features/import_export/domain/usecases/refresh_openapi_usecase.dar
 import '../../features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
 import '../../features/mock_server/presentation/mock_server_view_model.dart';
 import '../../features/odoo/data/odoo_client.dart';
+import '../../features/odoo/data/odoo_doctor.dart';
+import '../../features/odoo/data/odoo_smart_resolver.dart';
 import '../../features/odoo/domain/usecases/create_odoo_workspace_usecase.dart';
+import '../../features/settings/domain/services/tool_request_options.dart';
 import '../../features/odoo/presentation/view_models/odoo_studio_view_model.dart';
 import '../../features/realtime/data/realtime_session.dart';
 import '../../features/realtime/presentation/realtime_view_model.dart';
@@ -57,6 +67,7 @@ import '../../features/tour/presentation/tour_dialog.dart';
 import '../../features/safety/data/safety_prefs.dart';
 import '../../features/safety/domain/services/production_guard.dart';
 import '../../features/dart_codegen/presentation/view_models/api_layer_view_model.dart';
+import '../../features/dart_codegen/presentation/view_models/api_tests_view_model.dart';
 import '../../features/environments/data/repositories/environment_repository_impl.dart';
 import '../../features/environments/data/repositories/global_variable_repository_impl.dart';
 import '../../features/environments/domain/repositories/environment_repository.dart';
@@ -130,11 +141,19 @@ import '../../features/request_builder/domain/services/oauth2_token_service.dart
 import '../../features/request_builder/domain/usecases/build_variable_resolver_usecase.dart';
 import '../../features/request_builder/domain/usecases/generate_code_snippet_usecase.dart';
 import '../../features/request_builder/domain/usecases/send_request_usecase.dart';
+import '../../features/request_flow/data/app_flow_environment.dart';
+import '../../features/request_flow/domain/usecases/request_flow_service.dart';
+import '../../features/request_flow/presentation/view_models/request_flow_view_model.dart';
 import '../../features/request_builder/presentation/view_models/request_builder_view_model.dart';
 import '../../features/request_builder/presentation/view_models/request_oauth2_view_model.dart';
 import '../../features/request_builder/presentation/view_models/response_examples_view_model.dart';
 import '../../features/scripting/domain/usecases/run_request_scripts_usecase.dart';
 import '../../features/scripting/presentation/view_models/request_scripts_view_model.dart';
+import '../../features/test_suggestions/data/request_baseline_repository_impl.dart';
+import '../../features/test_suggestions/domain/repositories/request_baseline_repository.dart';
+import '../../features/test_suggestions/domain/usecases/baseline_guard.dart';
+import '../../features/test_suggestions/domain/usecases/export_baselines_usecase.dart';
+import '../../features/test_suggestions/domain/usecases/generate_openapi_tests_usecase.dart';
 import '../../features/settings/data/repositories/request_settings_repository_impl.dart';
 import '../../features/settings/data/repositories/settings_repository_impl.dart';
 import '../../features/settings/data/secure_proxy_password_store.dart';
@@ -146,6 +165,11 @@ import '../../features/shell/presentation/shell_view_model.dart';
 import '../../features/workplace/data/repositories/workplace_repository_impl.dart';
 import '../../features/workplace/domain/repositories/workplace_repository.dart';
 import '../../features/workplace/presentation/view_models/workplace_view_model.dart';
+import '../../features/run_triage/data/run_record_repository_impl.dart';
+import '../../features/run_triage/data/settings_monitor_config_store.dart';
+import '../../features/run_triage/domain/repositories/run_record_repository.dart';
+import '../../features/run_triage/domain/services/monitor_runner.dart';
+import '../../features/run_triage/presentation/monitor_service.dart';
 
 final locator = GetIt.instance;
 
@@ -160,6 +184,7 @@ final locator = GetIt.instance;
 void setupDependencies({AppDatabase? database}) {
   _registerCore(database ?? AppDatabase());
   _registerCollections();
+  _registerRunTriage();
   _registerRequestBuilder();
   _registerScripting();
   _registerDefaults();
@@ -181,6 +206,7 @@ void _registerDevTools() {
     () => BuildApiLayerUseCase(locator<CollectionLoader>(), locator<ResponseExampleRepository>()),
   );
   locator.registerFactory<ApiLayerViewModel>(() => ApiLayerViewModel(locator<BuildApiLayerUseCase>()));
+  locator.registerFactory<ApiTestsViewModel>(() => ApiTestsViewModel(locator<BuildApiLayerUseCase>()));
   locator.registerLazySingleton<ResponseHistory>(ResponseHistory.new);
   locator.registerLazySingleton<SafetyPrefs>(SafetyPrefs.new);
   locator.registerLazySingleton<ProductionGuard>(
@@ -218,6 +244,14 @@ void _registerDevTools() {
     () => RealtimeViewModel(const RealtimeConnector(), () => locator<BuildVariableResolverUseCase>()(0)),
   );
   locator.registerLazySingleton<OdooClient>(() => OdooClient(locator<ApiClient>(), settings: locator<SettingsRepository>()));
+  locator.registerLazySingleton<OdooSmartReferenceResolver>(
+    () => OdooSmartReferenceResolver(
+      locator<ApiClient>(),
+      // The app's timeout, proxy and certificate settings, as for every call of a saved request.
+      options: () => ToolRequestOptions.resolve(locator<SettingsRepository>(), maxResponseBytes: 8 * 1024 * 1024),
+    ),
+  );
+  locator.registerLazySingleton<OdooDoctor>(() => OdooDoctor(locator<EnvironmentRepository>(), locator<OdooClient>()));
   locator.registerLazySingleton<CreateOdooWorkspaceUseCase>(
     () => CreateOdooWorkspaceUseCase(
       locator<EnvironmentRepository>(),
@@ -287,6 +321,30 @@ void _registerCollections() {
   );
 }
 
+/// Run history, failure triage and the monitor: records of finished runs, kept on this device only.
+void _registerRunTriage() {
+  locator.registerLazySingleton<RunRecordRepository>(
+    () => RunRecordRepositoryImpl(locator<AppDatabase>().runRecordsDao),
+  );
+  // One for the whole session: it keeps running while no dialog is open.
+  locator.registerLazySingleton<MonitorService>(
+    () => MonitorService(
+      store: SettingsMonitorConfigStore(locator<AppDatabase>().settingsDao),
+      collections: locator<CollectionRepository>(),
+      records: locator<RunRecordRepository>(),
+      runner: MonitorRunner(
+        runner: locator<CollectionRunnerService>(),
+        collections: locator<CollectionRepository>(),
+        environments: locator<EnvironmentRepository>(),
+        resolver: locator<BuildVariableResolverUseCase>(),
+        records: locator<RunRecordRepository>(),
+        productionWords: () => locator<SafetyPrefs>().extraWords,
+        productionHosts: () => locator<SafetyPrefs>().productionHosts,
+      ),
+    ),
+  );
+}
+
 void _registerRequestBuilder() {
   locator.registerLazySingleton<RequestRepository>(() => RequestRepositoryImpl(locator<AppDatabase>().requestsDao));
   locator.registerLazySingleton<RequestScriptsRepository>(
@@ -306,6 +364,27 @@ void _registerRequestBuilder() {
       locator<DefaultsRepository>(),
     ),
   );
+  // Self-renewing auth: the OAuth 2.0 token is kept valid before every send, and a rejected request can run
+  // the collection's login request and be sent once more.
+  locator.registerLazySingleton<OAuth2TokenStore>(
+    () => RepositoryOAuth2TokenStore(
+      locator<RequestRepository>(),
+      locator<CollectionAuthRepository>(),
+      locator<DefaultsRepository>(),
+    ),
+  );
+  locator.registerLazySingleton<OAuth2TokenManager>(
+    () => OAuth2TokenManager(locator<OAuth2TokenService>(), locator<OAuth2TokenStore>()),
+  );
+  locator.registerLazySingleton<ReloginUseCase>(
+    () => ReloginUseCase(
+      locator<RequestRepository>(),
+      locator<CollectionAuthRepository>(),
+      locator<RunRequestScriptsUseCase>(),
+      collections: locator<CollectionRepository>(),
+      defaults: locator<ResolveRequestDefaultsUseCase>(),
+    ),
+  );
   locator.registerLazySingleton<SendRequestUseCase>(
     () => SendRequestUseCase(
       locator<ApiClient>(),
@@ -316,6 +395,10 @@ void _registerRequestBuilder() {
       locator<RequestSettingsRepository>(),
       const RequestSpecBuilder(),
       locator<ResolveRequestDefaultsUseCase>(),
+      RenewRequestAuthUseCase(locator<OAuth2TokenManager>()),
+      locator<ReloginUseCase>(),
+      // {{xmlid:...}} / {{ref:...}} in an Odoo request are looked up on the server it goes to, when it is sent.
+      locator<OdooSmartReferenceResolver>(),
     ),
   );
   locator.registerLazySingleton<GenerateCodeSnippetUseCase>(
@@ -327,12 +410,23 @@ void _registerRequestBuilder() {
       defaults: locator<ResolveRequestDefaultsUseCase>(),
     ),
   );
+  // Retry, poll until, fetch all pages, run if: the editor and the collection runner send through it. Each try after
+  // the first is announced in the console.
+  locator.registerLazySingleton<RequestFlowService>(
+    () => RequestFlowService(
+      locator<RequestSettingsRepository>(),
+      locator<SendRequestUseCase>(),
+      AppFlowEnvironment(locator<BuildVariableResolverUseCase>(), locator<EnvironmentRepository>()),
+      onNote: locator<RequestConsoleLog>().addNote,
+    ),
+  );
   locator.registerLazySingleton<CollectionRunnerService>(
-    () => CollectionRunnerService.withFolders(
+    () => CollectionRunnerService.withFlow(
       locator<RequestRepository>(),
       locator<SendRequestUseCase>(),
       locator<RunRequestScriptsUseCase>(),
       locator<CollectionRepository>(),
+      locator<RequestFlowService>(),
     ),
   );
   locator.registerLazySingleton<ListVariablesUseCase>(
@@ -352,10 +446,21 @@ void _registerRequestBuilder() {
       locator<SendRequestUseCase>(),
       locator<GenerateCodeSnippetUseCase>(),
       locator<RunRequestScriptsUseCase>(),
+      locator<RequestFlowService>(),
     ),
   );
   locator.registerFactory<RequestOAuth2ViewModel>(
-    () => RequestOAuth2ViewModel(locator<OAuth2TokenService>(), locator<BuildVariableResolverUseCase>()),
+    () => RequestOAuth2ViewModel(
+      locator<OAuth2TokenService>(),
+      locator<BuildVariableResolverUseCase>(),
+      locator<OAuth2TokenManager>(),
+    ),
+  );
+  locator.registerFactory<ReloginSectionViewModel>(
+    () => ReloginSectionViewModel(locator<ReloginUseCase>(), locator<SendRequestUseCase>()),
+  );
+  locator.registerFactory<InheritedOAuth2StatusViewModel>(
+    () => InheritedOAuth2StatusViewModel(locator<OAuth2TokenManager>(), locator<BuildVariableResolverUseCase>()),
   );
   locator.registerFactory<ResponseExamplesViewModel>(
     () => ResponseExamplesViewModel(locator<ResponseExampleRepository>()),
@@ -363,6 +468,13 @@ void _registerRequestBuilder() {
 }
 
 void _registerScripting() {
+  // Recorded response baselines (local to this device) and the guard that holds a request to its baseline in runs.
+  locator.registerLazySingleton<RequestBaselineRepository>(
+    () => RequestBaselineRepositoryImpl(locator<AppDatabase>().requestBaselinesDao),
+  );
+  locator.registerLazySingleton<BaselineGuard>(
+    () => BaselineGuard(locator<RequestBaselineRepository>(), locator<RequestSettingsRepository>()),
+  );
   locator.registerLazySingleton<RunRequestScriptsUseCase>(
     () => RunRequestScriptsUseCase(
       locator<RequestScriptsRepository>(),
@@ -371,9 +483,23 @@ void _registerScripting() {
       locator<GlobalVariableRepository>(),
       const AssertionEvaluator(),
       locator<ResolveRequestDefaultsUseCase>(),
+      locator<BaselineGuard>(),
     ),
   );
   locator.registerFactory<RequestScriptsViewModel>(() => RequestScriptsViewModel(locator<RequestScriptsRepository>()));
+  locator.registerLazySingleton<ExportBaselinesUseCase>(
+    () => ExportBaselinesUseCase(locator<RequestBaselineRepository>(), locator<CollectionLoader>()),
+  );
+  // "Generate tests from OpenAPI…": a Tests folder of requests with assertions written into a collection.
+  locator.registerLazySingleton<GenerateOpenApiTestsUseCase>(
+    () => GenerateOpenApiTestsUseCase(
+      locator<CollectionRepository>(),
+      locator<RequestRepository>(),
+      locator<RequestScriptsRepository>(),
+      locator<RequestSettingsRepository>(),
+      locator<CollectionVariableRepository>(),
+    ),
+  );
 }
 
 /// What a collection and its folders pass down to their requests (headers, auth, variables, tests).
@@ -450,6 +576,7 @@ void _registerSettings() {
   locator.registerFactory<RequestSettingsViewModel>(
     () => RequestSettingsViewModel(locator<RequestSettingsRepository>(), locator<SettingsRepository>()),
   );
+  locator.registerFactory<RequestFlowViewModel>(() => RequestFlowViewModel(locator<RequestSettingsRepository>()));
 }
 
 void _registerDocumentation() {

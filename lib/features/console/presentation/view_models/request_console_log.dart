@@ -41,6 +41,25 @@ final class RequestConsoleLog with ChangeNotifier implements ApiCallObserver {
     );
   }
 
+  /// Adds a line about the request that follows (`attempt 2/3 after 1.2 s`): the flow around a send says here that
+  /// it is sending again, so a retry, a poll or a page is not mistaken for a request the user made twice. It is
+  /// stamped before the request it describes, so in the newest-first list it sits just below it.
+  void addNote(String message) {
+    _insert(ConsoleEntryEntity(
+      method: '',
+      url: '',
+      headersCount: 0,
+      bodySize: 0,
+      sentAt: DateTime.now(),
+      durationMs: null,
+      statusCode: null,
+      responseSize: null,
+      errorMessage: null,
+      note: SecretMasker.maskMessage(message),
+    ));
+    notifyListeners();
+  }
+
   void clear() {
     _entries.clear();
     notifyListeners();

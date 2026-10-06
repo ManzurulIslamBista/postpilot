@@ -1,8 +1,9 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:math';
 import '../../../../core/enums/auth_type.dart';
 import '../../../../core/enums/body_type.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../../../../core/network/upload_body.dart';
 import '../../../../core/utils/variable_resolver.dart';
 import '../../../defaults/domain/services/header_inheritance.dart';
 import '../entities/api_request_entity.dart';
@@ -17,12 +18,22 @@ import 'undefined_variables.dart';
 /// Resolves `{{variables}}`, encodes the body for its [BodyType], and signs
 /// auth headers for every type except Digest (which needs a 401 round-trip
 /// first — see `SendRequestUseCase._retryWithDigest`) and OAuth 2.0, whose
-/// token is fetched ahead of time by `RequestOAuth2ViewModel` and only
-/// applied here from the cache — `build` is synchronous. Shared, through
+/// token is fetched or renewed ahead of time (by `OAuth2TokenManager` just
+/// before a send, or by hand in the Auth tab) and only applied here from the
+/// cache — `build` is synchronous. Shared, through
 /// [PrepareRequestUseCase], by [SendRequestUseCase] and the code snippets so
 /// "what gets sent" and "what gets printed as a snippet" can never drift apart.
 final class RequestSpecBuilder {
-  const RequestSpecBuilder();
+  /// [boundary] makes the separator of a multipart body; replaced in tests to get a body that can be compared byte
+  /// for byte.
+  const RequestSpecBuilder({this._boundary = _newBoundary});
+
+  final String Function() _boundary;
+
+  static String _newBoundary() {
+    final random = Random.secure().nextInt(1 << 32).toRadixString(16).padLeft(8, '0');
+    return '----PostPilotBoundary${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}$random';
+  }
 
   /// [inheritedAuth] is the default auth of the nearest folder that sets one,
   /// else the collection's; it only takes effect when the request itself is set
@@ -54,7 +65,13 @@ final class RequestSpecBuilder {
     if (sendNoCache && !headers.keys.any((name) => name.toLowerCase() == 'cache-control')) {
       headers['Cache-Control'] = 'no-cache';
     }
-    return ResolvedRequestSpec(method: request.method.label, url: url, headers: headers, bodyBytes: body.bytes);
+    return ResolvedRequestSpec(
+      method: request.method.label,
+      url: url,
+      headers: headers,
+      bodyBytes: body.bytes,
+      upload: body.upload,
+    );
   }
 
   /// The `{{variables}}` [build] would leave in the request as literal text
@@ -136,9 +153,21 @@ final class RequestSpecBuilder {
         scanRows(body.urlEncodedFields, (key) => 'the form field "$key"', body: true);
       case BodyType.formData:
         scanRows(body.formFields, (key) => 'the form field "$key"', body: true);
+        for (final item in body.formFields) {
+          final key = tidy(resolver.resolve(item.key));
+          if (!item.enabled || !item.isFile || key.isEmpty) continue;
+          scan(item.fileName, 'the form field "$key"', body: true);
+          scan(item.contentType, 'the form field "$key"', body: true);
+        }
       case BodyType.graphql:
         scan(body.graphqlQuery, 'the GraphQL query', body: true);
         scan(body.graphqlVariables, 'the GraphQL variables', body: true);
+      case BodyType.binary:
+        final file = body.binaryFile;
+        if (file != null) {
+          scan(file.value, 'the file of the request body', body: true);
+          scan(file.contentType, 'the file of the request body', body: true);
+        }
     }
 
     return [for (final e in places.entries) UndefinedVariable(e.key, e.value, inBody: inBody.contains(e.key))];
@@ -223,6 +252,13 @@ final class RequestSpecBuilder {
     if (body.contentType != null && !headers.keys.any((name) => name.toLowerCase() == 'content-type')) {
       headers['Content-Type'] = body.contentType!;
     }
+    // A file is read when the request is sent, so its hash cannot go into the signature (S3 accepts this value over
+    // https; a `x-amz-content-sha256` row of the user's own wins).
+    if (body.upload != null &&
+        auth.type == AuthType.awsSignatureV4 &&
+        !headers.keys.any((name) => name.toLowerCase() == 'x-amz-content-sha256')) {
+      headers['X-Amz-Content-Sha256'] = 'UNSIGNED-PAYLOAD';
+    }
     _applyAuth(auth, headers, resolver, uri, body.bytes, method);
     return headers;
   }
@@ -296,6 +332,8 @@ final class RequestSpecBuilder {
           'variables': variables.isEmpty ? <String, dynamic>{} : _graphqlVariables(variables),
         });
         return _EncodedBody(bytes: utf8.encode(payload), contentType: 'application/json');
+      case BodyType.binary:
+        return _buildBinary(body, resolver, tidy);
     }
   }
 
@@ -320,16 +358,61 @@ final class RequestSpecBuilder {
     return decoded.cast<String, dynamic>();
   }
 
+  /// A form with no file is plain bytes. One with a file part is an [UploadBody] instead: only the reference to the
+  /// file is kept here, and the file is read in chunks when the request is sent (see `UploadPreparer`).
   _EncodedBody _buildMultipart(RequestBody body, VariableResolver resolver, _Tidy tidy) {
-    final boundary = '----PostPilotBoundary${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
-    final buffer = BytesBuilder();
-    for (final field in _rows(body.formFields, resolver, tidy)) {
-      buffer.add(utf8.encode('--$boundary\r\n'));
-      buffer.add(utf8.encode('Content-Disposition: form-data; name="${field.key}"\r\n\r\n'));
-      buffer.add(utf8.encode('${field.value}\r\n'));
+    final parts = <UploadPart>[];
+    for (final item in body.formFields) {
+      if (!item.enabled) continue;
+      final key = tidy(resolver.resolve(item.key));
+      if (key.isEmpty) continue;
+      parts.add(
+        item.isFile
+            ? UploadFilePart(key, _fileOf(item, 'the form field "$key"', resolver, tidy))
+            : UploadTextPart(key, tidy(resolver.resolve(item.value))),
+      );
     }
-    buffer.add(utf8.encode('--$boundary--\r\n'));
-    return _EncodedBody(bytes: buffer.toBytes(), contentType: 'multipart/form-data; boundary=$boundary');
+    final upload = MultipartUpload(boundary: _boundary(), parts: parts);
+    if (upload.files.isEmpty) return _EncodedBody(bytes: upload.toBytes(), contentType: upload.contentType);
+    return _EncodedBody(bytes: null, contentType: upload.contentType, upload: upload);
+  }
+
+  /// The file of a binary body goes out as the whole body, typed as its row says, else `application/octet-stream`.
+  _EncodedBody _buildBinary(RequestBody body, VariableResolver resolver, _Tidy tidy) {
+    final item = body.binaryFile;
+    final declared = item == null ? '' : tidy(resolver.resolve(item.contentType));
+    final upload = BinaryUpload(
+      UploadFile(
+        path: item == null ? '' : tidy(resolver.resolve(item.value)),
+        fileName: item == null ? '' : _fileNameOf(item, resolver, tidy),
+        contentType: declared.isEmpty ? BinaryUpload.defaultContentType : declared,
+        label: 'the request body',
+      ),
+    );
+    return _EncodedBody(bytes: null, contentType: upload.contentType, upload: upload);
+  }
+
+  UploadFile _fileOf(KeyValueItem item, String label, VariableResolver resolver, _Tidy tidy) {
+    final path = tidy(resolver.resolve(item.value));
+    final fileName = _fileNameOf(item, resolver, tidy);
+    final declared = tidy(resolver.resolve(item.contentType));
+    final guessed = ContentTypes.forFileName(FilePaths.baseName(path));
+    return UploadFile(
+      path: path,
+      fileName: fileName,
+      contentType: declared.isNotEmpty
+          ? declared
+          : (guessed != ContentTypes.fallback ? guessed : ContentTypes.forFileName(fileName)),
+      label: label,
+    );
+  }
+
+  /// The name the server sees: the row's own, else the name of the file.
+  String _fileNameOf(KeyValueItem item, VariableResolver resolver, _Tidy tidy) {
+    final own = tidy(resolver.resolve(item.fileName));
+    if (own.isNotEmpty) return own;
+    final named = FilePaths.baseName(tidy(resolver.resolve(item.value)));
+    return named.isEmpty ? 'file' : named;
   }
 }
 
@@ -338,5 +421,8 @@ typedef _Tidy = String Function(String text);
 final class _EncodedBody {
   final List<int>? bytes;
   final String? contentType;
-  const _EncodedBody({required this.bytes, required this.contentType});
+
+  /// Set instead of [bytes] when the body carries a file.
+  final UploadBody? upload;
+  const _EncodedBody({required this.bytes, required this.contentType, this.upload});
 }

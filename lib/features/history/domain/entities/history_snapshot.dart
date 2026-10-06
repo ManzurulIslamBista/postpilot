@@ -237,14 +237,12 @@ final class HistoryRequestSnapshot {
     );
   }
 
-  static List<Map<String, Object?>> _rows(List<KeyValueItem> items) =>
-      [for (final i in items) {'key': i.key, 'value': i.value, 'enabled': i.enabled}];
+  /// A form-data file row keeps the reference to its file (a path, a name and a type), never the file.
+  static List<Map<String, Object?>> _rows(List<KeyValueItem> items) => [for (final i in items) i.toJson()];
 
   static List<KeyValueItem> _items(Object? raw) => [
         if (raw is List)
-          for (final row in raw)
-            if (row is Map && row['key'] is String)
-              KeyValueItem(key: row['key'] as String, value: row['value'] as String? ?? '', enabled: row['enabled'] != false),
+          for (final row in raw) ?KeyValueItem.tryFromJson(row),
       ];
 }
 

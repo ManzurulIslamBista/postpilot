@@ -63,7 +63,7 @@ abstract final class RequestDocMapper {
     final localTests = localData?['tests'] as Map?;
     final assertions = DocValues.assertions(tests['assertions'], keepingSecretsOf: localTests?['assertions']);
     final extractors = DocValues.jsonList(tests['extractors']);
-    final settings = DocValues.jsonMap(data['settings']);
+    final settings = DocValues.requestSettings(data['settings'], keepingSecretsOf: localData?['settings']);
     return SyncDoc(
       uid: doc.uid,
       kind: SyncKind.request,

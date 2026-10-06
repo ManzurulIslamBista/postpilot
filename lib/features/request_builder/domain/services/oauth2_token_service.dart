@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import '../../../../core/enums/auth_type.dart';
+import '../../../../core/errors/app_exception.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_http_response.dart';
+import '../../../../core/utils/variable_resolver.dart';
+import '../../../documentation/domain/services/secret_masker.dart';
 import '../../../settings/domain/entities/effective_request_options.dart';
 import '../../../settings/domain/repositories/settings_repository.dart';
 import '../entities/request_auth.dart';
@@ -33,9 +36,31 @@ final class OAuth2PkcePair {
   const OAuth2PkcePair({required this.verifier, required this.challenge});
 }
 
+/// What a failed token request says about its cause, so a caller can react (fall back from a rejected
+/// refresh token to the configured grant) and show a specific message instead of one generic line.
+enum OAuth2FailureKind {
+  /// `invalid_client` / `unauthorized_client`, or a 401 without an OAuth error: the client id or secret was refused.
+  invalidClient,
+
+  /// `invalid_grant`: the refresh token, authorization code, or user name and password was refused.
+  invalidGrant,
+
+  /// The token endpoint could not be reached (DNS, refused, TLS, timeout).
+  network,
+
+  /// The URL answered, but not like a token endpoint: 404, an HTML page, JSON without an `access_token`.
+  badEndpoint,
+
+  other,
+}
+
 final class OAuth2TokenException implements Exception {
+  /// The server's `error_description` (or `error`), or a sentence saying what the endpoint returned.
+  /// May quote server text, so a caller that shows it masks it.
   final String message;
-  const OAuth2TokenException(this.message);
+  final OAuth2FailureKind kind;
+
+  const OAuth2TokenException(this.message, {this.kind = OAuth2FailureKind.other});
 
   @override
   String toString() => message;
@@ -125,9 +150,66 @@ final class OAuth2TokenService {
     Map<String, String> grantFields, {
     String? previousRefreshToken,
   }) async {
-    final response = await _apiClient.send(buildTokenRequest(auth, grantFields, options: _networkOptions()));
-    return parseTokenResponse(response, _now(), previousRefreshToken: previousRefreshToken);
+    if (auth.oauth2AccessTokenUrl.trim().isEmpty) {
+      throw const OAuth2TokenException(
+        'The Auth tab has no Access Token URL, so there is no token endpoint to ask.',
+        kind: OAuth2FailureKind.badEndpoint,
+      );
+    }
+    final ApiHttpResponse response;
+    try {
+      response = await _apiClient.send(buildTokenRequest(auth, grantFields, options: _networkOptions()));
+    } on NetworkException catch (e) {
+      if (e.kind == NetworkErrorKind.cancelled) rethrow;
+      // The detail can quote the URL, and a token URL may carry a key in its query: host only, rest masked.
+      final host = Uri.tryParse(auth.oauth2AccessTokenUrl.trim())?.host ?? '';
+      final why = SecretMasker.maskMessage(e.summary ?? e.message);
+      throw OAuth2TokenException(
+        'Could not reach the token endpoint${host.isEmpty ? '' : ' at $host'}: $why',
+        kind: OAuth2FailureKind.network,
+      );
+    }
+    try {
+      return parseTokenResponse(response, _now(), previousRefreshToken: previousRefreshToken);
+    } on OAuth2TokenException catch (e) {
+      // An `error_description` can echo what was sent: the refused refresh token, the code, the password.
+      throw OAuth2TokenException(
+        _scrub(e.message, [
+          auth.oauth2ClientSecret,
+          for (final field in _secretFields) grantFields[field] ?? '',
+        ]),
+        kind: e.kind,
+      );
+    }
   }
+
+  /// The fields of a token request that hold a credential; `grant_type` and the like are words, not secrets.
+  static const _secretFields = ['refresh_token', 'code', 'code_verifier', 'password'];
+
+  /// [text] with each of [secrets] (when it is long enough not to be a coincidence) masked, and anything that
+  /// looks like a credential on top of that.
+  static String _scrub(String text, Iterable<String> secrets) {
+    var clean = text;
+    for (final secret in secrets) {
+      if (secret.length >= 3) clean = clean.replaceAll(secret, SecretMasker.mask);
+    }
+    return SecretMasker.maskBody(SecretMasker.maskMessage(clean));
+  }
+
+  /// [auth] with `{{variables}}` resolved in every field a token request reads. The token request
+  /// bypasses `RequestSpecBuilder`, so whoever calls it resolves first; the unresolved auth is what gets
+  /// persisted.
+  static RequestAuth resolveFields(RequestAuth auth, VariableResolver resolver) => auth.copyWith(
+        oauth2AccessTokenUrl: resolver.resolve(auth.oauth2AccessTokenUrl),
+        oauth2AuthorizationUrl: resolver.resolve(auth.oauth2AuthorizationUrl),
+        oauth2RedirectUri: resolver.resolve(auth.oauth2RedirectUri),
+        oauth2ClientId: resolver.resolve(auth.oauth2ClientId),
+        oauth2ClientSecret: resolver.resolve(auth.oauth2ClientSecret),
+        oauth2Scope: resolver.resolve(auth.oauth2Scope),
+        oauth2Username: resolver.resolve(auth.oauth2Username),
+        oauth2Password: resolver.resolve(auth.oauth2Password),
+        oauth2Audience: resolver.resolve(auth.oauth2Audience),
+      );
 
   /// A token request is no saved request, so no per-request overrides apply.
   ApiRequestOptions _networkOptions() {
@@ -204,6 +286,7 @@ final class OAuth2TokenService {
         error is String && error.isNotEmpty
             ? error
             : 'Token endpoint returned ${response.statusCode} without an access_token.',
+        kind: _failureKind(response.statusCode, map['error']),
       );
     }
     final expiresIn = map['expires_in'];
@@ -215,6 +298,19 @@ final class OAuth2TokenService {
       expiresAt: seconds == null ? null : now.add(Duration(seconds: seconds)),
       refreshToken: refreshToken is String && refreshToken.isNotEmpty ? refreshToken : previousRefreshToken,
     );
+  }
+
+  /// RFC 6749 §5.2 names the cause in `error`; a 401 without one is how most servers say the client
+  /// credentials were refused; anything without an OAuth error is not a token endpoint's answer at all.
+  static OAuth2FailureKind _failureKind(int statusCode, Object? error) {
+    if (error is String && error.isNotEmpty) {
+      return switch (error) {
+        'invalid_client' || 'unauthorized_client' => OAuth2FailureKind.invalidClient,
+        'invalid_grant' => OAuth2FailureKind.invalidGrant,
+        _ => OAuth2FailureKind.other,
+      };
+    }
+    return statusCode == 401 ? OAuth2FailureKind.invalidClient : OAuth2FailureKind.badEndpoint;
   }
 
   static Map<String, dynamic> _decodeBody(String text) {

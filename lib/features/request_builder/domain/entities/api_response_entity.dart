@@ -16,6 +16,10 @@ final class ApiResponseEntity {
   /// [bodyBytes] is only the first part of what the server sent.
   final bool truncated;
 
+  /// What the app did to the request's authentication before and after sending it, one line each: a
+  /// token renewed, a re-login run and the request sent again. Never holds a token. Empty when nothing happened.
+  final List<String> authNotes;
+
   const ApiResponseEntity({
     required this.statusCode,
     required this.statusMessage,
@@ -24,7 +28,22 @@ final class ApiResponseEntity {
     required this.duration,
     this.truncated = false,
     this.setCookies = const [],
+    this.authNotes = const [],
   });
+
+  /// The same response with [notes] after the ones it has.
+  ApiResponseEntity withAuthNotes(List<String> notes) => notes.isEmpty
+      ? this
+      : ApiResponseEntity(
+          statusCode: statusCode,
+          statusMessage: statusMessage,
+          headers: headers,
+          bodyBytes: bodyBytes,
+          duration: duration,
+          truncated: truncated,
+          setCookies: setCookies,
+          authNotes: [...authNotes, ...notes],
+        );
 
   bool get isSuccess => statusCode >= 200 && statusCode < 300;
   int get sizeBytes => bodyBytes.length;

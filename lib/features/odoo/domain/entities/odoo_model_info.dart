@@ -18,6 +18,9 @@ final class OdooField {
   final List<(String, String)> selection;
   final String? help;
 
+  /// The many2one field of the related model that a `one2many` mirrors (`order_id` for `sale.order.order_line`).
+  final String? relationField;
+
   const OdooField({
     required this.name,
     required this.type,
@@ -28,10 +31,16 @@ final class OdooField {
     this.relation,
     this.selection = const [],
     this.help,
+    this.relationField,
   });
 
   bool get isRelational => type == 'many2one' || type == 'one2many' || type == 'many2many';
   bool get isNumeric => type == 'integer' || type == 'float' || type == 'monetary';
+  bool get isX2many => type == 'one2many' || type == 'many2many';
+
+  /// The columns Odoo maintains itself: no payload should write them.
+  static const magicNames = {'id', 'create_uid', 'create_date', 'write_uid', 'write_date', 'display_name', '__last_update'};
+  bool get isMagic => magicNames.contains(name);
 }
 
 /// A model and its fields, read from a `fields_get` response.
@@ -81,6 +90,9 @@ final class OdooModelInfo {
         relation: def['relation'] as String?,
         selection: selection,
         help: def['help'] is String && (def['help'] as String).isNotEmpty ? def['help'] as String : null,
+        relationField: def['relation_field'] is String && (def['relation_field'] as String).isNotEmpty
+            ? def['relation_field'] as String
+            : null,
       ));
     }
     fields.sort((a, b) => a.name == 'id' ? -1 : (b.name == 'id' ? 1 : a.name.compareTo(b.name)));

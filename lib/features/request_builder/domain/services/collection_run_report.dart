@@ -11,8 +11,10 @@ final class RunIteration {
 
   RunIteration(this.number, this.data);
 
-  int get passedCount => results.where((r) => r.passed).length;
-  bool get allPassed => passedCount == results.length;
+  /// Requests that were sent and passed: a skipped one is neither passed nor failed.
+  int get passedCount => results.where((r) => r.passed && !r.isSkipped).length;
+  int get skippedCount => results.where((r) => r.isSkipped).length;
+  bool get allPassed => results.every((r) => r.passed);
 }
 
 /// Totals over a run's results. Times are response times, so a request that
@@ -26,6 +28,9 @@ final class CollectionRunSummary {
   final Duration totalTime;
   final Duration averageTime;
 
+  /// Requests that were not sent because their Run if conditions did not hold: not passed, and not failed either.
+  final int skipped;
+
   const CollectionRunSummary({
     required this.iterations,
     required this.requests,
@@ -34,9 +39,10 @@ final class CollectionRunSummary {
     required this.passedAssertions,
     required this.totalTime,
     required this.averageTime,
+    this.skipped = 0,
   });
 
-  int get failed => requests - passed;
+  int get failed => requests - passed - skipped;
 
   factory CollectionRunSummary.of(Iterable<CollectionRunResult> results) {
     var total = Duration.zero;
@@ -50,7 +56,8 @@ final class CollectionRunSummary {
     return CollectionRunSummary(
       iterations: {for (final r in results) r.iteration}.length,
       requests: results.length,
-      passed: results.where((r) => r.passed).length,
+      passed: results.where((r) => r.passed && !r.isSkipped).length,
+      skipped: results.where((r) => r.isSkipped).length,
       assertions: results.fold(0, (n, r) => n + r.assertionCount),
       passedAssertions: results.fold(0, (n, r) => n + r.passedAssertionCount),
       totalTime: total,
@@ -87,6 +94,7 @@ final class CollectionRunExporter {
         'requests': summary.requests,
         'passed': summary.passed,
         'failed': summary.failed,
+        if (summary.skipped > 0) 'skipped': summary.skipped,
         'assertions': summary.assertions,
         'assertionsPassed': summary.passedAssertions,
         'totalTimeMs': summary.totalTime.inMilliseconds,
@@ -109,6 +117,9 @@ final class CollectionRunExporter {
                   'assertionsTotal': r.assertionCount,
                   'failures': r.failures,
                   'error': r.error,
+                  if (r.isSkipped) 'skipped': r.skipped,
+                  'flow': ?r.flowJson,
+                  if (r.authNotes.isNotEmpty) 'authNotes': r.authNotes,
                 },
             ],
           },
@@ -116,34 +127,41 @@ final class CollectionRunExporter {
     });
   }
 
-  String toCsv(List<RunIteration> iterations) => Csv(lineDelimiter: '\n').encode([
-        [
-          'iteration',
-          'request',
-          'method',
-          'status',
-          'timeMs',
-          'passed',
-          'assertionsPassed',
-          'assertionsTotal',
-          'failures',
-          'error',
-        ],
-        for (final iteration in iterations)
-          for (final r in iteration.results)
-            [
-              iteration.number,
-              _cell(r.request.name),
-              r.request.method.label,
-              r.response?.statusCode ?? '',
-              r.response?.duration.inMilliseconds ?? '',
-              r.passed,
-              r.passedAssertionCount,
-              r.assertionCount,
-              _cell(r.failures.join('; ')),
-              _cell(r.error ?? ''),
-            ],
-      ]);
+  String toCsv(List<RunIteration> iterations) {
+    // A `flow` column (why a request was skipped, how many attempts, polls and pages it took) is only there when some
+    // result has something to say about it, so a run without flow controls exports the columns it always did.
+    final withFlow = iterations.any((i) => i.results.any((r) => r.flowText != null));
+    return Csv(lineDelimiter: '\n').encode([
+      [
+        'iteration',
+        'request',
+        'method',
+        'status',
+        'timeMs',
+        'passed',
+        'assertionsPassed',
+        'assertionsTotal',
+        'failures',
+        'error',
+        if (withFlow) 'flow',
+      ],
+      for (final iteration in iterations)
+        for (final r in iteration.results)
+          [
+            iteration.number,
+            _cell(r.request.name),
+            r.request.method.label,
+            r.response?.statusCode ?? '',
+            r.response?.duration.inMilliseconds ?? '',
+            r.passed,
+            r.passedAssertionCount,
+            r.assertionCount,
+            _cell(r.failures.join('; ')),
+            _cell(r.error ?? ''),
+            if (withFlow) _cell(r.flowText ?? ''),
+          ],
+    ]);
+  }
 
   static final _formulaStart = RegExp(r'^[=+\-@\t\r]');
 

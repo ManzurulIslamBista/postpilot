@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../ci/presentation/ci_setup_dialog.dart';
 import '../view_models/workplace_view_model.dart';
 import 'add_workplace_dialog.dart';
 import 'push_to_git.dart';
@@ -138,6 +139,19 @@ class WorkplaceSidebarHeader extends StatelessWidget {
 
             items.add(
               const PopupMenuItem<String>(
+                value: 'set_up_ci',
+                child: Row(
+                  children: [
+                    Icon(Icons.rocket_launch_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Flexible(child: Text('Set up CI…', overflow: TextOverflow.ellipsis)),
+                  ],
+                ),
+              ),
+            );
+
+            items.add(
+              const PopupMenuItem<String>(
                 value: 'workplace_settings',
                 child: Row(
                   children: [
@@ -252,6 +266,8 @@ class WorkplaceSidebarHeader extends StatelessWidget {
       await pushWorkplaceToGit(context, vm);
     } else if (action == 'pull_git') {
       await pullWorkplaceFromGit(context, vm);
+    } else if (action == 'set_up_ci') {
+      await CiSetupDialog.show(context);
     } else if (action == 'workplace_settings') {
       if (vm.activeWorkplace != null) {
         await WorkplaceSettingsDialog.show(context, vm.activeWorkplace!);

@@ -127,7 +127,7 @@ class _RequestSettingsTabState extends State<RequestSettingsTab> {
                 child: TextButton.icon(
                   icon: const Icon(Icons.restart_alt, size: 16),
                   label: const Text('Use global settings for everything'),
-                  onPressed: overrides.isEmpty ? null : vm.clear,
+                  onPressed: overrides.hasOverrides ? vm.clear : null,
                 ),
               ),
             ],

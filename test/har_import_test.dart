@@ -176,7 +176,7 @@ void main() {
       expect(request.body.urlEncodedFields.map((f) => (f.key, f.value)), [('q', 'hello world'), ('flag', ''), ('empty', '')]);
     });
 
-    test('multipart with params keeps text fields and drops file parts', () {
+    test('multipart with params keeps text fields and imports file parts as file rows named by the HAR', () {
       final request = _parseOne(_entry('POST', 'https://a.test/upload', postData: {
         'mimeType': 'multipart/form-data; boundary=----X',
         'params': [
@@ -186,7 +186,10 @@ void main() {
       }));
 
       expect(request.body.type, BodyType.formData);
-      expect(request.body.formFields.map((f) => (f.key, f.value)), [('title', 'Cat')]);
+      expect(request.body.formFields.map((f) => (f.key, f.value, f.isFile, f.contentType)), [
+        ('title', 'Cat', false, ''),
+        ('photo', 'cat.png', true, 'image/png'),
+      ]);
     });
 
     test('multipart recorded only as text replays as a raw body under its own boundary', () {

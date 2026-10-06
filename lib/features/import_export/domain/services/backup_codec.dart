@@ -321,9 +321,9 @@ abstract final class BackupCodec {
     };
   }
 
-  static List<Map<String, dynamic>> _encodeItems(List<KeyValueItem> items) => [
-    for (final i in items) {'key': i.key, 'value': i.value, 'enabled': i.enabled},
-  ];
+  /// A text row is `{key, value, enabled}`; a form-data file row also says `kind: file` (see [KeyValueItem.toJson]),
+  /// and carries only the reference to its file: never its content.
+  static List<Map<String, dynamic>> _encodeItems(List<KeyValueItem> items) => [for (final i in items) i.toJson()];
 
   /// The scripts columns are JSON arrays kept as text; the file embeds them
   /// as real arrays instead of doubly-escaped strings.
@@ -586,8 +586,7 @@ abstract final class BackupCodec {
   );
 
   static List<KeyValueItem> _decodeItems(dynamic list) => [
-    for (final i in _maps(list))
-      KeyValueItem(key: _text(i['key']), value: _text(i['value']), enabled: i['enabled'] != false),
+    for (final i in _maps(list)) KeyValueItem.tryFromJson({...i, 'key': _text(i['key']), 'value': _text(i['value'])})!,
   ];
 
   static T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) =>

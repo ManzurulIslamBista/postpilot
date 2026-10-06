@@ -5,7 +5,12 @@ import '../../../git_sync/domain/services/secret_names.dart';
 final class HarHeader {
   final String name;
   final String value;
-  const HarHeader(this.name, this.value);
+
+  /// Set on a form field that sends a file: HAR then writes `fileName` (and `contentType`) and no `value`, so
+  /// nothing of the file or of the path it was read from is in the recording.
+  final String? fileName;
+  final String? fileContentType;
+  const HarHeader(this.name, this.value, {this.fileName, this.fileContentType});
 }
 
 /// One recorded send, in the terms HAR uses. Built from History entries by
@@ -132,7 +137,15 @@ abstract final class HarExporter {
         'postData': {
           'mimeType': mime.isEmpty ? 'multipart/form-data' : mime,
           'params': [
-            for (final p in params) {'name': p.name, 'value': SecretMasker.maskValue(p.name, p.value)},
+            for (final p in params)
+              if (p.fileName != null)
+                {
+                  'name': p.name,
+                  'fileName': p.fileName,
+                  if (p.fileContentType != null && p.fileContentType!.isNotEmpty) 'contentType': p.fileContentType,
+                }
+              else
+                {'name': p.name, 'value': SecretMasker.maskValue(p.name, p.value)},
           ],
         }
       else if (body != null && body.isNotEmpty)

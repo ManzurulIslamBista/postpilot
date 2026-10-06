@@ -2,6 +2,8 @@ import 'widgets/variables/variable_text_form_field.dart';
 import 'view_models/variable_scope.dart';
 import '../../defaults/presentation/view_models/inherited_defaults_view_model.dart';
 import '../../defaults/presentation/widgets/request_inherited_sections.dart';
+import '../../auth_renewal/presentation/widgets/auth_notes_banner.dart';
+import '../../auth_renewal/presentation/widgets/inherited_oauth2_status.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
@@ -12,6 +14,8 @@ import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/resizable_split.dart';
 import '../../documentation/presentation/widgets/request_docs_tab.dart';
 import '../../odoo/presentation/widgets/odoo_error_banner.dart';
+import '../../request_flow/presentation/widgets/flow_report_strip.dart';
+import '../../request_flow/presentation/widgets/request_flow_tab.dart';
 import '../../safety/domain/services/production_guard.dart';
 import '../../safety/presentation/production_confirm_dialog.dart';
 import '../../scripting/presentation/widgets/request_tests_tab.dart';
@@ -390,7 +394,7 @@ class _UrlBarState extends State<_UrlBar> {
             )
           else
             GradientButton(
-              label: 'Send',
+              label: vm.sendLabel,
               icon: widget.compact ? null : Icons.send_rounded,
               padding: EdgeInsets.symmetric(horizontal: widget.compact ? 14 : 20, vertical: 11),
               onPressed: vm.send,
@@ -409,7 +413,7 @@ class _RequestPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final request = vm.request!;
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Column(
         children: [
           const Align(
@@ -423,6 +427,7 @@ class _RequestPane extends StatelessWidget {
                 Tab(text: 'Body'),
                 Tab(text: 'Auth'),
                 Tab(text: 'Tests'),
+                Tab(text: 'Flow'),
                 Tab(text: 'Settings'),
                 Tab(text: 'Docs'),
               ],
@@ -448,6 +453,7 @@ class _RequestPane extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       RequestInheritedAuth(auth: request.auth, onOverride: vm.updateAuth),
+                      InheritedOAuth2Status(requestAuth: request.auth),
                       AuthEditor(
                         auth: request.auth,
                         collectionId: request.collectionId,
@@ -458,6 +464,14 @@ class _RequestPane extends StatelessWidget {
                   ),
                 ),
                 _scrollable(RequestTestsTab(requestId: request.id)),
+                _scrollable(
+                  RequestFlowTab(
+                    requestId: request.id,
+                    method: request.method,
+                    request: request,
+                    response: vm.response,
+                  ),
+                ),
                 _scrollable(RequestSettingsTab(requestId: request.id)),
                 _scrollable(RequestDocsTab(requestId: request.id)),
               ],
@@ -512,7 +526,10 @@ class _ResponsePane extends StatelessWidget {
                     ],
                   ),
           ),
-        if (vm.response != null) OdooErrorBanner(response: vm.response!),
+        if (vm.response != null) AuthNotesBanner(notes: vm.response!.authNotes),
+        if (vm.response != null) OdooErrorBanner(response: vm.response!, request: request),
+        if (vm.isSending && vm.flowStatus != null) _FlowStatusLine(text: vm.flowStatus!),
+        if (vm.lastFlow != null) FlowReportStrip(report: vm.lastFlow!),
         if (vm.lastScriptResult != null) ScriptResultsView(result: vm.lastScriptResult!),
         Expanded(
           child: Padding(
@@ -526,6 +543,21 @@ class _ResponsePane extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// What the flow around a send in flight is doing right now (`attempt 2/3 after 1.2 s`, `poll 4/30`, `page 3`),
+/// under the progress bar. Only there while sending.
+class _FlowStatusLine extends StatelessWidget {
+  final String text;
+  const _FlowStatusLine({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      child: Text(text, style: context.textStyles.caption.copyWith(color: context.colors.secondaryText)),
     );
   }
 }

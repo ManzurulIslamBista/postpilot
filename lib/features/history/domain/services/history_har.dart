@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../../../../core/enums/auth_type.dart';
 import '../../../../core/enums/body_type.dart';
+import '../../../../core/network/upload_body.dart';
 import '../../../documentation/domain/services/secret_masker.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
 import '../entities/history_entry_entity.dart';
@@ -36,6 +37,7 @@ abstract final class HistoryHar {
     String? bodyText;
     List<HarHeader>? params;
     String? mime;
+    String? binaryNote;
     switch (body.type) {
       case BodyType.none:
         break;
@@ -56,8 +58,25 @@ abstract final class HistoryHar {
       case BodyType.formData:
         final fields = [for (final f in body.formFields) if (f.enabled && f.key.isNotEmpty) f];
         if (fields.isNotEmpty) {
-          params = [for (final f in fields) HarHeader(ex(f.key), ex(f.value))];
+          params = [
+            for (final f in fields)
+              f.isFile
+                  ? HarHeader(
+                      ex(f.key),
+                      '',
+                      fileName: f.fileName.isNotEmpty ? ex(f.fileName) : FilePaths.baseName(ex(f.value)),
+                      fileContentType: ex(f.contentType),
+                    )
+                  : HarHeader(ex(f.key), ex(f.value)),
+          ];
           mime = 'multipart/form-data';
+        }
+      case BodyType.binary:
+        final file = body.binaryFile;
+        if (file != null && file.value.isNotEmpty) {
+          mime = file.contentType.isEmpty ? BinaryUpload.defaultContentType : ex(file.contentType);
+          // HAR has no place for a file body; its name is noted and none of its content (or path) is recorded.
+          binaryNote = 'The body is the file "${FilePaths.baseName(ex(file.value))}".';
         }
     }
     final explicitType = headers.where((h) => h.name.toLowerCase() == 'content-type').firstOrNull;
@@ -91,7 +110,11 @@ abstract final class HistoryHar {
       responseBytes: meta.responseBytes,
       responseTruncated: detail?.responseTruncated ?? false,
       error: meta.error,
-      comment: [if (context.isNotEmpty) context, if (meta.environmentName != null) '(${meta.environmentName})'].join(' '),
+      comment: [
+        if (context.isNotEmpty) context,
+        if (meta.environmentName != null) '(${meta.environmentName})',
+        ?binaryNote,
+      ].join(' '),
     );
   }
 

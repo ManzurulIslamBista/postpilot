@@ -4,6 +4,7 @@ import '../../../collections/domain/entities/collection_entity.dart';
 import '../../../import_export/domain/services/collection_loader.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
+import '../../../request_builder/domain/entities/response_example_entity.dart';
 import '../../../request_builder/domain/repositories/response_example_repository.dart';
 import '../services/api_layer_generator.dart';
 
@@ -16,12 +17,18 @@ final class BuildApiLayerUseCase {
   const BuildApiLayerUseCase(this._loader, this._examples);
 
   Future<ApiLayerResult> call(int collectionId, ApiLayerOptions options) async {
+    final spec = await specs(collectionId);
+    return const ApiLayerGenerator().generate(spec.name, spec.requests, options: options);
+  }
+
+  /// The collection as the generators read it: its name and one [ApiSpecRequest] per request, saved examples included.
+  Future<({String name, List<ApiSpecRequest> requests})> specs(int collectionId) async {
     final loaded = await _loader.load(collectionId);
     final requests = <ApiSpecRequest>[];
     for (final request in loaded.requests) {
       requests.add(await _spec(request, loaded.folders, loaded.auth));
     }
-    return const ApiLayerGenerator().generate(loaded.collection.name, requests, options: options);
+    return (name: loaded.collection.name, requests: requests);
   }
 
   Future<ApiSpecRequest> _spec(ApiRequestEntity r, List<FolderEntity> folders, RequestAuth? collectionAuth) async {
@@ -32,11 +39,14 @@ final class BuildApiLayerUseCase {
       BodyType.formData => ApiBodyKind.form,
       BodyType.urlEncoded => ApiBodyKind.urlEncoded,
       BodyType.graphql => ApiBodyKind.graphql,
+      // The generated layer has no file upload yet: a binary body is left out rather than sent as text.
+      BodyType.binary => ApiBodyKind.none,
     };
     // Auth the request inherits is the collection's. An API key is just a header or a query
     // parameter; a bearer token is the generated interceptor's job; the rest cannot be generated.
     final auth = r.auth.resolveInherited(collectionAuth);
     final apiKey = auth.type == AuthType.apiKey && auth.apiKeyName.isNotEmpty ? (auth.apiKeyName, auth.apiKeyValue) : null;
+    final saved = await _examples.watchByRequest(r.id).first;
     return ApiSpecRequest(
       name: r.name,
       method: r.method.label,
@@ -55,14 +65,14 @@ final class BuildApiLayerUseCase {
       },
       bodyKind: kind,
       bodyText: body.type == BodyType.graphql ? body.graphqlQuery : body.rawText,
-      exampleResponse: await _example(r.id),
+      exampleResponse: _successBody(saved),
+      examples: [for (final e in saved) ApiSpecExample(name: e.name, statusCode: e.statusCode, body: e.body)],
       folders: _folderNames(r.folderId, folders),
     );
   }
 
   /// The newest successful example's body, if there is one.
-  Future<String?> _example(int requestId) async {
-    final examples = await _examples.watchByRequest(requestId).first;
+  String? _successBody(List<ResponseExampleEntity> examples) {
     for (final e in examples) {
       if (e.isSuccess && e.body.trim().isNotEmpty) return e.body;
     }

@@ -75,6 +75,16 @@ class GeneralSettingsPane extends StatelessWidget {
           description: 'Strip leading and trailing whitespace from header, query and form-field keys and values.',
           control: Switch(value: settings.trimKeysAndValues, onChanged: viewModel.setTrimKeysAndValues),
         ),
+        SettingRow(
+          title: 'Max upload size',
+          description: 'A request that uploads more than this in files is refused before it is sent. 0 sends any size.',
+          note: isWeb ? 'A browser holds the whole file in memory while it is sent' : null,
+          control: SettingNumberField(
+            value: settings.maxUploadSizeMb,
+            suffixText: 'MB',
+            onChanged: viewModel.setMaxUploadSizeMb,
+          ),
+        ),
       ],
     );
   }

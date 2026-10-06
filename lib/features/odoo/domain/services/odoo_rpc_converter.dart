@@ -58,6 +58,19 @@ abstract final class OdooRpcConverter {
         note: 'check_access_rights was removed: use has_access(operation) on the records.'),
   };
 
+  /// The parameter names of [method] in the order the old positional API took them, and whether it acts on records
+  /// (the list of ids is then its first positional argument). Null for a method this table does not know. The same
+  /// table turns a JSON-2 call back into a `call_kw` one (see `OdooJsonRpc`).
+  static ({List<String> params, bool recordset})? signatureOf(String method) {
+    final s = _signatures[method];
+    return s == null ? null : (params: s.params, recordset: s.recordset);
+  }
+
+  /// A `call_kw` that is already taken apart (the checker reads a body itself, keeping its `{{variables}}`) written as
+  /// a JSON-2 call.
+  static OdooConversionResult fromCallKw(String model, String method, List<dynamic> args, Map<String, Object?> kwargs) =>
+      _build(model, method, args, kwargs, source: '/web/dataset/call_kw');
+
   static OdooConversionResult convert(String input) {
     final text = input.trim();
     if (text.isEmpty) return const OdooConversionResult.failed('Paste an old XML-RPC / JSON-RPC call to convert.');

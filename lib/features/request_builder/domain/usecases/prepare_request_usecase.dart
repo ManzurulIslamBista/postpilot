@@ -1,3 +1,4 @@
+import '../../../../core/enums/auth_type.dart';
 import '../../../../core/usecases/usecase.dart';
 import '../../../../core/utils/variable_resolver.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
@@ -75,9 +76,15 @@ final class PrepareRequestUseCase implements UseCase<PreparedRequest, ApiRequest
   });
 
   /// [dataVariables] are a collection run's data row: the highest-priority
-  /// variable scope.
+  /// variable scope. [authOverride] is the auth in force with a token renewed since it was read (see
+  /// `RenewRequestAuthUseCase`): it takes the place of the inherited auth for a request that inherits,
+  /// else of the request's own.
   @override
-  Future<PreparedRequest> call(ApiRequestEntity request, {Map<String, String> dataVariables = const {}}) async {
+  Future<PreparedRequest> call(
+    ApiRequestEntity request, {
+    Map<String, String> dataVariables = const {},
+    RequestAuth? authOverride,
+  }) async {
     final options = await _effectiveOptions(request.id);
     final inherited = await _defaults?.call(request);
     final resolver = await _buildVariableResolverUseCase(
@@ -86,8 +93,15 @@ final class PrepareRequestUseCase implements UseCase<PreparedRequest, ApiRequest
       folderId: request.folderId,
       inherited: inherited,
     );
-    final inheritedAuth =
+    var inheritedAuth =
         inherited?.auth ?? RequestAuth.fromJsonString(await _collectionAuthRepository.getAuthJson(request.collectionId));
+    if (authOverride != null) {
+      if (request.auth.type == AuthType.inherit) {
+        inheritedAuth = authOverride;
+      } else {
+        request = request.copyWith(auth: authOverride);
+      }
+    }
     final inheritedHeaders = inherited?.headerRows ?? const [];
     final spec = _specBuilder.build(
       request,

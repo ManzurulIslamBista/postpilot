@@ -2,9 +2,11 @@ import 'dart:convert';
 import '../../../../../core/enums/auth_type.dart';
 import '../../../../../core/enums/body_type.dart';
 import '../../../../../core/enums/http_method.dart';
+import '../../../../../core/network/upload_body.dart';
 import '../../entities/key_value_item.dart';
 import '../../entities/request_auth.dart';
 import '../../entities/request_body.dart';
+import 'upload_path_note.dart';
 
 final class ParsedCurlRequest {
   final HttpMethod method;
@@ -20,11 +22,15 @@ final class ParsedCurlRequest {
   final String? body;
   final RequestAuth auth;
 
-  /// The fields of `-F` / `--form`; they make the body multipart form data.
+  /// The fields of `-F` / `--form`; they make the body multipart form data. A `name=@file` field is a file row.
   final List<KeyValueItem> formFields;
 
+  /// The file of `--data-binary @file` or `-T file`: the whole body, sent as it is. A file row without a key.
+  final KeyValueItem? binaryFile;
+
   /// What the command asks for that PostPilot cannot do (a body read from a
-  /// file, an uploaded file, ...), one sentence each. Never dropped silently.
+  /// file, ...), and what it brought in that needs a look (a file path of this machine), one sentence each.
+  /// Never dropped silently.
   final List<String> notes;
 
   const ParsedCurlRequest({
@@ -34,13 +40,17 @@ final class ParsedCurlRequest {
     this.body,
     required this.auth,
     this.formFields = const [],
+    this.binaryFile,
     this.notes = const [],
   });
 
-  /// The body as a request body: form data for `-F`, otherwise the raw text typed by its `Content-Type`
-  /// (JSON-looking text is JSON when none is declared). [RequestBody.empty] when the command sends nothing.
+  /// The body as a request body: form data for `-F`, a binary body for `--data-binary @file`, otherwise the raw
+  /// text typed by its `Content-Type` (JSON-looking text is JSON when none is declared). [RequestBody.empty] when
+  /// the command sends nothing.
   RequestBody get requestBody {
     if (formFields.isNotEmpty) return RequestBody(type: BodyType.formData, formFields: formFields);
+    final file = binaryFile;
+    if (file != null) return const RequestBody(type: BodyType.binary).withBinaryFile(file);
     final text = body;
     if (text == null) return RequestBody.empty;
     return RequestBody(type: BodyType.raw, rawContentType: _rawTypeOf(headers, text), rawText: text);
@@ -65,7 +75,8 @@ final class ParsedCurlRequest {
 /// Parses a `curl ...` command line into a request. Covers the flags people
 /// actually paste from browser dev tools / API docs: -X, -H, -d/--data*/--json
 /// (several pieces are joined with `&`, `-G` moves them into the query),
-/// -F (form data), -u (basic or `--digest` auth), -b/-A/-e/-r (Cookie,
+/// -F (form data; `name=@file` is a file field), `--data-binary @file` and -T
+/// (the file as the binary body), -u (basic or `--digest` auth), -b/-A/-e/-r (Cookie,
 /// User-Agent, Referer, Range headers), -I (HEAD). Every other flag is
 /// accepted and skipped *together with its value* (`-o /dev/null`, `-m 30`,
 /// `--retry 3`, `-w '%{http_code}'` ...), so what follows it is never mistaken
@@ -357,6 +368,7 @@ final class _State {
   final formFields = <KeyValueItem>[];
   final notes = <String>[];
   final urls = <String>[];
+  KeyValueItem? binaryFile;
   String? method;
   String? userPass;
   String? bearer;
@@ -380,7 +392,7 @@ final class _State {
           headers.add(KeyValueItem(key: value!.substring(0, sep).trim(), value: value.substring(sep + 1).trim()));
         }
       case 'data' || 'data-ascii' || 'data-raw' || 'data-binary':
-        _addData(value!, readsFiles: option != 'data-raw');
+        _addData(value!, readsFiles: option != 'data-raw', binary: option == 'data-binary');
       case 'data-urlencode':
         _addUrlEncoded(value!);
       case 'json':
@@ -412,20 +424,33 @@ final class _State {
         getMode = true;
       case 'upload-file':
         uploadMode = true;
-        notes.add('The command uploads a file ("$value"), which cannot be imported; the body is empty.');
+        if (value == '-' || value == '.') {
+          notes.add('The command uploads standard input ("$value"), which cannot be imported; the body is empty.');
+        } else {
+          binaryFile ??= _fileRow('', value!);
+        }
       case 'url':
         urls.add(value!);
     }
   }
 
-  void _addData(String piece, {required bool readsFiles}) {
+  /// `--data-binary @file` sends the file exactly as it is, which is a binary body. `-d @file` and `--json @file`
+  /// strip line breaks or add headers on the way, so those cannot be reproduced and stay a note.
+  void _addData(String piece, {required bool readsFiles, bool binary = false}) {
     sendsData = true;
     if (readsFiles && piece.startsWith('@')) {
-      notes.add('The body is read from a file or standard input ("$piece"), which cannot be imported.');
+      if (binary && piece.length > 1 && piece != '@-') {
+        binaryFile ??= _fileRow('', piece.substring(1));
+      } else {
+        notes.add('The body is read from a file or standard input ("$piece"), which cannot be imported.');
+      }
       return;
     }
     data.add(piece);
   }
+
+  static KeyValueItem _fileRow(String key, String path, {String contentType = '', String fileName = ''}) =>
+      KeyValueItem(key: key, value: path, kind: FormFieldKind.file, contentType: contentType, fileName: fileName);
 
   /// `content`, `=content`, `name=content` are encoded; `@file` and `name@file` read a file.
   void _addUrlEncoded(String argument) {
@@ -442,16 +467,24 @@ final class _State {
     }
   }
 
-  /// `name=value` is a text field; `name=@file` and `name=<file` send a file, which form fields cannot hold,
-  /// so such a field is kept but switched off.
+  /// `name=value` is a text field and `name=@file` a file field (with its `;type=` and `;filename=`). A field that
+  /// takes its text from a file (`name=<file`) cannot be reproduced: it is kept but switched off.
   void _addForm(String argument, {required bool readsFiles}) {
     final eq = argument.indexOf('=');
     if (eq <= 0) return;
     final name = argument.substring(0, eq);
     var value = argument.substring(eq + 1);
-    if (readsFiles && (value.startsWith('@') || value.startsWith('<'))) {
+    if (readsFiles && value.startsWith('@')) {
+      final file = _CurlFormFile.parse(value.substring(1));
+      formFields.add(_fileRow(name, file.path, contentType: file.contentType, fileName: file.fileName));
+      if (file.several) {
+        notes.add('Form field "$name" sends several files ("$value"); only the first was imported.');
+      }
+      return;
+    }
+    if (readsFiles && value.startsWith('<')) {
       formFields.add(KeyValueItem(key: name, value: value, enabled: false));
-      notes.add('Form field "$name" sends a file ("$value"); PostPilot form fields hold text only, so it was kept switched off.');
+      notes.add('Form field "$name" takes its text from a file ("$value"), which cannot be imported; it was kept switched off.');
       return;
     }
     value = value.replaceFirst(RegExp(r';type=[^;]*$'), '');
@@ -482,8 +515,25 @@ final class _State {
       headers.add(KeyValueItem(key: 'Content-Type', value: 'application/x-www-form-urlencoded'));
     }
 
-    final hasBody = sendsData || fields.isNotEmpty;
+    final file = fields.isEmpty ? binaryFile : null;
+    if (file != null) {
+      if (body != null) notes.add('The command sends a file and other data as its body; only the file was imported.');
+      body = null;
+      // `-T file` to a URL that ends in a slash is sent to that URL with the file's name appended.
+      if (uploadMode && targetUrl.endsWith('/')) targetUrl = '$targetUrl${Uri.encodeComponent(FilePaths.baseName(file.value))}';
+    } else if (binaryFile != null) {
+      notes.add('The command sends a file and form fields; only the form fields were imported.');
+    }
+
+    bool hasType() => headers.any((h) => h.key.toLowerCase() == 'content-type');
+    // curl types `--data-binary` like any `-d` data unless told otherwise (`-T` sends no type, the app's default applies).
+    if (file != null && !uploadMode && !hasType() && !jsonShortcut) {
+      headers.add(KeyValueItem(key: 'Content-Type', value: 'application/x-www-form-urlencoded'));
+    }
+
+    final hasBody = sendsData || fields.isNotEmpty || file != null;
     final verb = method ?? (headMode ? 'HEAD' : uploadMode ? 'PUT' : (hasBody && !getMode ? 'POST' : 'GET'));
+    final paths = UploadPathNote.of(UploadPathNote.machineSpecificRows([...fields, ?file]));
     return ParsedCurlRequest(
       method: HttpMethod.fromString(verb),
       url: targetUrl,
@@ -491,7 +541,8 @@ final class _State {
       body: body,
       auth: _auth(),
       formFields: fields,
-      notes: notes,
+      binaryFile: file,
+      notes: [...notes, ?paths],
     );
   }
 
@@ -519,5 +570,54 @@ final class _State {
     final token = bearer;
     if (token != null) return RequestAuth(type: AuthType.bearer, bearerToken: token);
     return const RequestAuth(type: AuthType.inherit);
+  }
+}
+
+/// What follows the `@` of `curl --form name=@...`: the file (in double quotes, with `\"` and `\\` escaped, when it
+/// holds `;` `,` or `"`), then `;type=` and `;filename=` options. An unquoted `a,b` is several files in curl; the
+/// first one is taken ([several] says there were more).
+final class _CurlFormFile {
+  final String path;
+  final String contentType;
+  final String fileName;
+  final bool several;
+
+  const _CurlFormFile(this.path, this.contentType, this.fileName, this.several);
+
+  static _CurlFormFile parse(String text) {
+    var path = '';
+    var end = 0;
+    var several = false;
+    if (text.startsWith('"')) {
+      final out = StringBuffer();
+      var i = 1;
+      while (i < text.length && text[i] != '"') {
+        if (text[i] == '\\' && i + 1 < text.length && (text[i + 1] == '"' || text[i + 1] == '\\')) i++;
+        out.write(text[i]);
+        i++;
+      }
+      path = out.toString();
+      end = i + 1 > text.length ? text.length : i + 1;
+    } else {
+      final semicolon = text.indexOf(';');
+      end = semicolon == -1 ? text.length : semicolon;
+      path = text.substring(0, end);
+      if (path.contains(',')) {
+        several = true;
+        path = path.substring(0, path.indexOf(','));
+      }
+    }
+    var contentType = '';
+    var fileName = '';
+    for (final option in text.substring(end).split(';')) {
+      final eq = option.indexOf('=');
+      if (eq == -1) continue;
+      final name = option.substring(0, eq).trim().toLowerCase();
+      var value = option.substring(eq + 1).trim();
+      if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.substring(1, value.length - 1);
+      if (name == 'type') contentType = value;
+      if (name == 'filename') fileName = value;
+    }
+    return _CurlFormFile(path, contentType, fileName, several);
   }
 }

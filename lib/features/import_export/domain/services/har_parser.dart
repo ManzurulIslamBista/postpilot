@@ -70,6 +70,10 @@ abstract final class HarParser {
 
     final headers = _headersOf(recorded, raw['cookies']);
     final (body, contentType) = _bodyOf(raw['postData']);
+    if (body.type == BodyType.formData) {
+      // The recorded boundary belongs to the recorded body; the app writes a form of its own, with its own boundary.
+      headers.removeWhere((h) => h.key.toLowerCase() == 'content-type' && h.value.toLowerCase().startsWith('multipart/'));
+    }
     if (contentType != null && !ImportedBodyMapper.hasContentType(headers)) {
       headers.add(KeyValueItem(key: ImportedBodyMapper.contentTypeHeader, value: contentType));
     }
@@ -119,13 +123,14 @@ abstract final class HarParser {
     final mime = '${raw['mimeType'] ?? ''}';
     final text = raw['text'] is String ? raw['text'] as String : '';
     final params = _paramsOf(raw['params']);
+    final formParams = _paramsOf(raw['params'], files: true);
     if (mime.contains('x-www-form-urlencoded')) {
       return (RequestBody(type: BodyType.urlEncoded, urlEncodedFields: params.isNotEmpty ? params : _formFieldsOf(text)), null);
     }
     // Chrome records a multipart body only as text (params stay empty); that
     // text carries the boundary, so it replays faithfully as a raw body.
-    if (mime.contains('multipart') && params.isNotEmpty) {
-      return (RequestBody(type: BodyType.formData, formFields: params), null);
+    if (mime.contains('multipart') && formParams.isNotEmpty) {
+      return (RequestBody(type: BodyType.formData, formFields: formParams), null);
     }
     if (text.isEmpty) return (RequestBody.empty, null);
     if (mime.trim().isEmpty) {
@@ -134,12 +139,22 @@ abstract final class HarParser {
     return ImportedBodyMapper.raw(mime, text);
   }
 
-  /// File parts are left out: the app has no way to attach the file.
-  static List<KeyValueItem> _paramsOf(dynamic params) => [
+  /// A part with a `fileName` is a file row (only for a multipart form, [files]): HAR records the name of the file
+  /// and its type, not where it was on disk, so the path is that name and the file is chosen again. In a urlencoded
+  /// body such a part means nothing and is left out.
+  static List<KeyValueItem> _paramsOf(dynamic params, {bool files = false}) => [
         if (params is List)
           for (final p in params)
-            if (p is Map && p['name'] is String && (p['name'] as String).isNotEmpty && p['fileName'] == null)
-              KeyValueItem(key: p['name'] as String, value: '${p['value'] ?? ''}'),
+            if (p is Map && p['name'] is String && (p['name'] as String).isNotEmpty)
+              if (p['fileName'] == null)
+                KeyValueItem(key: p['name'] as String, value: '${p['value'] ?? ''}')
+              else if (files)
+                KeyValueItem(
+                  key: p['name'] as String,
+                  value: '${p['fileName']}',
+                  kind: FormFieldKind.file,
+                  contentType: p['contentType'] is String ? p['contentType'] as String : '',
+                ),
       ];
 
   static List<KeyValueItem> _formFieldsOf(String text) => [

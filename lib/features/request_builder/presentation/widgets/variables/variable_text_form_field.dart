@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../../core/constants/app_constants.dart';
+import '../../../../odoo/presentation/widgets/smart_reference_hover_card.dart';
 import '../../view_models/variable_scope.dart';
 import '../json_syntax.dart' show maxHighlightedChars;
 import 'variable_hover_card.dart';
@@ -130,12 +130,12 @@ class _VariableTextFormFieldState extends State<VariableTextFormField> {
   Future<void> _show(_Token token) async {
     final scope = _scope;
     if (scope == null) return;
-    // Fresh values, in case a variable was edited since the scope last looked.
-    await scope.refresh();
+    // Fresh values, in case a variable was edited since the scope last looked. (An Odoo reference has no value to read.)
+    if (!token.smart) await scope.refresh();
     if (!mounted || _hoverKey != token.key) return;
-    final info = scope.describe(token.name);
     final screen = MediaQuery.sizeOf(context);
-    final left = token.rect.left.clamp(8.0, math.max(8.0, screen.width - VariableHoverCard.width - 8)).toDouble();
+    final cardWidth = token.smart ? SmartReferenceHoverCard.width : VariableHoverCard.width;
+    final left = token.rect.left.clamp(8.0, math.max(8.0, screen.width - cardWidth - 8)).toDouble();
     // Under the token, or over it when there is no room below.
     final below = token.rect.bottom + 6;
     final fitsBelow = below + 150 < screen.height;
@@ -144,7 +144,7 @@ class _VariableTextFormFieldState extends State<VariableTextFormField> {
         left: left,
         top: fitsBelow ? below : null,
         bottom: fitsBelow ? null : screen.height - token.rect.top + 6,
-        child: VariableHoverCard(info: info),
+        child: token.smart ? SmartReferenceHoverCard(keyText: token.name) : VariableHoverCard(info: scope.describe(token.name)),
       ),
     );
     Overlay.of(context).insert(entry);
@@ -169,14 +169,15 @@ class _VariableTextFormFieldState extends State<VariableTextFormField> {
     if (render == null || !render.attached || !render.hasSize) return null;
 
     final local = render.globalToLocal(globalPosition);
-    for (final match in AppConstants.variablePattern.allMatches(text)) {
+    for (final match in VariableTextEditingController.tokenPattern.allMatches(text)) {
       final boxes = render.getBoxesForSelection(TextSelection(baseOffset: match.start, extentOffset: match.end));
       for (final box in boxes) {
         final rect = box.toRect();
         if (!rect.inflate(2).contains(local)) continue;
         return _Token(
-          key: '${match.start}:${match[1]}',
-          name: match[1]!,
+          key: '${match.start}:${match[1] ?? match[2]}',
+          name: match[1] ?? match[2]!,
+          smart: match[1] == null,
           rect: Rect.fromPoints(render.localToGlobal(rect.topLeft), render.localToGlobal(rect.bottomRight)),
         );
       }
@@ -206,7 +207,10 @@ class _Token {
   final String key;
   final String name;
 
+  /// An Odoo smart reference (`xmlid:base.main_company`), whose [name] is the whole inner text.
+  final bool smart;
+
   /// The token's box on screen.
   final Rect rect;
-  const _Token({required this.key, required this.name, required this.rect});
+  const _Token({required this.key, required this.name, this.smart = false, required this.rect});
 }

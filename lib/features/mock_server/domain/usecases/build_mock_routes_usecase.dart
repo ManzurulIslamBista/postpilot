@@ -5,7 +5,8 @@ import '../services/mock_routes.dart';
 
 /// Reads a collection and its saved response examples and turns them into the
 /// routes a mock server answers. A request's answer is its newest successful
-/// example (or, with none, its newest example of any status).
+/// example (or, with none, its newest example of any status); its other saved
+/// examples stay available to answer `?status=404` and to match rules.
 final class BuildMockRoutesUseCase {
   final CollectionLoader _loader;
   final ResponseExampleRepository _examples;
@@ -16,7 +17,8 @@ final class BuildMockRoutesUseCase {
     final loaded = await _loader.load(collectionId);
     final sources = <MockSource>[];
     for (final r in loaded.requests) {
-      final example = _pick(await _examples.watchByRequest(r.id).first);
+      final saved = await _examples.watchByRequest(r.id).first;
+      final example = _pick(saved);
       sources.add(MockSource(
         requestName: r.name,
         method: r.method.label,
@@ -25,10 +27,19 @@ final class BuildMockRoutesUseCase {
         exampleHeaders: example?.headers ?? const {},
         exampleBody: example?.body,
         exampleName: example?.name,
+        examples: [
+          // The default answer first, then the others in the order they were saved.
+          ?_asExample(example),
+          for (final e in saved)
+            if (!identical(e, example)) _asExample(e)!,
+        ],
       ));
     }
     return MockRouteTable.from(sources);
   }
+
+  MockExample? _asExample(ResponseExampleEntity? e) =>
+      e == null ? null : MockExample(name: e.name, status: e.statusCode, headers: e.headers, body: e.body);
 
   ResponseExampleEntity? _pick(List<ResponseExampleEntity> examples) {
     for (final e in examples) {

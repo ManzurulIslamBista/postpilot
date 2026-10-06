@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../defaults/presentation/widgets/request_inherited_sections.dart';
+import '../../../test_suggestions/presentation/suggest_tests_launcher.dart';
 import '../view_models/request_scripts_view_model.dart';
 import 'assertions_editor.dart';
 import 'extractors_editor.dart';
@@ -60,6 +61,16 @@ class _RequestTestsTabState extends State<RequestTestsTab> {
                 style: context.textStyles.caption.copyWith(color: context.colors.secondaryText),
               ),
               const SizedBox(height: 8),
+              // Proposes checks from the response this request last got; the ticked ones land in the list below.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () => openSuggestTests(context, requestId: widget.requestId),
+                  icon: const Icon(Icons.checklist, size: 16),
+                  label: const Text('Suggest tests from the last response'),
+                ),
+              ),
+              const SizedBox(height: 4),
               AssertionsEditor(items: vm.assertions, onChanged: vm.updateAssertions),
               const SizedBox(height: 24),
               Text('Extract variables', style: context.textStyles.heading),

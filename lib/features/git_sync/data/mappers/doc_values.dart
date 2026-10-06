@@ -57,6 +57,8 @@ abstract final class DocValues {
           'key': (item as Map)['key'] as String,
           'value': item['value'] as String? ?? '',
           'enabled': item['enabled'] as bool? ?? true,
+          // A form-data file row is only the reference to its file (see KeyValueItem.toJson).
+          if (item['kind'] == 'file') ..._fileKeys(item),
         },
     ];
     if (isSecret == null || keepingSecretsOf is! List) return items;
@@ -85,9 +87,15 @@ abstract final class DocValues {
     return keepingSecretsOf is List ? SecretFields.restoreAssertions(items, keepingSecretsOf) : items;
   }
 
+  /// What a file row adds to `{key, value, enabled}`: `kind`, and the name and type when they were set.
+  static Map<String, Object?> _fileKeys(Map item) => {
+        'kind': 'file',
+        if (item['fileName'] is String && (item['fileName'] as String).isNotEmpty) 'fileName': item['fileName'],
+        if (item['contentType'] is String && (item['contentType'] as String).isNotEmpty) 'contentType': item['contentType'],
+      };
+
   static List<KeyValueItem> keyValueItems(Object? canonicalKeyValues) => [
-        for (final item in canonicalKeyValues as List)
-          KeyValueItem(key: item['key'] as String, value: item['value'] as String, enabled: item['enabled'] as bool),
+        for (final item in canonicalKeyValues as List) KeyValueItem.tryFromJson(item)!,
       ];
 
   static String enumName<T extends Enum>(List<T> values, Object? name, T fallback) =>
@@ -96,6 +104,34 @@ abstract final class DocValues {
   static List<Object?> jsonList(Object? value) => List<Object?>.of(value as List? ?? const []);
 
   static Map<String, Object?> jsonMap(Object? value) => Map<String, Object?>.from(value as Map? ?? const {});
+
+  /// A request's settings as the doc holds them. With [keepingSecretsOf] (the local, already canonical settings) the
+  /// credentials of its flow that the target blanked (what a poll-until condition expects, what a run-if compares a
+  /// credential-named variable with) get their local values back, like those of a request's assertions.
+  static Map<String, Object?> requestSettings(Object? value, {Object? keepingSecretsOf}) {
+    final settings = jsonMap(value);
+    final flow = settings['flow'];
+    final localFlow = keepingSecretsOf is Map ? keepingSecretsOf['flow'] : null;
+    if (flow is! Map || localFlow is! Map) return settings;
+    final restored = Map<String, Object?>.from(flow);
+    final poll = flow['poll'];
+    final localPoll = localFlow['poll'];
+    if (poll is Map && localPoll is Map && poll['until'] is List && localPoll['until'] is List) {
+      restored['poll'] = {
+        ...poll,
+        'until': SecretFields.restoreAssertions(List<Object?>.of(poll['until'] as List), List<Object?>.of(localPoll['until'] as List)),
+      };
+    }
+    final runIf = flow['runIf'];
+    final localRunIf = localFlow['runIf'];
+    if (runIf is Map && localRunIf is Map && runIf['all'] is List && localRunIf['all'] is List) {
+      restored['runIf'] = {
+        ...runIf,
+        'all': SecretFields.restoreConditions(List<Object?>.of(runIf['all'] as List), List<Object?>.of(localRunIf['all'] as List)),
+      };
+    }
+    return {...settings, 'flow': restored};
+  }
 
   /// A stored JSON column that no longer parses counts as empty, so one bad
   /// row cannot block syncing the whole collection.
@@ -170,11 +206,12 @@ abstract final class DocValues {
       _authMap(value == null ? const RequestAuth() : parseAuth(value), keepingSecretsOf);
 
   /// A collection's default auth, or null when none is set. "No auth" and no
-  /// row at all mean the same to the app, so both are null.
+  /// row at all mean the same to the app, so both are null, unless the auth carries a re-login setting
+  /// ("on 401 run the login request"), which has to travel even when requests send no auth of their own.
   static Map<String, Object?>? collectionAuth(Object? value, {Object? keepingSecretsOf}) {
     if (value == null) return null;
     final auth = parseAuth(value);
-    return auth.type == AuthType.none ? null : _authMap(auth, keepingSecretsOf);
+    return auth.type == AuthType.none && auth.relogin == null ? null : _authMap(auth, keepingSecretsOf);
   }
 
   static RequestAuth parseAuth(Object value) => RequestAuth.fromJson(Map<String, dynamic>.from(value as Map));

@@ -12,12 +12,22 @@ final class RequestScriptsViewModel with ChangeNotifier {
 
   RequestScriptsViewModel(this._repository);
 
+  /// The Tests tabs on screen, by request id. Whatever writes a request's tests from somewhere else (Suggest tests in
+  /// the response tools) asks the one on screen to read them again, instead of leaving it with a stale list that its
+  /// next edit would save over the new tests.
+  static final Map<int, RequestScriptsViewModel> _onScreen = {};
+
+  /// Makes the Tests tab of [requestId], if one is open, read the request's tests again.
+  static Future<void> reloadOnScreen(int requestId) async => _onScreen[requestId]?.load(requestId);
+
   int? _requestId;
   List<AssertionEntity> assertions = [];
   List<ExtractorEntity> extractors = [];
   bool isLoading = false;
 
   Future<void> load(int requestId) async {
+    _onScreen.removeWhere((_, vm) => identical(vm, this));
+    _onScreen[requestId] = this;
     _requestId = requestId;
     isLoading = true;
     notifyListeners();
@@ -41,6 +51,12 @@ final class RequestScriptsViewModel with ChangeNotifier {
     extractors = items;
     notifyListeners();
     _save();
+  }
+
+  @override
+  void dispose() {
+    _onScreen.removeWhere((_, vm) => identical(vm, this));
+    super.dispose();
   }
 
   void _save() {

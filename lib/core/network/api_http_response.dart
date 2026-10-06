@@ -145,6 +145,10 @@ final class ApiRequestOptions {
   /// dropped and the response is marked [ApiHttpResponse.truncated].
   final int? maxResponseBytes;
 
+  /// Null sends a body of any size; otherwise a request that uploads more than this many bytes of files is
+  /// refused before anything is sent.
+  final int? maxUploadBytes;
+
   const ApiRequestOptions({
     this.timeout = AppConstants.requestTimeout,
     this.followRedirects = true,
@@ -152,6 +156,7 @@ final class ApiRequestOptions {
     this.verifySsl = true,
     this.proxy = ProxyConfig.system,
     this.maxResponseBytes,
+    this.maxUploadBytes,
   });
 }
 
@@ -159,6 +164,9 @@ final class ApiRequestSpec {
   final String method;
   final String url;
   final Map<String, String> headers;
+
+  /// The bytes to send (`List<int>`), or an `UploadBody` that names files: the client checks them and streams them
+  /// from storage, so a large file is never loaded whole.
   final Object? body;
   final ApiCancelToken? cancelToken;
   final ApiRequestOptions options;

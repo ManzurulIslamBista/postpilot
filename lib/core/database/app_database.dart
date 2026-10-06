@@ -19,6 +19,8 @@ import 'tables/entity_tags_table.dart';
 import 'tables/folder_defaults_table.dart';
 import 'tables/collection_defaults_table.dart';
 import 'tables/history_payloads_table.dart';
+import 'tables/run_records_table.dart';
+import 'tables/request_baselines_table.dart';
 import 'daos/collections_dao.dart';
 import 'daos/requests_dao.dart';
 import 'daos/environments_dao.dart';
@@ -37,6 +39,8 @@ import 'daos/entity_tags_dao.dart';
 import 'daos/folder_defaults_dao.dart';
 import 'daos/collection_defaults_dao.dart';
 import 'daos/history_payloads_dao.dart';
+import 'daos/run_records_dao.dart';
+import 'daos/request_baselines_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -63,6 +67,8 @@ part 'app_database.g.dart';
     FolderDefaults,
     CollectionDefaults,
     HistoryPayloads,
+    RunRecords,
+    RequestBaselines,
   ],
   daos: [
     CollectionsDao,
@@ -83,6 +89,8 @@ part 'app_database.g.dart';
     FolderDefaultsDao,
     CollectionDefaultsDao,
     HistoryPayloadsDao,
+    RunRecordsDao,
+    RequestBaselinesDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -145,7 +153,7 @@ class AppDatabase extends _$AppDatabase {
   );
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   // NOTE: never use `Migrator.addColumn` here: its ALTER TABLE statement
   // reproducibly crashes the drift web worker on this project (confirmed: a
@@ -188,6 +196,10 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(folderDefaults);
         await m.createTable(collectionDefaults);
         await m.createTable(historyPayloads);
+      }
+      if (from < 6) {
+        await m.createTable(runRecords);
+        await m.createTable(requestBaselines);
       }
     },
     // SQLite skips every ON DELETE CASCADE / SET NULL unless this is set on each connection.

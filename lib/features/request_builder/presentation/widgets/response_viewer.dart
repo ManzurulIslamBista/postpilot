@@ -13,6 +13,8 @@ import '../../domain/entities/api_response_entity.dart';
 import '../../domain/entities/response_example_entity.dart';
 import '../../../response_tools/domain/services/response_history.dart';
 import '../../../response_tools/presentation/widgets/response_tools_dialog.dart';
+import '../../../test_suggestions/presentation/widgets/drift_chip.dart';
+import '../../../test_suggestions/presentation/widgets/suggest_tests_tab.dart';
 import '../view_models/response_examples_view_model.dart';
 import 'response_body_formatter.dart';
 import 'response_body_view.dart';
@@ -228,7 +230,9 @@ class _ResponseViewerState extends State<ResponseViewer> {
   Widget _buildSummary(ResponseExampleEntity? example) {
     if (example != null) return ResponseExampleSummary(example: example, onClose: _clearExample);
     final response = widget.response;
-    return response == null ? const _NoResponseSummary() : _LiveSummary(response: response);
+    return response == null
+        ? const _NoResponseSummary()
+        : _LiveSummary(response: response, requestId: widget.requestId, requestName: widget.requestName);
   }
 
   Widget _buildBodyTab(
@@ -595,7 +599,9 @@ class _ResponseViewerState extends State<ResponseViewer> {
 
 class _LiveSummary extends StatelessWidget {
   final ApiResponseEntity response;
-  const _LiveSummary({required this.response});
+  final int requestId;
+  final String? requestName;
+  const _LiveSummary({required this.response, required this.requestId, this.requestName});
 
   @override
   Widget build(BuildContext context) {
@@ -611,6 +617,19 @@ class _LiveSummary extends StatelessWidget {
         ),
         StatusChip(label: '${response.duration.inMilliseconds} ms', icon: Icons.schedule),
         StatusChip(label: _formatSize(response.sizeBytes), icon: Icons.data_usage),
+        // How the response differs from the request's recorded baseline; nothing for a request without one.
+        DriftChip(
+          requestId: requestId,
+          response: response,
+          onOpen: () => ResponseToolsDialog.show(
+            context,
+            requestId: requestId,
+            requestName: requestName ?? 'Response',
+            response: response,
+            initialTab: SuggestTestsTab.label,
+            testsSection: TestsSection.baseline,
+          ),
+        ),
       ],
     );
   }

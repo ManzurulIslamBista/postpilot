@@ -314,11 +314,14 @@ void main() {
       );
       final upload = parsed.items.first as PostmanRequestItem;
       expect(upload.body.type, BodyType.formData);
-      expect(upload.body.formFields.map((f) => f.key), ['name']);
-      expect((parsed.items.last as PostmanRequestItem).body.type, BodyType.none);
-      expect(_skipped(parsed), [
-        'Request "Upload": file field "avatar" was not imported (PostPilot form fields hold text only).',
-        'Request "Binary": a body sent from a file was not imported.',
+      expect(upload.body.formFields.map((f) => (f.key, f.value, f.isFile)), [('name', 'x', false), ('avatar', '/tmp/a.png', true)]);
+      final binary = (parsed.items.last as PostmanRequestItem).body;
+      expect(binary.type, BodyType.binary);
+      expect(binary.binaryFile!.value, '/tmp/b.bin');
+      expect(_skipped(parsed), isEmpty, reason: 'both come in as file references now');
+      expect(_adjusted(parsed), [
+        '2 file paths point to this machine, so they will not work for a teammate. '
+            'Replace the start of the path with a variable, for example {{uploadDir}}/avatar.png.',
       ]);
     });
   });

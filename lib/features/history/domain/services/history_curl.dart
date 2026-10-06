@@ -1,6 +1,8 @@
 import 'dart:convert';
 import '../../../../core/enums/auth_type.dart';
 import '../../../../core/enums/body_type.dart';
+import '../../../../core/network/upload_body.dart';
+import '../../../request_builder/domain/services/code_generators/curl_form.dart';
 import '../../../request_builder/domain/services/code_generators/string_literals.dart';
 import '../entities/history_snapshot.dart';
 import 'history_har.dart';
@@ -33,6 +35,7 @@ abstract final class HistoryCurl {
     String? data;
     String? contentType;
     final formFields = <String>[];
+    String? binaryPath;
     switch (body.type) {
       case BodyType.none:
         break;
@@ -51,8 +54,20 @@ abstract final class HistoryCurl {
           contentType = 'application/x-www-form-urlencoded';
         }
       case BodyType.formData:
-        // curl writes the multipart body, and its boundary, itself.
-        formFields.addAll([for (final f in body.formFields) if (f.enabled && f.key.isNotEmpty) '${f.key}=${f.value}']);
+        // curl writes the multipart body, and its boundary, itself. A file is only ever its reference.
+        formFields.addAll([
+          for (final f in body.formFields)
+            if (f.enabled && f.key.isNotEmpty)
+              f.isFile
+                  ? '${f.key}=${curlFileFormValue(f.value, contentType: f.contentType, fileName: f.fileName)}'
+                  : '${f.key}=${f.value}',
+        ]);
+      case BodyType.binary:
+        final file = body.binaryFile;
+        if (file != null && file.value.isNotEmpty) {
+          binaryPath = file.value;
+          contentType = file.contentType.isEmpty ? BinaryUpload.defaultContentType : file.contentType;
+        }
     }
     if (contentType != null && !has('Content-Type')) headers['Content-Type'] = contentType;
 
@@ -60,6 +75,7 @@ abstract final class HistoryCurl {
       'curl --location --request ${shellWord(snapshot.method.label)} ${shellQuote(url)}',
       for (final h in headers.entries) '--header ${shellQuote(h.value.isEmpty ? '${h.key};' : '${h.key}: ${h.value}')}',
       if (data != null) '--data-raw ${shellQuote(data)}',
+      if (binaryPath != null) '--data-binary ${shellQuote('@$binaryPath')}',
       for (final field in formFields) '--form ${shellQuote(field)}',
     ];
     final note = switch (auth.type) {

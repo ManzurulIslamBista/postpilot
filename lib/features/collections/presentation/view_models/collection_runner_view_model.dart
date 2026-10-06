@@ -227,6 +227,16 @@ final class CollectionRunnerViewModel with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ticks exactly [requestIds] (ids the collection no longer has are ignored): "Re-run failed only".
+  void selectOnly(Iterable<int> requestIds) {
+    final known = {for (final r in plan?.requests ?? const <RequestSummaryEntity>[]) r.id};
+    _selectedIds
+      ..clear()
+      ..addAll(requestIds.where(known.contains));
+    _refreshSelected();
+    notifyListeners();
+  }
+
   bool isFolderExpanded(int folderId) => !_collapsedFolderIds.contains(folderId);
 
   void toggleFolderExpanded(int folderId) {
@@ -354,8 +364,9 @@ final class CollectionRunnerViewModel with ChangeNotifier {
 
   void _onDone() {
     isRunning = false;
+    // A request marked "always run" still goes out after the failure, so the failure is not necessarily the last result.
     stoppedOnFailure =
-        _options.stopOnFailure && results.isNotEmpty && !results.last.passed && results.length < _plannedRequests;
+        _options.stopOnFailure && results.any((r) => !r.passed) && results.length < _plannedRequests;
     notifyListeners();
   }
 

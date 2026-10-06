@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../../core/widgets/busy_label.dart';
 import '../../../../core/widgets/info_banner.dart';
 import '../../../environments/presentation/view_models/environments_view_model.dart';
+import '../../data/odoo_smart_resolver.dart';
+import '../../domain/entities/odoo_connection.dart';
 import '../view_models/odoo_studio_view_model.dart';
 
-/// Connect to an Odoo server (version 19 and later, which has the JSON-2 API),
-/// test it, and save it as an environment so every request can use
-/// `{{odooUrl}}`, `{{odooDb}}` and `{{odooApiKey}}`.
+/// Connect to an Odoo server, test it, and save it as an environment so every request can use `{{odooUrl}}`,
+/// `{{odooDb}}` and either `{{odooApiKey}}` (Odoo 19 and later, JSON-2 API) or `{{odooLogin}}` and `{{odooPassword}}`
+/// (Odoo 18 and older, a JSON-RPC session).
 class OdooConnectTab extends StatefulWidget {
   final OdooStudioViewModel viewModel;
   const OdooConnectTab({super.key, required this.viewModel});
@@ -21,12 +24,14 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
   late final _url = TextEditingController(text: widget.viewModel.url);
   late final _db = TextEditingController(text: widget.viewModel.database);
   late final _key = TextEditingController(text: widget.viewModel.apiKey);
+  late final _login = TextEditingController(text: widget.viewModel.login);
   final _envName = TextEditingController();
   final _collectionName = TextEditingController(text: 'Odoo');
   final _models = TextEditingController(text: 'res.partner');
   bool _obscure = true;
 
   OdooStudioViewModel get _vm => widget.viewModel;
+  bool get _jsonRpc => _vm.protocol == OdooProtocol.jsonRpc;
 
   @override
   void initState() {
@@ -37,20 +42,21 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
   /// The active environment's values arrive after the first frame.
   void _syncFromViewModel() {
     if (_url.text.isEmpty && _vm.url.isNotEmpty) _url.text = _vm.url;
-    if (_db.text.isEmpty && _vm.database.isNotEmpty) _db.text = _vm.database;
+    if (_db.text != _vm.database && (_db.text.isEmpty || _vm.databases.contains(_vm.database))) _db.text = _vm.database;
     if (_key.text.isEmpty && _vm.apiKey.isNotEmpty) _key.text = _vm.apiKey;
+    if (_login.text.isEmpty && _vm.login.isNotEmpty) _login.text = _vm.login;
   }
 
   @override
   void dispose() {
     _vm.removeListener(_syncFromViewModel);
-    for (final c in [_url, _db, _key, _envName, _collectionName, _models]) {
+    for (final c in [_url, _db, _key, _login, _envName, _collectionName, _models]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  void _push() => _vm.setConnection(url: _url.text, database: _db.text, apiKey: _key.text);
+  void _push() => _vm.setConnection(url: _url.text, database: _db.text, apiKey: _key.text, login: _login.text);
 
   /// Pushes the fields to the view model and refreshes what depends on the URL text
   /// (the plain-http warning, the Save button).
@@ -93,15 +99,37 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const InfoBanner(
-            message: 'Odoo 19 and later expose the External JSON-2 API at /json/2/<model>/<method>, authenticated with an API key '
-                '(Odoo: Preferences, Account Security, New API Key). The old XML-RPC and JSON-RPC endpoints are deprecated.',
+          InfoBanner(
+            message: _jsonRpc
+                ? 'Odoo 18 and older log in with a database, a login and a password (or an API key used as the password), then call '
+                    '/web/dataset/call_kw/<model>/<method> with the session cookie. Studio keeps the session for you and logs in again once if it expires.'
+                : 'Odoo 19 and later expose the External JSON-2 API at /json/2/<model>/<method>, authenticated with an API key '
+                    '(Odoo: Preferences, Account Security, New API Key). The old XML-RPC and JSON-RPC endpoints are deprecated.',
           ),
           const SizedBox(height: 14),
           ToolSection(
             title: 'Server',
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                SegmentedButton<OdooProtocol>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  segments: const [
+                    ButtonSegment(value: OdooProtocol.json2, label: Text('Odoo 19+ · JSON-2', overflow: TextOverflow.ellipsis)),
+                    ButtonSegment(value: OdooProtocol.jsonRpc, label: Text('Odoo ≤18 · JSON-RPC', overflow: TextOverflow.ellipsis)),
+                  ],
+                  selected: {_vm.protocol},
+                  onSelectionChanged: (s) {
+                    _vm.setConnection(protocol: s.first);
+                    setState(() {});
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_vm.protocol.label, style: context.textStyles.caption.copyWith(color: colors.secondaryText)),
+                ),
+                const SizedBox(height: 10),
                 TextField(
                   controller: _url,
                   decoration: const InputDecoration(labelText: 'Server URL', hintText: 'https://mycompany.odoo.com', prefixIcon: Icon(Icons.dns_outlined, size: 18)),
@@ -109,43 +137,50 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
                 ),
                 if (_vm.connection.sendsKeyUnencrypted) ...[
                   const SizedBox(height: 10),
-                  const InfoBanner(
+                  InfoBanner(
                     kind: BannerKind.warning,
                     title: 'This URL uses plain http://',
-                    message: 'The API key is sent unencrypted, so anyone on the path to the server can read it. '
+                    message: 'The ${_jsonRpc ? 'password' : 'API key'} is sent unencrypted, so anyone on the path to the server can read it. '
                         'Use https:// unless the server is on this computer or your own network.',
                   ),
                 ],
                 const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _db,
-                        decoration: const InputDecoration(labelText: 'Database (optional)', helperText: 'Needed on servers with several databases', prefixIcon: Icon(Icons.storage_outlined, size: 18)),
-                        onChanged: (_) => _push(),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _key,
-                        obscureText: _obscure,
-                        enableSuggestions: false,
-                        autocorrect: false,
-                        decoration: InputDecoration(
-                          labelText: 'API key',
-                          prefixIcon: const Icon(Icons.key, size: 18),
-                          suffixIcon: IconButton(
-                            icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off, size: 18),
-                            onPressed: () => setState(() => _obscure = !_obscure),
-                          ),
+                LayoutBuilder(
+                  builder: (context, box) {
+                    final narrow = box.maxWidth < 560;
+                    final database = _databaseField();
+                    final secret = TextField(
+                      controller: _key,
+                      obscureText: _obscure,
+                      enableSuggestions: false,
+                      autocorrect: false,
+                      decoration: InputDecoration(
+                        labelText: _jsonRpc ? 'Password or API key' : 'API key',
+                        prefixIcon: const Icon(Icons.key, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off, size: 18),
+                          onPressed: () => setState(() => _obscure = !_obscure),
                         ),
-                        onChanged: (_) => _push(),
                       ),
-                    ),
-                  ],
+                      onChanged: (_) => _push(),
+                    );
+                    final login = TextField(
+                      controller: _login,
+                      autocorrect: false,
+                      decoration: const InputDecoration(labelText: 'Login', hintText: 'admin', prefixIcon: Icon(Icons.person_outline, size: 18)),
+                      onChanged: (_) => _push(),
+                    );
+                    if (narrow) {
+                      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [database, const SizedBox(height: 10), if (_jsonRpc) ...[login, const SizedBox(height: 10)], secret]);
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: database), const SizedBox(width: 10), Expanded(child: _jsonRpc ? login : secret)]),
+                        if (_jsonRpc) ...[const SizedBox(height: 10), secret],
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -157,7 +192,7 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
                               _push();
                               _vm.testConnection();
                             },
-                      child: BusyLabel(busy: _vm.busyLabel == 'Testing connection', icon: Icons.bolt, label: 'Test connection', busyLabel: 'Testing…'),
+                      child: BusyLabel(busy: _vm.busyLabel == 'Testing connection', icon: Icons.bolt, label: _jsonRpc ? 'Log in and test' : 'Test connection', busyLabel: 'Testing…'),
                     ),
                     const SizedBox(width: 12),
                     if (_vm.connectionOk != null)
@@ -173,7 +208,9 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
           ),
           ToolSection(
             title: 'Save as environment',
-            hint: 'Stores odooUrl, odooDb and odooApiKey (secret) so requests use {{variables}}. Switch environment to switch server.',
+            hint: _jsonRpc
+                ? 'Stores odooUrl, odooDb, odooProtocol, odooLogin and odooPassword (secret) so requests use {{variables}}. Switch environment to switch server.'
+                : 'Stores odooUrl, odooDb and odooApiKey (secret) so requests use {{variables}}. Switch environment to switch server.',
             child: Row(
               children: [
                 Expanded(child: TextField(controller: _envName, decoration: InputDecoration(labelText: 'Environment name', hintText: _defaultEnvName))),
@@ -184,20 +221,99 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
           ),
           ToolSection(
             title: 'Create ready-made requests',
-            hint: 'One folder per model with search, read, create, update, delete, fields and more. Separate models with commas.',
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 2, child: TextField(controller: _collectionName, decoration: const InputDecoration(labelText: 'Collection name'))),
-                const SizedBox(width: 10),
-                Expanded(flex: 3, child: TextField(controller: _models, decoration: const InputDecoration(labelText: 'Models', hintText: 'res.partner, sale.order'))),
-                const SizedBox(width: 10),
-                FilledButton.icon(onPressed: _vm.isBusy ? null : _createRequests, icon: const Icon(Icons.library_add_outlined, size: 16), label: const Text('Create')),
-              ],
+            hint: _jsonRpc
+                ? 'A "Log in" request and, per model, search, read, create, update, delete, fields and more in the call_kw form. Separate models with commas.'
+                : 'One folder per model with search, read, create, update, delete, fields and more. Separate models with commas.',
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final name = TextField(controller: _collectionName, decoration: const InputDecoration(labelText: 'Collection name'));
+                final models = TextField(controller: _models, decoration: const InputDecoration(labelText: 'Models', hintText: 'res.partner, sale.order'));
+                final create = FilledButton.icon(onPressed: _vm.isBusy ? null : _createRequests, icon: const Icon(Icons.library_add_outlined, size: 16), label: const Text('Create'));
+                if (box.maxWidth < 560) {
+                  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [name, const SizedBox(height: 10), models, const SizedBox(height: 10), Align(alignment: Alignment.centerLeft, child: create)]);
+                }
+                return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 2, child: name), const SizedBox(width: 10), Expanded(flex: 3, child: models), const SizedBox(width: 10), create]);
+              },
             ),
+          ),
+          const ToolSection(
+            title: 'Portable references',
+            hint: 'In any Odoo request body write {{xmlid:base.main_company}} or {{ref:res.partner:Azure Interior}} where an id goes: PostPilot '
+                'looks the id up on the server the request goes to when it is sent (also in the runner and the command line), so one request works on every database. '
+                'A reference that cannot be found stops the request.',
+            child: _ReferenceCache(),
           ),
         ],
       ),
+    );
+  }
+
+  /// The database: typed, or picked from the list when the server gives one.
+  Widget _databaseField() {
+    final names = _vm.databases;
+    final field = TextField(
+      controller: _db,
+      decoration: InputDecoration(
+        labelText: _jsonRpc ? 'Database' : 'Database (optional)',
+        helperText: _vm.databaseNote ?? (_jsonRpc ? 'Needed to log in' : 'Needed on servers with several databases'),
+        helperMaxLines: 2,
+        prefixIcon: const Icon(Icons.storage_outlined, size: 18),
+        suffixIcon: PopupMenuButton<String>(
+          icon: _vm.busyLabel == 'Finding databases'
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.manage_search, size: 18),
+          tooltip: names.isEmpty ? 'Find the databases of this server' : 'Pick a database',
+          enabled: !_vm.isBusy,
+          onSelected: (v) {
+            if (v == '\u0000find') {
+              _push();
+              _vm.findDatabases();
+            } else {
+              _db.text = v;
+              _push();
+              setState(() {});
+            }
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: '\u0000find', child: Text('Find the databases of this server')),
+            for (final n in names) PopupMenuItem(value: n, child: Text(n)),
+          ],
+        ),
+      ),
+      onChanged: (_) => _push(),
+    );
+    return field;
+  }
+}
+
+/// How many ids are remembered from smart references, and a button to forget them (a record was deleted and created again).
+class _ReferenceCache extends StatefulWidget {
+  const _ReferenceCache();
+
+  @override
+  State<_ReferenceCache> createState() => _ReferenceCacheState();
+}
+
+class _ReferenceCacheState extends State<_ReferenceCache> {
+  @override
+  Widget build(BuildContext context) {
+    if (!locator.isRegistered<OdooSmartReferenceResolver>()) return const SizedBox.shrink();
+    final resolver = locator<OdooSmartReferenceResolver>();
+    final count = resolver.cachedCount;
+    return Row(
+      children: [
+        Text(count == 0 ? 'Nothing looked up yet in this session.' : '$count looked-up id${count == 1 ? '' : 's'} remembered for ${resolver.ttl.inMinutes} minutes.', style: context.textStyles.caption.copyWith(color: context.colors.secondaryText)),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: count == 0
+              ? null
+              : () {
+                  resolver.clearCache();
+                  setState(() {});
+                },
+          child: const Text('Forget them'),
+        ),
+      ],
     );
   }
 }

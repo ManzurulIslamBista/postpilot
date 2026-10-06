@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../resolved_request_spec.dart';
+import '../../../../../core/network/upload_body.dart';
 import 'code_generator.dart';
 import 'string_literals.dart';
 
@@ -13,6 +14,7 @@ final class NodeAxiosGenerator implements CodeGenerator {
 
   @override
   String generate(ResolvedRequestSpec spec) {
+    if (spec.upload != null) return _generateUpload(spec);
     final body = bodyTextOf(spec);
     final buffer = StringBuffer()
       ..writeln('const axios = require("axios");')
@@ -51,5 +53,55 @@ final class NodeAxiosGenerator implements CodeGenerator {
     } on FormatException {
       return true;
     }
+  }
+
+  /// A form goes through the `form-data` package, whose headers carry the boundary; a binary body is a read stream.
+  String _generateUpload(ResolvedRequestSpec spec) {
+    final multipart = multipartOf(spec);
+    final headers = snippetHeadersOf(spec);
+    final buffer = StringBuffer()..writeln('const axios = require("axios");');
+    if (multipart != null) buffer.writeln('const FormData = require("form-data");');
+    buffer
+      ..writeln('const fs = require("fs");')
+      ..writeln();
+    if (multipart != null) {
+      buffer.writeln('const data = new FormData();');
+      for (final part in multipart.parts) {
+        switch (part) {
+          case UploadTextPart(:final name, :final value):
+            buffer.writeln('data.append(${jsString(name)}, ${jsString(value)});');
+          case UploadFilePart(:final name, :final file):
+            buffer.writeln(
+              'data.append(${jsString(name)}, fs.createReadStream(${jsString(file.path)}), '
+              '{ filename: ${jsString(file.fileName)}, contentType: ${jsString(file.contentType)} });',
+            );
+        }
+      }
+      buffer.writeln();
+    }
+    buffer
+      ..writeln('const config = {')
+      ..writeln('  method: ${jsString(spec.method.toLowerCase())},')
+      ..writeln('  url: ${jsString(spec.url)},');
+    final entries = [
+      if (multipart != null) '...data.getHeaders()',
+      for (final e in headers.entries) '${jsString(e.key)}: ${jsString(e.value)}',
+    ];
+    if (entries.isNotEmpty) {
+      buffer
+        ..writeln('  headers: {')
+        ..writeln(entries.map((e) => '    $e').join(',\n'))
+        ..writeln('  },');
+    }
+    final file = binaryFileOf(spec);
+    buffer
+      ..writeln('  data: ${multipart != null ? 'data' : 'fs.createReadStream(${jsString(file!.path)})'},')
+      ..writeln('  maxBodyLength: Infinity,')
+      ..writeln('};')
+      ..writeln()
+      ..writeln('axios.request(config)')
+      ..writeln('  .then((response) => console.log(response.data))')
+      ..write('  .catch((error) => console.error(error));');
+    return buffer.toString();
   }
 }

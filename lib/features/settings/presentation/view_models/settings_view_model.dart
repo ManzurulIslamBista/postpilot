@@ -55,6 +55,10 @@ final class SettingsViewModel with ChangeNotifier {
         _settings.copyWith(maxResponseSizeMb: _within(megabytes, 0, AppSettings.maxResponseSizeMbLimit)),
       );
 
+  void setMaxUploadSizeMb(int megabytes) => _update(
+        _settings.copyWith(maxUploadSizeMb: _within(megabytes, 0, AppSettings.maxUploadSizeMbLimit)),
+      );
+
   void setProxyMode(ProxyMode mode) => _update(_settings.copyWith(proxy: _settings.proxy.copyWith(mode: mode)));
 
   void setProxyHost(String host) => _update(_settings.copyWith(proxy: _settings.proxy.copyWith(host: host)));

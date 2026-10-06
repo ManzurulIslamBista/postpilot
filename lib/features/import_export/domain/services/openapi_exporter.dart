@@ -11,6 +11,7 @@ import '../../../defaults/domain/services/header_inheritance.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/entities/key_value_item.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
+import '../../../request_builder/domain/entities/request_body.dart';
 import 'collection_tree.dart';
 
 final class OpenApiExport {
@@ -311,6 +312,8 @@ final class _Exporter {
         return _formBody('application/x-www-form-urlencoded', body.urlEncodedFields);
       case BodyType.formData:
         return _formBody('multipart/form-data', body.formFields);
+      case BodyType.binary:
+        return _binaryBody(body, headers);
       case BodyType.graphql:
         final parsedVariables = _decodeJson(body.graphqlVariables);
         return _content('application/json', {
@@ -348,14 +351,39 @@ final class _Exporter {
   Map<String, dynamic>? _formBody(String mediaType, List<KeyValueItem> fields) {
     final enabled = fields.where((f) => f.enabled && f.key.isNotEmpty).toList();
     if (enabled.isEmpty) return null;
-    return _content(
+    final body = _content(
       mediaType,
       {
         'type': 'object',
-        'properties': {for (final f in enabled) f.key: {'type': 'string'}},
+        'properties': {
+          // A file is a `string` of `format: binary`; its path stays out of the example (it is one machine's).
+          for (final f in enabled) f.key: f.isFile ? {'type': 'string', 'format': 'binary'} : {'type': 'string'},
+        },
       },
-      {for (final f in enabled) f.key: f.value},
+      {for (final f in enabled) if (!f.isFile) f.key: f.value},
     );
+    final types = {
+      for (final f in enabled)
+        if (f.isFile && f.contentType.isNotEmpty && !f.contentType.contains('{{')) f.key: {'contentType': f.contentType},
+    };
+    if (types.isNotEmpty) ((body['content'] as Map)[mediaType] as Map)['encoding'] = types;
+    return body;
+  }
+
+  /// One file as the whole body: `format: binary`, typed as the file's row says (else `application/octet-stream`).
+  Map<String, dynamic>? _binaryBody(RequestBody body, List<KeyValueItem> headers) {
+    final file = body.binaryFile;
+    if (file == null) return null;
+    final declared = file.contentType.isEmpty || file.contentType.contains('{{') ? null : file.contentType;
+    final mediaType = _declaredMediaType(headers) ?? declared ?? 'application/octet-stream';
+    return {
+      'required': true,
+      'content': {
+        mediaType: {
+          'schema': {'type': 'string', 'format': 'binary'},
+        },
+      },
+    };
   }
 
   Map<String, dynamic> _content(String mediaType, Map<String, dynamic> schema, Object example) => {

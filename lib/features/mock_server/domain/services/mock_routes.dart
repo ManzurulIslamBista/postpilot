@@ -1,3 +1,13 @@
+/// One saved response a route can answer with.
+final class MockExample {
+  final String name;
+  final int status;
+  final Map<String, String> headers;
+  final String body;
+
+  const MockExample({required this.name, required this.status, this.headers = const {}, required this.body});
+}
+
 /// One endpoint the mock server answers.
 final class MockRoute {
   final String method;
@@ -12,6 +22,10 @@ final class MockRoute {
   final String requestName;
   final String exampleName;
 
+  /// Every example saved for the request, the one above (status, headers, body) included. Empty for a route built by hand:
+  /// it then has just the one answer.
+  final List<MockExample> examples;
+
   const MockRoute({
     required this.method,
     required this.segments,
@@ -20,12 +34,27 @@ final class MockRoute {
     required this.body,
     required this.requestName,
     required this.exampleName,
+    this.examples = const [],
   });
 
   String get path => '/${segments.join('/')}';
 
+  /// `GET /users/:id`: how the route is named in the scenarios and in the log. A `{{id}}` or `{id}` segment reads as `:id`.
+  String get key => '$method /${segments.map((s) => isParam(s) ? ':${paramName(s)}' : s).join('/')}';
+
+  /// All the answers the route can give, the default one first.
+  List<MockExample> get allExamples =>
+      examples.isNotEmpty ? examples : [MockExample(name: exampleName, status: status, headers: headers, body: body)];
+
   static bool isParam(String segment) =>
       segment.startsWith(':') || (segment.startsWith('{') && segment.endsWith('}')) || segment.startsWith('{{');
+
+  /// The name inside a parameter segment: `:id`, `{id}` and `{{id}}` are all `id`.
+  static String paramName(String segment) {
+    if (segment.startsWith('{{')) return segment.substring(2, segment.endsWith('}}') ? segment.length - 2 : segment.length).trim();
+    if (segment.startsWith('{')) return segment.substring(1, segment.endsWith('}') ? segment.length - 1 : segment.length).trim();
+    return segment.startsWith(':') ? segment.substring(1) : segment;
+  }
 }
 
 /// What a collection request needs to become a route.
@@ -38,6 +67,9 @@ final class MockSource {
   final String? exampleBody;
   final String? exampleName;
 
+  /// Every saved example of the request (see [MockRoute.examples]); the fields above describe the default one.
+  final List<MockExample> examples;
+
   const MockSource({
     required this.requestName,
     required this.method,
@@ -46,6 +78,7 @@ final class MockSource {
     this.exampleHeaders = const {},
     this.exampleBody,
     this.exampleName,
+    this.examples = const [],
   });
 }
 
@@ -58,17 +91,24 @@ final class MockRouteTable {
 
   /// The route for [method] and [path] (query string ignored). Static segments
   /// beat parameters, so `/users/me` is not swallowed by `/users/:id`.
-  MockRoute? match(String method, String path) {
+  MockRoute? match(String method, String path) => matchWithParams(method, path)?.route;
+
+  /// Like [match], and what the path parameters were (`id` to `42`).
+  ({MockRoute route, Map<String, String> params})? matchWithParams(String method, String path) {
     final parts = _segmentsOf(path);
-    MockRoute? best;
+    ({MockRoute route, Map<String, String> params})? best;
     var bestScore = -1;
     for (final route in routes) {
       if (route.method != method.toUpperCase() || route.segments.length != parts.length) continue;
       var score = 0;
       var ok = true;
+      final params = <String, String>{};
       for (var i = 0; i < parts.length; i++) {
         final r = route.segments[i];
-        if (MockRoute.isParam(r)) continue;
+        if (MockRoute.isParam(r)) {
+          params[MockRoute.paramName(r)] = parts[i];
+          continue;
+        }
         if (r == parts[i]) {
           score++;
         } else {
@@ -77,7 +117,7 @@ final class MockRouteTable {
         }
       }
       if (ok && score > bestScore) {
-        best = route;
+        best = (route: route, params: params);
         bestScore = score;
       }
     }
@@ -151,6 +191,7 @@ final class MockRouteTable {
         body: body,
         requestName: s.requestName,
         exampleName: s.exampleName ?? '',
+        examples: s.examples,
       ));
     }
     routes.sort((a, b) => a.path.compareTo(b.path));

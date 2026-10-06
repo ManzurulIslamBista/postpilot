@@ -48,7 +48,7 @@ final class LocalSecrets {
 ///    secret value of its raw, GraphQL query or GraphQL variables body (JSON,
 ///    XML, SOAP, urlencoded text),
 ///  * it is a credential in a saved response example (its headers and body),
-///    in what an assertion expects, or an unmistakable one in a description,
+///    in what an assertion or a poll-until / run-if condition expects, or an unmistakable one in a description,
 ///  * it is in what a collection or a folder passes down to its requests: the
 ///    value of an `Authorization`/`Cookie`/API-key default header, a folder
 ///    variable marked secret (or named like a credential), a credential field
@@ -61,7 +61,7 @@ final class LocalSecrets {
 /// `#3`. The keys read `env/<environment>/<variable>`, `global/<variable>`,
 /// `cvar/<collection>/<variable>`, `cauth/<collection>/<field>`,
 /// `rauth/<collection>/<request>/<field>`, and `rurl`, `rhdr`, `rqry`, `rform`,
-/// `renc`, `rbody`, `rtest`, `rexh`, `rexb`, `cdesc`, `fdesc`, `rdesc`, `cdhdr`, `cdtest` (the headers
+/// `renc`, `rbody`, `rtest`, `rflow` and `rrunif` (what a request's poll-until and run-if conditions compare), `rexh`, `rexb`, `cdesc`, `fdesc`, `rdesc`, `cdhdr`, `cdtest` (the headers
 /// and checks a collection passes down), `fdhdr`, `fvar`, `fauth`, `fdtest` (the same for a folder) and `gbase` (the
 /// synced docs a linked collection keeps) for the other places. A file written before they existed still works: the old
 /// names of a key are tried too.
@@ -468,6 +468,9 @@ abstract final class SecretSplitter {
       }
     }
 
+    final settings = r['settings'];
+    if (settings is Map<String, dynamic>) _flowSlots(settings['flow'], key, label, slots);
+
     final exampleSeen = <String, int>{};
     for (final example in _maps(r['examples'])) {
       final exampleName = '${example['name'] ?? ''}';
@@ -489,6 +492,46 @@ abstract final class SecretSplitter {
       }
       if (example['body'] is String) {
         slots.add(text(example, 'body', 'rexb', '/$id', 'example "$exampleName" body', blank: SecretText.blankSnippet, restore: SecretText.restoreSnippet, exposed: _hasKnownToken));
+      }
+    }
+  }
+
+  /// What a request's flow settings can expect or compare: the value a "poll until" condition expects (a check
+  /// like any assertion, blanked the same way, key `rflow`) and what a "run if" compares a variable named like a
+  /// credential with (key `rrunif`).
+  static void _flowSlots(Object? flow, String key, String label, List<_Slot> slots) {
+    if (flow is! Map<String, dynamic>) return;
+    final poll = flow['poll'];
+    if (poll is Map<String, dynamic>) {
+      final seen = <String, int>{};
+      for (final assertion in _maps(poll['until'])) {
+        if (assertion['expected'] is! String) continue;
+        final type = assertion['type'];
+        final path = assertion['path'];
+        slots.add(_Slot(
+          assertion,
+          'expected',
+          'rflow/$key/${_unique(seen, '$type:${path ?? ''}')}',
+          '$label › poll until "${path is String && path.isNotEmpty ? path : type}"',
+          blank: (v) => SecretFields.blankedExpected(type, path, v) ?? v,
+          isExposedValue: _hasKnownToken,
+        ));
+      }
+    }
+    final runIf = flow['runIf'];
+    if (runIf is Map<String, dynamic>) {
+      final seen = <String, int>{};
+      for (final condition in _maps(runIf['all'])) {
+        if (condition['value'] is! String) continue;
+        final name = '${condition['name'] ?? ''}';
+        slots.add(_Slot(
+          condition,
+          'value',
+          'rrunif/$key/${_unique(seen, '${condition['kind']}:$name')}',
+          '$label › run if "$name"',
+          blank: SecretNames.looksSecretKey(name) ? _blankLiteral : _keep,
+          isExposedValue: _hasKnownToken,
+        ));
       }
     }
   }

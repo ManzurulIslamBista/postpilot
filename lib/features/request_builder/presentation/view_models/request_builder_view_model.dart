@@ -16,8 +16,11 @@ import '../../domain/services/importers/curl_parser.dart';
 import '../../../../core/enums/body_type.dart';
 import '../../domain/usecases/generate_code_snippet_usecase.dart';
 import '../../domain/usecases/send_request_usecase.dart';
+import '../../../request_flow/domain/entities/flow_report.dart';
+import '../../../request_flow/domain/usecases/request_flow_service.dart';
 import '../../../scripting/domain/entities/script_run_result.dart';
 import '../../../scripting/domain/usecases/run_request_scripts_usecase.dart';
+import '../../../settings/domain/entities/request_settings.dart';
 
 final class RequestBuilderViewModel with ChangeNotifier {
   final RequestRepository _requestRepository;
@@ -25,14 +28,31 @@ final class RequestBuilderViewModel with ChangeNotifier {
   final GenerateCodeSnippetUseCase _generateCodeSnippetUseCase;
   final RunRequestScriptsUseCase _runRequestScriptsUseCase;
 
+  /// Retry, poll until and fetch all pages for the requests that have them. Without it every send is a single send.
+  final RequestFlowService? _flow;
+
   RequestBuilderViewModel(
     this._requestRepository,
     this._sendRequestUseCase,
     this._generateCodeSnippetUseCase,
-    this._runRequestScriptsUseCase,
-  );
+    this._runRequestScriptsUseCase, [
+    this._flow,
+  ]);
 
   ApiRequestEntity? request;
+
+  /// What the flow around the last send did (retries, polls, pages); null when it had nothing to report.
+  FlowReport? lastFlow;
+
+  /// While a send is in flight, what its flow is doing right now (`attempt 2/3 after 1.2 s`); null otherwise.
+  String? flowStatus;
+
+  /// Fetch all pages is on for this request, so Send says so: it will send more than one request.
+  bool fetchAllPages = false;
+
+  String get sendLabel => fetchAllPages ? 'Send (all pages)' : 'Send';
+
+  StreamSubscription<RequestSettings>? _settingsSubscription;
 
   /// Bumped when the URL was replaced from outside the URL field (a pasted cURL
   /// command), so the field can show the new text.
@@ -56,12 +76,24 @@ final class RequestBuilderViewModel with ChangeNotifier {
     isLoading = true;
     response = null;
     lastScriptResult = null;
+    lastFlow = null;
+    flowStatus = null;
+    fetchAllPages = false;
     errorMessage = null;
     errorDetail = null;
     notifyListeners();
     _requestSubscription?.cancel();
     _requestSubscription = _requestRepository.watchById(requestId).listen(_mergeExternalName);
+    _settingsSubscription?.cancel();
+    _settingsSubscription = _flow?.watch(requestId).listen((settings) {
+      if (settings.pagination.enabled == fetchAllPages || _disposed) return;
+      fetchAllPages = settings.pagination.enabled;
+      notifyListeners();
+    });
     request = await _requestRepository.findById(requestId);
+    // Known before the first frame, so Send does not flash its plain label before it says "(all pages)".
+    final flow = _flow;
+    if (flow != null) fetchAllPages = (await flow.settingsOf(requestId)).pagination.enabled;
     isLoading = false;
     notifyListeners();
   }
@@ -78,11 +110,24 @@ final class RequestBuilderViewModel with ChangeNotifier {
     errorMessage = null;
     errorDetail = null;
     lastScriptResult = null;
+    lastFlow = null;
+    flowStatus = null;
     notifyListeners();
 
     ApiResponseEntity? sent;
+    String? flowFailure;
     try {
-      sent = await _sendRequestUseCase(current, cancelToken: cancelToken);
+      final flow = _flow;
+      if (flow == null) {
+        sent = await _sendRequestUseCase(current, cancelToken: cancelToken);
+      } else {
+        final outcome = await flow.send(current, cancelToken: cancelToken, onNote: _onFlowNote);
+        lastFlow = outcome.report.isNoteworthy ? outcome.report : null;
+        // The last try failed with nothing to show: the same error, told the same way, as a plain send.
+        if (outcome.error != null) throw outcome.error!;
+        sent = outcome.response;
+        flowFailure = outcome.report.failure;
+      }
       response = sent;
     } catch (e) {
       if (!cancelToken.isCancelled) {
@@ -93,6 +138,8 @@ final class RequestBuilderViewModel with ChangeNotifier {
         errorDetail = _detailOf(e, errorMessage!);
       }
     }
+    // A poll that never held, a page that failed: the response (the last, or what was merged so far) stays on screen.
+    if (flowFailure != null && !cancelToken.isCancelled) errorMessage = _masked(flowFailure);
     if (sent != null) {
       // Apart from the send: a failing script is not a server that could not be reached.
       try {
@@ -115,6 +162,12 @@ final class RequestBuilderViewModel with ChangeNotifier {
 
     _cancelToken = null;
     isSending = false;
+    flowStatus = null;
+    if (!_disposed) notifyListeners();
+  }
+
+  void _onFlowNote(String message) {
+    flowStatus = message;
     if (!_disposed) notifyListeners();
   }
 
@@ -222,10 +275,14 @@ final class RequestBuilderViewModel with ChangeNotifier {
     if (latest == null || current == null) return;
     final renamed = latest.name != current.name;
     final moved = latest.folderId != current.folderId || latest.collectionId != current.collectionId;
-    if (!renamed && !moved) return;
+    // A token the app renewed by itself before a send (see `OAuth2TokenManager`) is stored on the request; without it
+    // here the next edit would save the old token over it, and the old refresh token may no longer work.
+    final renewedAuth = current.auth.takeNewerOAuth2Token(latest.auth);
+    if (!renamed && !moved && renewedAuth == null) return;
     var merged = current;
     if (renamed) merged = merged.copyWith(name: latest.name);
     if (moved) merged = merged.inFolder(latest.folderId, collectionId: latest.collectionId);
+    if (renewedAuth != null) merged = merged.copyWith(auth: renewedAuth);
     request = merged;
     notifyListeners();
   }
@@ -241,6 +298,7 @@ final class RequestBuilderViewModel with ChangeNotifier {
     _disposed = true;
     _cancelToken?.cancel();
     _requestSubscription?.cancel();
+    _settingsSubscription?.cancel();
     super.dispose();
   }
 }

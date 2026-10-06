@@ -9,6 +9,10 @@ final class ConsoleEntryEntity {
   final int? responseSize;
   final String? errorMessage;
 
+  /// A line the flow around a send added instead of a request (`attempt 2/3 after 1.2 s`, `page 3`): it explains
+  /// the request listed just above it. Such an entry has no URL, status or size and is never an error.
+  final String? note;
+
   const ConsoleEntryEntity({
     required this.method,
     required this.url,
@@ -19,12 +23,15 @@ final class ConsoleEntryEntity {
     required this.statusCode,
     required this.responseSize,
     required this.errorMessage,
+    this.note,
   });
+
+  bool get isNote => note != null;
 
   bool get isSuccess => statusCode != null && statusCode! >= 200 && statusCode! < 300;
 
   /// Sent, with neither a reply nor a failure yet — [durationMs] is unknown.
-  bool get isPending => statusCode == null && errorMessage == null;
+  bool get isPending => note == null && statusCode == null && errorMessage == null;
 
   /// The console's "errors" filter answers "what went wrong?" — a 4xx/5xx
   /// reply is as much an answer as a dropped connection, so both count.

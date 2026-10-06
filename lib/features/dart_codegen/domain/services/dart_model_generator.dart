@@ -37,6 +37,46 @@ class DartModelOptions {
   });
 }
 
+/// The shape of one JSON position, as the generator typed it.
+enum DartFieldKind { string, integer, decimal, boolean, list, object, map, date, dynamicType }
+
+/// One field of a generated class, for generators that build on the models (the test generator).
+final class DartFieldInfo {
+  /// The key in the JSON.
+  final String json;
+
+  /// The Dart field name.
+  final String name;
+
+  /// The type as written in the class, without the `?`.
+  final String typeName;
+  final DartFieldKind kind;
+  final bool nullable;
+
+  /// For a list or a map: what the items (values) are.
+  final DartFieldKind? itemKind;
+  final String? itemTypeName;
+  final bool itemNullable;
+
+  const DartFieldInfo({
+    required this.json,
+    required this.name,
+    required this.typeName,
+    required this.kind,
+    required this.nullable,
+    this.itemKind,
+    this.itemTypeName,
+    this.itemNullable = false,
+  });
+}
+
+/// One generated class and its fields, in declaration order.
+final class DartClassInfo {
+  final String name;
+  final List<DartFieldInfo> fields;
+  const DartClassInfo(this.name, this.fields);
+}
+
 class DartModelResult {
   final String code;
   final int classCount;
@@ -44,7 +84,10 @@ class DartModelResult {
   /// What the user should know: a root list, mixed types, an unparseable sample.
   final List<String> notes;
 
-  const DartModelResult(this.code, this.classCount, this.notes);
+  /// The classes in [code], root first. Empty when nothing was generated.
+  final List<DartClassInfo> classes;
+
+  const DartModelResult(this.code, this.classCount, this.notes, {this.classes = const []});
 }
 
 /// Turns one or more JSON samples into Dart model classes.
@@ -124,7 +167,27 @@ final class DartModelGenerator {
       if (i > 0) buffer.writeln();
       buffer.write(_emit(classes[i], options));
     }
-    return DartModelResult(buffer.toString().trimRight(), classes.length, notes);
+    return DartModelResult(
+      buffer.toString().trimRight(),
+      classes.length,
+      notes,
+      classes: [
+        for (final c in classes)
+          DartClassInfo(c.name, [
+            for (final f in c.fields)
+              DartFieldInfo(
+                json: f.json,
+                name: f.name,
+                typeName: f.type.name,
+                kind: f.type.kind,
+                nullable: f.nullable,
+                itemKind: f.type.item?.kind,
+                itemTypeName: f.type.item?.name,
+                itemNullable: f.type.itemNullable,
+              ),
+          ]),
+      ],
+    );
   }
 
   /// The generated file imports json_annotation / freezed_annotation, whose public
@@ -145,39 +208,39 @@ final class DartModelGenerator {
   /// Resolves the merged shape into a Dart type and registers nested classes.
   _TypeRef _typeOf(_Shape shape, String suggestedName, List<_ClassSpec> classes, Set<String> taken, DartModelOptions o) {
     final kinds = shape.kinds;
-    if (kinds.isEmpty) return const _TypeRef('dynamic', _Kind.dynamicType);
+    if (kinds.isEmpty) return const _TypeRef('dynamic', DartFieldKind.dynamicType);
     if (kinds.length > 1) {
       // int + double widens to double; null alone does not count as a kind.
-      if (kinds.length == 2 && kinds.containsAll({_Kind.integer, _Kind.decimal})) {
-        return const _TypeRef('double', _Kind.decimal);
+      if (kinds.length == 2 && kinds.containsAll({DartFieldKind.integer, DartFieldKind.decimal})) {
+        return const _TypeRef('double', DartFieldKind.decimal);
       }
-      return const _TypeRef('dynamic', _Kind.dynamicType);
+      return const _TypeRef('dynamic', DartFieldKind.dynamicType);
     }
     switch (kinds.single) {
-      case _Kind.string:
+      case DartFieldKind.string:
         return shape.allDates && o.detectDates
-            ? const _TypeRef('DateTime', _Kind.date)
-            : const _TypeRef('String', _Kind.string);
-      case _Kind.integer:
-        return const _TypeRef('int', _Kind.integer);
-      case _Kind.decimal:
-        return const _TypeRef('double', _Kind.decimal);
-      case _Kind.boolean:
-        return const _TypeRef('bool', _Kind.boolean);
-      case _Kind.list:
+            ? const _TypeRef('DateTime', DartFieldKind.date)
+            : const _TypeRef('String', DartFieldKind.string);
+      case DartFieldKind.integer:
+        return const _TypeRef('int', DartFieldKind.integer);
+      case DartFieldKind.decimal:
+        return const _TypeRef('double', DartFieldKind.decimal);
+      case DartFieldKind.boolean:
+        return const _TypeRef('bool', DartFieldKind.boolean);
+      case DartFieldKind.list:
         final item = _typeOf(shape.items!, DartNames.singular(suggestedName), classes, taken, o);
         final itemNullable = shape.items!.sawNull;
-        return _TypeRef('List<${item.name}${itemNullable ? '?' : ''}>', _Kind.list, item: item, itemNullable: itemNullable);
-      case _Kind.object:
+        return _TypeRef('List<${item.name}${itemNullable ? '?' : ''}>', DartFieldKind.list, item: item, itemNullable: itemNullable);
+      case DartFieldKind.object:
         final object = shape.object!;
         if (object.isMapLike) {
           final value = _typeOf(object.mapValue(), '${suggestedName}Value', classes, taken, o);
-          return _TypeRef('Map<String, ${value.name}>', _Kind.map, item: value);
+          return _TypeRef('Map<String, ${value.name}>', DartFieldKind.map, item: value);
         }
         final name = _collect(object, DartNames.className(suggestedName, also: o.avoidClassNames), classes, taken, o);
-        return _TypeRef(name, _Kind.object);
-      case _Kind.map || _Kind.date || _Kind.dynamicType:
-        return const _TypeRef('dynamic', _Kind.dynamicType);
+        return _TypeRef(name, DartFieldKind.object);
+      case DartFieldKind.map || DartFieldKind.date || DartFieldKind.dynamicType:
+        return const _TypeRef('dynamic', DartFieldKind.dynamicType);
     }
   }
 
@@ -204,7 +267,7 @@ final class DartModelGenerator {
       final nullable = o.allNullable ||
           shape.sawNull ||
           shape.missingIn(object.count) ||
-          type.kind == _Kind.dynamicType;
+          type.kind == DartFieldKind.dynamicType;
       spec.fields.add(_FieldSpec(json: entry.key, name: field, type: type, nullable: nullable && type.name != 'dynamic'));
     }
     return name;
@@ -304,31 +367,31 @@ final class DartModelGenerator {
   /// items (nulls, wrong types) by skipping them.
   String _decodeOptional(_TypeRef t, String e) {
     switch (t.kind) {
-      case _Kind.string:
+      case DartFieldKind.string:
         return '$e as String?';
-      case _Kind.integer:
+      case DartFieldKind.integer:
         return '($e as num?)?.toInt()';
-      case _Kind.decimal:
+      case DartFieldKind.decimal:
         return '($e as num?)?.toDouble()';
-      case _Kind.boolean:
+      case DartFieldKind.boolean:
         return '$e as bool?';
-      case _Kind.date:
+      case DartFieldKind.date:
         return "DateTime.tryParse(($e as String?) ?? '')";
-      case _Kind.list:
+      case DartFieldKind.list:
         final item = t.item!;
-        if (item.kind == _Kind.dynamicType) return '$e as List<dynamic>?';
+        if (item.kind == DartFieldKind.dynamicType) return '$e as List<dynamic>?';
         if (t.itemNullable) return _decode(t, e, true);
         final tail = switch (item.kind) {
-          _Kind.string => '.whereType<String>().toList()',
-          _Kind.boolean => '.whereType<bool>().toList()',
-          _Kind.integer => '.whereType<num>().map((e) => e.toInt()).toList()',
-          _Kind.decimal => '.whereType<num>().map((e) => e.toDouble()).toList()',
-          _Kind.date => '.whereType<String>().map(DateTime.tryParse).whereType<DateTime>().toList()',
-          _Kind.object => '.whereType<Map<String, dynamic>>().map(${item.name}.fromJson).toList()',
+          DartFieldKind.string => '.whereType<String>().toList()',
+          DartFieldKind.boolean => '.whereType<bool>().toList()',
+          DartFieldKind.integer => '.whereType<num>().map((e) => e.toInt()).toList()',
+          DartFieldKind.decimal => '.whereType<num>().map((e) => e.toDouble()).toList()',
+          DartFieldKind.date => '.whereType<String>().map(DateTime.tryParse).whereType<DateTime>().toList()',
+          DartFieldKind.object => '.whereType<Map<String, dynamic>>().map(${item.name}.fromJson).toList()',
           _ => null,
         };
         return tail == null ? _decode(t, e, true) : '($e as List<dynamic>?)?$tail';
-      case _Kind.object || _Kind.map || _Kind.dynamicType:
+      case DartFieldKind.object || DartFieldKind.map || DartFieldKind.dynamicType:
         return _decode(t, e, true);
     }
   }
@@ -342,19 +405,19 @@ final class DartModelGenerator {
 
   String _decode(_TypeRef t, String expr, bool nullable) {
     String inner(String e) => switch (t.kind) {
-          _Kind.string => '$e as String',
-          _Kind.integer => '($e as num).toInt()',
-          _Kind.decimal => '($e as num).toDouble()',
-          _Kind.boolean => '$e as bool',
-          _Kind.date => 'DateTime.parse($e as String)',
-          _Kind.object => '${t.name}.fromJson($e as Map<String, dynamic>)',
-          _Kind.list when t.item!.kind == _Kind.dynamicType => '$e as List<dynamic>',
-          _Kind.list => '($e as List<dynamic>).map((e) => ${_decodeItem(t, "e")}).toList()',
-          _Kind.map when t.item!.kind == _Kind.dynamicType => '$e as Map<String, dynamic>',
-          _Kind.map => '($e as Map<String, dynamic>).map((k, v) => MapEntry(k, ${_decodeItem(t, "v")}))',
-          _Kind.dynamicType => e,
+          DartFieldKind.string => '$e as String',
+          DartFieldKind.integer => '($e as num).toInt()',
+          DartFieldKind.decimal => '($e as num).toDouble()',
+          DartFieldKind.boolean => '$e as bool',
+          DartFieldKind.date => 'DateTime.parse($e as String)',
+          DartFieldKind.object => '${t.name}.fromJson($e as Map<String, dynamic>)',
+          DartFieldKind.list when t.item!.kind == DartFieldKind.dynamicType => '$e as List<dynamic>',
+          DartFieldKind.list => '($e as List<dynamic>).map((e) => ${_decodeItem(t, "e")}).toList()',
+          DartFieldKind.map when t.item!.kind == DartFieldKind.dynamicType => '$e as Map<String, dynamic>',
+          DartFieldKind.map => '($e as Map<String, dynamic>).map((k, v) => MapEntry(k, ${_decodeItem(t, "v")}))',
+          DartFieldKind.dynamicType => e,
         };
-    if (t.kind == _Kind.dynamicType) return expr;
+    if (t.kind == DartFieldKind.dynamicType) return expr;
     return nullable ? '$expr == null ? null : ${inner(expr)}' : inner(expr);
   }
 
@@ -367,26 +430,26 @@ final class DartModelGenerator {
   String _encode(_TypeRef t, String name, bool nullable) {
     final q = nullable ? '?' : '';
     return switch (t.kind) {
-      _Kind.date => '$name$q.toIso8601String()',
-      _Kind.object => '$name$q.toJson()',
-      _Kind.list when _needsMapping(t.item!) =>
+      DartFieldKind.date => '$name$q.toIso8601String()',
+      DartFieldKind.object => '$name$q.toJson()',
+      DartFieldKind.list when _needsMapping(t.item!) =>
         '$name$q.map((e) => ${_encodeItem(t.item!, "e", t.itemNullable)}).toList()',
-      _Kind.map when _needsMapping(t.item!) =>
+      DartFieldKind.map when _needsMapping(t.item!) =>
         '$name$q.map((k, v) => MapEntry(k, ${_encodeItem(t.item!, "v", false)}))',
       _ => name,
     };
   }
 
   bool _needsMapping(_TypeRef t) =>
-      t.kind == _Kind.date || t.kind == _Kind.object || ((t.kind == _Kind.list || t.kind == _Kind.map) && _needsMapping(t.item!));
+      t.kind == DartFieldKind.date || t.kind == DartFieldKind.object || ((t.kind == DartFieldKind.list || t.kind == DartFieldKind.map) && _needsMapping(t.item!));
 
   String _encodeItem(_TypeRef t, String e, bool nullable) {
     final q = nullable ? '?' : '';
     return switch (t.kind) {
-      _Kind.date => '$e$q.toIso8601String()',
-      _Kind.object => '$e$q.toJson()',
-      _Kind.list => '$e$q.map((x) => ${_encodeItem(t.item!, "x", t.itemNullable)}).toList()',
-      _Kind.map => '$e$q.map((k, v) => MapEntry(k, ${_encodeItem(t.item!, "v", false)}))',
+      DartFieldKind.date => '$e$q.toIso8601String()',
+      DartFieldKind.object => '$e$q.toJson()',
+      DartFieldKind.list => '$e$q.map((x) => ${_encodeItem(t.item!, "x", t.itemNullable)}).toList()',
+      DartFieldKind.map => '$e$q.map((k, v) => MapEntry(k, ${_encodeItem(t.item!, "v", false)}))',
       _ => e,
     };
   }
@@ -442,11 +505,9 @@ final class DartModelGenerator {
 
 // --- inference model -----------------------------------------------------------
 
-enum _Kind { string, integer, decimal, boolean, list, object, map, date, dynamicType }
-
 class _TypeRef {
   final String name;
-  final _Kind kind;
+  final DartFieldKind kind;
   final _TypeRef? item;
   final bool itemNullable;
   const _TypeRef(this.name, this.kind, {this.item, this.itemNullable = false});
@@ -468,7 +529,7 @@ class _ClassSpec {
 
 /// Everything seen for one JSON position across all samples.
 class _Shape {
-  final Set<_Kind> _seen = {};
+  final Set<DartFieldKind> _seen = {};
   bool sawNull = false;
   bool _allDates = true;
   bool _anyString = false;
@@ -489,7 +550,7 @@ class _Shape {
   }
 
   /// Kinds seen, without null.
-  Set<_Kind> get kinds => _seen;
+  Set<DartFieldKind> get kinds => _seen;
 
   bool get allDates => _anyString && _allDates;
 
@@ -503,26 +564,26 @@ class _Shape {
       case null:
         sawNull = true;
       case String s:
-        _seen.add(_Kind.string);
+        _seen.add(DartFieldKind.string);
         _anyString = true;
         if (!DartModelGenerator._iso.hasMatch(s)) _allDates = false;
       case int _:
-        _seen.add(_Kind.integer);
+        _seen.add(DartFieldKind.integer);
       case double _:
-        _seen.add(_Kind.decimal);
+        _seen.add(DartFieldKind.decimal);
       case bool _:
-        _seen.add(_Kind.boolean);
+        _seen.add(DartFieldKind.boolean);
       case List<dynamic> list:
-        _seen.add(_Kind.list);
+        _seen.add(DartFieldKind.list);
         final shape = items ??= _Shape();
         for (final item in list) {
           shape.add(item, o);
         }
       case Map<String, dynamic> map:
-        _seen.add(_Kind.object);
+        _seen.add(DartFieldKind.object);
         (object ??= _ObjectShape()).add(map, o);
       default:
-        _seen.add(_Kind.dynamicType);
+        _seen.add(DartFieldKind.dynamicType);
     }
   }
 }

@@ -576,7 +576,9 @@ void main() {
       final folder = p.join(tempDir.path, 'git_sync');
       Directory(folder).createSync();
       File(p.join(folder, 'workspace.json')).writeAsStringSync(_workspaceJson(folder, 'Local'));
-      final workplace = _entity(folder).copyWith(gitRepoUrl: 'o/r', gitToken: 'ghp_x');
+      // Synced with the repository's current file before, so a push may replace it; one that never
+      // synced is refused (see workplace_repository_safety_test.dart).
+      final workplace = _entity(folder).copyWith(gitRepoUrl: 'o/r', gitToken: 'ghp_x', lastSyncedSha: 'old-sha');
 
       await repository.syncWithGit(workplace, commitMessage: 'my message');
 

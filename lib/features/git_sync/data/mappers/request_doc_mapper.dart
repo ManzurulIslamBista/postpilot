@@ -60,7 +60,8 @@ abstract final class RequestDocMapper {
     final localData = local?.data;
     final localBody = localData?['body'] as Map?;
     final tests = data['tests'] as Map? ?? const {};
-    final assertions = DocValues.jsonList(tests['assertions']);
+    final localTests = localData?['tests'] as Map?;
+    final assertions = DocValues.assertions(tests['assertions'], keepingSecretsOf: localTests?['assertions']);
     final extractors = DocValues.jsonList(tests['extractors']);
     final settings = DocValues.jsonMap(data['settings']);
     return SyncDoc(
@@ -96,7 +97,11 @@ abstract final class RequestDocMapper {
             keepingSecretsOf: localBody?['urlEncodedFields'],
             isSecret: SecretNames.looksSecretKey,
           ),
-          'graphqlQuery': body['graphqlQuery'] as String? ?? '',
+          'graphqlQuery': DocValues.jsonText(
+            body['graphqlQuery'],
+            fallback: '',
+            keepingSecretsOf: localBody?['graphqlQuery'],
+          ),
           'graphqlVariables': DocValues.jsonText(
             body['graphqlVariables'],
             fallback: '{}',
@@ -107,7 +112,7 @@ abstract final class RequestDocMapper {
         if (assertions.isNotEmpty || extractors.isNotEmpty)
           'tests': {'assertions': assertions, 'extractors': extractors},
         if (settings.isNotEmpty) 'settings': settings,
-        ...DocValues.notes(data),
+        ...DocValues.notes(data, keepingSecretsOf: localData),
       },
     );
   }

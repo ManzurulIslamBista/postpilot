@@ -14,7 +14,13 @@ enum NetworkErrorKind { timeout, connectionError, badResponse, cancelled, other 
 
 final class NetworkException extends AppException {
   final NetworkErrorKind kind;
-  const NetworkException(super.message, {this.kind = NetworkErrorKind.other});
+
+  /// One line saying what went wrong and what to do about it ("Couldn't find
+  /// the server ..."), when the client could tell; [message] keeps the
+  /// technical detail. Never holds a secret: it names the host, not the URL.
+  final String? summary;
+
+  const NetworkException(super.message, {this.kind = NetworkErrorKind.other, this.summary});
 }
 
 final class InvalidUrlException extends AppException {

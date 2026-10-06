@@ -9,6 +9,10 @@ final class PushPreview {
   /// someone else (or another device) pushed since.
   final bool remoteChanged;
 
+  /// [remoteChanged] because this workplace never synced with the repository, which
+  /// already has a different `workspace.json`, rather than because someone pushed since.
+  final bool neverSynced;
+
   /// Local file compared with the repository's.
   final WorkspaceChangeSummary changes;
 
@@ -18,6 +22,7 @@ final class PushPreview {
   const PushPreview({
     required this.remoteExists,
     required this.remoteChanged,
+    this.neverSynced = false,
     required this.changes,
     required this.suggestedMessage,
   });

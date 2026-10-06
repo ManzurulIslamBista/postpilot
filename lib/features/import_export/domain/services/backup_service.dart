@@ -5,6 +5,8 @@ import '../../../collections/domain/entities/collection_variable_entity.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
 import '../../../collections/domain/repositories/collection_repository.dart';
 import '../../../collections/domain/repositories/collection_variable_repository.dart';
+import '../../../defaults/domain/entities/level_defaults.dart';
+import '../../../defaults/domain/repositories/defaults_repository.dart';
 import '../../../documentation/domain/entities/entity_kind.dart';
 import '../../../documentation/domain/repositories/documentation_repository.dart';
 import '../../../documentation/domain/repositories/tag_repository.dart';
@@ -24,6 +26,7 @@ import '../entities/import_format.dart';
 import '../entities/import_summary.dart';
 import '../repositories/git_state_store.dart';
 import 'backup_codec.dart';
+import 'backup_order.dart';
 import 'collection_loader.dart';
 import 'import_names.dart';
 
@@ -57,6 +60,10 @@ final class BackupService {
   /// [snapshot] and [restore] simply never carry Git state.
   final GitStateStore? _gitState;
 
+  /// Where a restore writes the defaults of the collections and folders it creates (reading them
+  /// goes through the [CollectionLoader]). Without it a restore leaves them out.
+  final DefaultsRepository? _defaults;
+
   const BackupService(
     this._loader,
     this._collectionRepository,
@@ -71,6 +78,7 @@ final class BackupService {
     this._documentationRepository,
     this._tagRepository, [
     this._gitState,
+    this._defaults,
   ]);
 
   /// The workspace as data rather than text, for callers that persist it themselves.
@@ -140,6 +148,13 @@ final class BackupService {
           git: gitState?.git,
           uid: gitState?.collectionUid,
           folderUids: gitState?.folderUids ?? const {},
+          // The collection's auth and variables are the two fields above, not part of these.
+          defaults: LevelDefaults(
+            headers: loaded.defaultsTree.collection.headers,
+            assertions: loaded.defaultsTree.collection.assertions,
+            extractors: loaded.defaultsTree.collection.extractors,
+          ),
+          folderDefaults: loaded.defaultsTree.folderDefaults,
         ),
       );
     }
@@ -267,60 +282,30 @@ final class BackupService {
     }
     await _restoreNotes(EntityKind.collection, collectionId, collection.notes);
 
-    final folderIds = await _restoreFolders(collectionId, collection.folders);
+    // One depth-first pass in the canonical order. Creating each folder and request as it comes appends it, so the
+    // stored indexes reproduce the file's order, folders and requests interleaved. A folder whose parent is not in
+    // the file, or that sits in a parent cycle, lands at the top level (see CollectionOrder).
+    final folderIds = <int, int>{};
+    final requestUids = <int, String>{};
+    for (final entry in collection.canonicalOrder.entries) {
+      final parentId = entry.parentId == null ? null : folderIds[entry.parentId];
+      if (entry.isFolder) {
+        final folder = collection.folders[entry.index];
+        folderIds[folder.id] = await _createFolder(collectionId, parentId, folder.name);
+      } else {
+        await _restoreRequest(collectionId, collection.requests[entry.index], parentId, requestUids);
+      }
+    }
     for (final entry in collection.folderNotes.entries) {
       final folderId = folderIds[entry.key];
       if (folderId != null) await _restoreNotes(EntityKind.folder, folderId, entry.value);
     }
-    final requestUids = <int, String>{};
-    for (final item in collection.requests) {
-      final source = item.request;
-      final folderId = source.folderId == null ? null : folderIds[source.folderId];
-      final requestId = await _requestRepository.createRequest(
-        collectionId: collectionId,
-        folderId: folderId,
-        name: source.name,
-      );
-      await _requestRepository.saveRequest(
-        ApiRequestEntity(
-          id: requestId,
-          collectionId: collectionId,
-          folderId: folderId,
-          name: source.name,
-          method: source.method,
-          url: source.url,
-          headers: source.headers,
-          queryParams: source.queryParams,
-          body: source.body,
-          auth: source.auth,
-        ),
-      );
-      final scripts = item.scripts;
-      if (scripts != null) {
-        await _scriptsRepository.save(
-          RequestScriptsEntity(
-            requestId: requestId,
-            assertionsJson: scripts.assertionsJson,
-            extractorsJson: scripts.extractorsJson,
-          ),
-        );
-      }
-      final settings = item.settings;
-      if (settings != null) await _requestSettingsRepository.save(requestId, settings);
-      await _restoreNotes(EntityKind.request, requestId, item.notes);
-      if (item.uid != null) requestUids[requestId] = item.uid!;
-      for (final example in item.examples) {
-        await _exampleRepository.add(
-          ResponseExampleEntity(
-            id: 0,
-            requestId: requestId,
-            name: example.name,
-            statusCode: example.statusCode,
-            headers: example.headers,
-            body: example.body,
-            savedAt: example.savedAt,
-          ),
-        );
+    final defaults = _defaults;
+    if (defaults != null) {
+      await defaults.saveCollection(collectionId, collection.defaults);
+      for (final entry in collection.folderDefaults.entries) {
+        final folderId = folderIds[entry.key];
+        if (folderId != null) await defaults.saveFolder(folderId, entry.value);
       }
     }
     final git = collection.git;
@@ -347,33 +332,59 @@ final class BackupService {
     if (notes.tags.isNotEmpty) await _tagRepository.setTags(kind, id, notes.tags);
   }
 
-  /// Creates [folders] parents-first and returns file id -> new id. A folder
-  /// whose parent isn't in the file, or that sits in a parent cycle, goes to
-  /// the collection's top level.
-  Future<Map<int, int>> _restoreFolders(int collectionId, List<FolderEntity> folders) async {
-    final knownIds = {for (final f in folders) f.id};
-    final created = <int, int>{};
-    var pending = [...folders];
-    while (pending.isNotEmpty) {
-      final blocked = <FolderEntity>[];
-      for (final folder in pending) {
-        final parent = folder.parentFolderId;
-        final waitsForParent = parent != null && knownIds.contains(parent) && !created.containsKey(parent);
-        if (waitsForParent) {
-          blocked.add(folder);
-        } else {
-          created[folder.id] = await _createFolder(collectionId, parent == null ? null : created[parent], folder.name);
-        }
-      }
-      if (blocked.length == pending.length) {
-        for (final folder in blocked) {
-          created[folder.id] = await _createFolder(collectionId, null, folder.name);
-        }
-        break;
-      }
-      pending = blocked;
+  Future<void> _restoreRequest(
+    int collectionId,
+    BackupRequest item,
+    int? folderId,
+    Map<int, String> requestUids,
+  ) async {
+    final source = item.request;
+    final requestId = await _requestRepository.createRequest(
+      collectionId: collectionId,
+      folderId: folderId,
+      name: source.name,
+    );
+    await _requestRepository.saveRequest(
+      ApiRequestEntity(
+        id: requestId,
+        collectionId: collectionId,
+        folderId: folderId,
+        name: source.name,
+        method: source.method,
+        url: source.url,
+        headers: source.headers,
+        queryParams: source.queryParams,
+        body: source.body,
+        auth: source.auth,
+      ),
+    );
+    final scripts = item.scripts;
+    if (scripts != null) {
+      await _scriptsRepository.save(
+        RequestScriptsEntity(
+          requestId: requestId,
+          assertionsJson: scripts.assertionsJson,
+          extractorsJson: scripts.extractorsJson,
+        ),
+      );
     }
-    return created;
+    final settings = item.settings;
+    if (settings != null) await _requestSettingsRepository.save(requestId, settings);
+    await _restoreNotes(EntityKind.request, requestId, item.notes);
+    if (item.uid != null) requestUids[requestId] = item.uid!;
+    for (final example in item.examples) {
+      await _exampleRepository.add(
+        ResponseExampleEntity(
+          id: 0,
+          requestId: requestId,
+          name: example.name,
+          statusCode: example.statusCode,
+          headers: example.headers,
+          body: example.body,
+          savedAt: example.savedAt,
+        ),
+      );
+    }
   }
 
   Future<int> _createFolder(int collectionId, int? parentFolderId, String name) => _collectionRepository.createFolder(

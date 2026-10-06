@@ -19,6 +19,16 @@ abstract final class DeviceTargets {
         DeviceTarget('Flutter web / desktop', 'localhost', 'Runs on this computer: localhost works.'),
       ];
 
+  /// Why an `http://` address can still fail on a phone after it is reachable: both systems block
+  /// plain http by default.
+  static const cleartextNote = 'Plain http:// is blocked on phones by default. Android 9 and later: put '
+      'android:usesCleartextTraffic="true" on <application> in AndroidManifest.xml (for debug builds), or limit it to this host '
+      'with a network security config. iOS: set NSAppTransportSecurity > NSAllowsLocalNetworking to true in Info.plist; '
+      'iOS 14 and later also asks the user to allow local network access.';
+
+  /// Whether [url] is plain http, the case [cleartextNote] is about.
+  static bool usesCleartext(String url) => Uri.tryParse(url.trim())?.scheme.toLowerCase() == 'http';
+
   /// `adb reverse` makes a USB-connected Android device's localhost point at this computer.
   static String adbReverse(int port) => 'adb reverse tcp:$port tcp:$port';
 

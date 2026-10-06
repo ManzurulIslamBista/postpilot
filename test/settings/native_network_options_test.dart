@@ -104,13 +104,22 @@ void main() {
     });
 
     test('credentials dart:io would split apart are refused with a message that does not quote them', () {
-      const semicolon = ProxyConfig(mode: ProxyMode.custom, host: 'p', port: 1, username: 'ann', password: 'pa;ss');
-      const colon = ProxyConfig(mode: ProxyMode.custom, host: 'p', port: 1, username: 'a:nn', password: 'pass');
+      // Values that are not a word of the message itself: the old 'pass' matched the word "password" in it.
+      const semicolon = ProxyConfig(mode: ProxyMode.custom, host: 'p', port: 1, username: 'ann', password: 'hunt;er2');
+      const colon = ProxyConfig(mode: ProxyMode.custom, host: 'p', port: 1, username: 'a:nn', password: 'hunter2');
 
       for (final proxy in [semicolon, colon]) {
         expect(
           () => proxyDirectiveFor(proxy, uri),
-          throwsA(isA<NetworkException>().having((e) => e.message, 'message', isNot(contains('pass')))),
+          throwsA(isA<NetworkException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              ProxyConfig.unsendableCredentialsMessage,
+              isNot(contains('hunt')),
+              isNot(contains('a:nn')),
+            ),
+          )),
         );
       }
     });

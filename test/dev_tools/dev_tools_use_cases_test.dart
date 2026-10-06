@@ -220,7 +220,10 @@ void main() {
             used.addAll(pattern.allMatches(text).map((m) => m[1]!));
           }
         }
-        expect(defined.containsAll(used), isTrue, reason: '${template.title} uses undefined variables: ${used.difference(defined)}');
+        // The Odoo write/delete requests name a record id that is undefined on purpose (see odoo_template_safety_test).
+        final unset = used.difference(defined);
+        final deliberate = template.id == 'odoo' ? {'recordId'} : <String>{};
+        expect(unset, deliberate, reason: '${template.title} uses undefined variables: $unset');
         if (template.environmentName != null) {
           expect(added.environmentId, isNotNull);
           final envVars = await repos.environmentRepository.watchVariables(added.environmentId!).first;

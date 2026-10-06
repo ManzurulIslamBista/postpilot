@@ -69,7 +69,7 @@ class _Body extends StatelessWidget {
 
     if (!info.isResolved) {
       return Text(
-        'Not defined in the active environment, this collection or the globals. It is sent as written.',
+        'Not defined in the active environment, this request\'s folders, this collection or the globals. It is sent as written.',
         style: context.textStyles.caption.copyWith(color: colors.statusError, height: 1.35),
       );
     }
@@ -124,6 +124,7 @@ class _SourceChip extends StatelessWidget {
     final colors = context.colors;
     final (label, color) = switch (info.source) {
       VariableSource.environment => ('Environment · ${info.scopeName ?? ''}'.trim(), colors.statusSuccess),
+      VariableSource.folder => ('Folder · ${info.scopeName ?? ''}'.trim(), colors.mainAccent),
       VariableSource.collection => ('Collection', colors.methodPut),
       VariableSource.global => ('Global', colors.methodPatch),
       VariableSource.dynamic => ('Dynamic', colors.methodPost),

@@ -30,18 +30,33 @@ final class VariableResolver {
     return null;
   }
 
-  String resolve(String input) => _resolve(input, const {}, _Budget());
+  String resolve(String input) => _resolve(input, const {}, _Budget(), null);
 
   Map<String, String> resolveMap(Map<String, String> input) =>
       input.map((key, value) => MapEntry(key, resolve(value)));
 
-  String _resolve(String input, Set<String> expanding, _Budget budget) =>
+  /// The names `{{name}}` that [resolve] would leave as they are because no
+  /// scope holds them and they are no built-in `{{$name}}` either, including
+  /// the ones inside the value of a variable that [input] expands. A variable
+  /// whose value is empty is defined, and so is one that references itself
+  /// (that stays literal on purpose). In order of first appearance.
+  List<String> undefinedIn(String input) {
+    final names = <String>{};
+    _resolve(input, const {}, _Budget(), names);
+    return names.toList();
+  }
+
+  String _resolve(String input, Set<String> expanding, _Budget budget, Set<String>? undefined) =>
       input.replaceAllMapped(AppConstants.variablePattern, (m) {
         final key = m[1]!;
         final value = lookup(key);
-        if (value == null) return (dynamicVariables ?? DynamicVariables.shared).resolve(key) ?? m[0]!;
+        if (value == null) {
+          final generated = (dynamicVariables ?? DynamicVariables.shared).resolve(key);
+          if (generated == null) undefined?.add(key);
+          return generated ?? m[0]!;
+        }
         if (expanding.contains(key) || expanding.length >= _maxDepth || !budget.spend(value.length)) return m[0]!;
-        return _resolve(value, {...expanding, key}, budget);
+        return _resolve(value, {...expanding, key}, budget, undefined);
       });
 
   /// Most variable values expanded, and most characters of them, in one

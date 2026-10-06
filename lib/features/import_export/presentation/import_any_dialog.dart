@@ -7,7 +7,7 @@ import '../domain/entities/import_format.dart';
 import '../domain/entities/import_summary.dart';
 import 'view_models/import_any_view_model.dart';
 
-/// One paste-and-import dialog for every supported format (Postman, Insomnia,
+/// One paste-and-import dialog for every supported format (Postman collections and environments, Insomnia,
 /// HAR, OpenAPI/Swagger, cURL, PostPilot backup). The format is detected as
 /// you paste and can be overridden by hand. Returns what was imported, or null
 /// if the user cancelled or the import failed.
@@ -34,6 +34,10 @@ class _ImportAnyDialogState extends State<ImportAnyDialog> {
   final _controller = TextEditingController();
   late final ImportAnyViewModel _viewModel;
 
+  /// Set when the import left things out or changed them: the dialog then stays
+  /// open on that list instead of closing behind a snackbar nobody can read in time.
+  ImportSummary? _result;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +55,10 @@ class _ImportAnyDialogState extends State<ImportAnyDialog> {
     final summary = await _viewModel.import(collectionId: widget.collectionId, folderId: widget.folderId);
     if (summary == null || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(summary.description)));
+    if (summary.notes.isNotEmpty) {
+      setState(() => _result = summary);
+      return;
+    }
     Navigator.pop(context, summary);
   }
 
@@ -62,58 +70,117 @@ class _ImportAnyDialogState extends State<ImportAnyDialog> {
         // Esc and a barrier tap dismiss the dialog (and dispose the ViewModel)
         // even though Cancel is disabled, so block them while importing.
         builder: (context, vm, _) => PopScope(
-          canPop: !vm.isImporting,
-          child: AlertDialog(
-            title: const Text('Import'),
-            scrollable: true,
-            content: SizedBox(
-              width: 520,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Paste a Postman collection, Insomnia export, HAR file, OpenAPI/Swagger document, cURL command or '
-                    'PostPilot backup. The format is detected for you.',
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _controller,
-                    maxLines: 12,
-                    style: context.textStyles.mono.copyWith(fontSize: 12),
-                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Paste here'),
-                    onChanged: vm.setText,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _DetectedFormat(vm: vm, importsIntoNewCollection: widget.collectionId == null),
-                      ),
-                      const SizedBox(width: 8),
-                      _FormatPicker(vm: vm),
-                    ],
-                  ),
-                  if (vm.error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(vm.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: vm.isImporting ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-              FilledButton(
-                onPressed: vm.canImport ? _import : null,
-                child: BusyLabel(busy: vm.isImporting, label: 'Import', busyLabel: 'Importing…'),
-              ),
-            ],
-          ),
+          canPop: !vm.isImporting && _result == null,
+          // On the result list, Esc and a barrier tap still hand the summary back, like Done does.
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && _result != null) Navigator.pop(context, _result);
+          },
+          child: _result == null ? _buildForm(context, vm) : _ImportResultDialog(summary: _result!),
         ),
       ),
     );
   }
+
+  Widget _buildForm(BuildContext context, ImportAnyViewModel vm) {
+    return AlertDialog(
+      title: const Text('Import'),
+      scrollable: true,
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Paste a Postman collection or environment, Insomnia export, HAR file, OpenAPI/Swagger document, '
+              'cURL command or PostPilot backup. The format is detected for you.',
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controller,
+              maxLines: 12,
+              style: context.textStyles.mono.copyWith(fontSize: 12),
+              decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Paste here'),
+              onChanged: vm.setText,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _DetectedFormat(vm: vm, importsIntoNewCollection: widget.collectionId == null),
+                ),
+                const SizedBox(width: 8),
+                _FormatPicker(vm: vm),
+              ],
+            ),
+            if (vm.error != null) ...[
+              const SizedBox(height: 8),
+              Text(vm.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: vm.isImporting ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: vm.canImport ? _import : null,
+          child: BusyLabel(busy: vm.isImporting, label: 'Import', busyLabel: 'Importing…'),
+        ),
+      ],
+    );
+  }
 }
+
+/// What an import that left things out or changed them reports: the summary line, then one sentence
+/// per skipped or changed item, so the user knows what is missing before trusting the result.
+class _ImportResultDialog extends StatelessWidget {
+  final ImportSummary summary;
+  const _ImportResultDialog({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final textStyles = context.textStyles;
+    return AlertDialog(
+      title: Text(summary.notesHeading),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(summary.description, style: textStyles.body),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: Scrollbar(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: summary.notes.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
+                    itemBuilder: (_, index) => Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2, right: 8),
+                          child: Icon(Icons.info_outline, size: 14, color: colors.secondaryText),
+                        ),
+                        Expanded(child: SelectableText(summary.notes[index], style: textStyles.caption)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [FilledButton(onPressed: () => Navigator.pop(context, summary), child: const Text('Done'))],
+    );
+  }
+}
+
 
 class _DetectedFormat extends StatelessWidget {
   final ImportAnyViewModel vm;

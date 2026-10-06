@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../data/mock_server_engine.dart';
+import '../domain/services/mock_cors.dart';
 import '../domain/services/mock_routes.dart';
 import '../domain/usecases/build_mock_routes_usecase.dart';
 
@@ -24,7 +25,13 @@ final class MockServerViewModel with ChangeNotifier {
   String portText = '3001';
   bool allowOtherDevices = false;
   bool cors = true;
+
+  /// Who may read the answers from a browser when [cors] is on: `*` or origins.
+  String allowedOrigin = MockCors.any;
   int delayMs = 0;
+
+  /// True while CORS lets any website read the answers (the default), which the dialog says out loud.
+  bool get allowsEveryWebsite => cors && (MockCors.parse(allowedOrigin)?.contains(MockCors.any) ?? false);
 
   MockRouteTable table = const MockRouteTable([], []);
   final List<MockLogEntry> log = [];
@@ -33,11 +40,12 @@ final class MockServerViewModel with ChangeNotifier {
 
   int get requestCount => log.length;
 
-  void update({int? collection, String? port, bool? others, bool? corsOn, int? delay}) {
+  void update({int? collection, String? port, bool? others, bool? corsOn, String? origin, int? delay}) {
     collectionId = collection ?? collectionId;
     portText = port ?? portText;
     allowOtherDevices = others ?? allowOtherDevices;
     cors = corsOn ?? cors;
+    allowedOrigin = origin ?? allowedOrigin;
     delayMs = delay ?? delayMs;
     notifyListeners();
   }
@@ -51,6 +59,11 @@ final class MockServerViewModel with ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (cors && MockCors.parse(allowedOrigin) == null) {
+      error = 'Allowed origin must be * or an origin such as http://localhost:5173 (separate several with commas).';
+      notifyListeners();
+      return;
+    }
     isBusy = true;
     error = null;
     notifyListeners();
@@ -58,7 +71,13 @@ final class MockServerViewModel with ChangeNotifier {
       table = await _build(id);
       final engine = _engine ??= MockServerEngine.create();
       await engine.start(
-        MockServerConfig(port: portNumber, allowOtherDevices: allowOtherDevices, cors: cors, delay: Duration(milliseconds: delayMs)),
+        MockServerConfig(
+          port: portNumber,
+          allowOtherDevices: allowOtherDevices,
+          cors: cors,
+          allowedOrigin: allowedOrigin.trim().isEmpty ? MockCors.any : allowedOrigin.trim(),
+          delay: Duration(milliseconds: delayMs),
+        ),
         table,
       );
       _logSub ??= engine.log.listen((e) {

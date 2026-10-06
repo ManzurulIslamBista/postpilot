@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import '../domain/services/mock_cors.dart';
 import '../domain/services/mock_routes.dart';
 import 'mock_server_engine.dart';
 
@@ -13,6 +14,9 @@ final class _IoMockServerEngine implements MockServerEngine {
   StreamSubscription<HttpRequest>? _subscription;
   MockRouteTable _table = const MockRouteTable([], []);
   MockServerConfig _config = const MockServerConfig();
+
+  /// [MockServerConfig.allowedOrigin] read once. An origin that cannot be read allows nobody.
+  List<String> _allowedOrigins = const [MockCors.any];
   final _log = StreamController<MockLogEntry>.broadcast();
 
   /// Headers that describe how the original body travelled, not the text stored in the example.
@@ -34,6 +38,7 @@ final class _IoMockServerEngine implements MockServerEngine {
   Future<void> start(MockServerConfig config, MockRouteTable table) async {
     if (_server != null) await stop();
     _config = config;
+    _allowedOrigins = MockCors.parse(config.allowedOrigin) ?? const [];
     _table = table;
     try {
       _server = await HttpServer.bind(config.allowOtherDevices ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4, config.port);
@@ -94,7 +99,10 @@ final class _IoMockServerEngine implements MockServerEngine {
           routeLabel = '${route.method} ${route.path}';
           response.statusCode = status;
           route.headers.forEach((k, v) {
-            if (!_skipHeaders.contains(k.toLowerCase())) {
+            final name = k.toLowerCase();
+            // `Access-Control-*` in an example is what the real server decided for its own callers; the mock's
+            // own CORS setting decides here (below), so those are never replayed.
+            if (!_skipHeaders.contains(name) && !name.startsWith('access-control-')) {
               try {
                 response.headers.set(k, v);
               } catch (_) {
@@ -102,6 +110,8 @@ final class _IoMockServerEngine implements MockServerEngine {
               }
             }
           });
+          // Last of the headers an example can carry, so nothing in it can undo the mock's CORS setting.
+          if (_config.cors) _cors(request, response);
           // dart:io pre-fills text/plain, so ask the example rather than the response.
           if (!route.headers.keys.any((k) => k.toLowerCase() == 'content-type')) {
             response.headers.contentType = _looksJson(route.body) ? ContentType.json : ContentType.text;
@@ -128,8 +138,18 @@ final class _IoMockServerEngine implements MockServerEngine {
   }
 
   void _cors(HttpRequest request, HttpResponse response) {
-    response.headers
-      ..set('access-control-allow-origin', request.headers.value('origin') ?? '*')
+    final headers = response.headers;
+    final origin = request.headers.value('origin');
+    if (_allowedOrigins.contains(MockCors.any)) {
+      headers.set('access-control-allow-origin', '*');
+    } else {
+      // A named origin is answered by echoing it, and only when the caller is that origin: any other
+      // page gets no permission and the browser keeps the response from it.
+      headers.set('vary', 'origin');
+      if (origin == null || !MockCors.allows(_allowedOrigins, origin)) return;
+      headers.set('access-control-allow-origin', origin);
+    }
+    headers
       ..set('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS')
       ..set('access-control-allow-headers', request.headers.value('access-control-request-headers') ?? '*')
       ..set('access-control-max-age', '600');

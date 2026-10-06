@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../../core/enums/body_type.dart';
 import '../../../../core/widgets/code_block.dart';
 import '../../../../core/widgets/info_banner.dart';
 import '../../domain/services/bug_report_builder.dart';
@@ -30,16 +29,14 @@ class _ShareTabState extends State<ShareTab> {
   String _markdown() {
     final vm = widget.viewModel;
     final r = vm.data.response;
-    final request = vm.request;
+    // The request as it was sent (variables resolved, auth and query parameters in), then masked: the builder
+    // hides credentials in what it is given, and the secret variables' own values wherever they appear.
     return BugReportBuilder.build(
-      method: request?.method.label ?? 'GET',
-      url: request?.url ?? vm.data.requestName,
-      requestHeaders: !_headers || request == null
-          ? const {}
-          : {for (final h in request.headers) if (h.enabled && h.key.isNotEmpty) h.key: h.value},
-      requestBody: !_requestBody || request == null
-          ? null
-          : (request.body.type == BodyType.graphql ? request.body.graphqlQuery : request.body.rawText),
+      method: vm.requestMethod,
+      url: vm.requestUrl,
+      requestHeaders: _headers ? vm.requestHeaders : const {},
+      requestBody: _requestBody ? vm.requestBodyText : null,
+      secretValues: vm.secretValues,
       statusCode: r.statusCode,
       statusText: r.statusMessage,
       durationMs: r.duration.inMilliseconds,

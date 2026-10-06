@@ -9,7 +9,32 @@ abstract final class DartNames {
     'extends', 'false', 'final', 'finally', 'for', 'if', 'in', 'is', 'new', 'null', 'rethrow', 'return',
     'super', 'switch', 'this', 'throw', 'true', 'try', 'var', 'void', 'while', 'with', 'await', 'yield',
     'hashCode', 'runtimeType', 'toString', 'noSuchMethod',
+    // A field called `int` hides the type `int` for every other field of its class.
+    'int', 'double', 'num', 'bool', 'dynamic',
+    // Members the generated classes already have.
+    'toJson', 'fromJson', 'copyWith',
   };
+
+  /// Type names a generated class must not take: a class called `String`, `List`
+  /// or `DateTime` replaces the core type for the whole file (or is an ambiguous
+  /// import in every file that uses both), and the generated code needs the real
+  /// one.
+  static const _coreTypes = {
+    'Object', 'Null', 'Never', 'Function', 'Record', 'Enum', 'Type', 'Symbol', 'Deprecated',
+    'String', 'StringBuffer', 'StringSink', 'Runes', 'RegExp', 'RegExpMatch', 'Match', 'Pattern',
+    'List', 'Map', 'Set', 'Iterable', 'Iterator', 'Comparable', 'Sink', 'Expando', 'WeakReference', 'Finalizable',
+    'DateTime', 'Duration', 'Stopwatch', 'Future', 'Stream', 'Uri', 'UriData', 'BigInt', 'StackTrace', 'Invocation',
+    'Error', 'Exception', 'AssertionError', 'TypeError', 'StateError', 'ArgumentError', 'RangeError',
+    'FormatException', 'UnimplementedError', 'UnsupportedError', 'ConcurrentModificationError',
+  };
+
+  /// A class name for [input]: like [pascal], but a core type's name becomes
+  /// `StringModel`, `ListModel`... [also] lists more names to avoid (the types of
+  /// a package the generated file imports).
+  static String className(String input, {String fallback = 'Item', Set<String> also = const {}}) {
+    final name = pascal(input, fallback: fallback);
+    return _coreTypes.contains(name) || also.contains(name) ? '${name}Model' : name;
+  }
 
   /// Splits `snake_case`, `kebab-case`, `dot.case`, `camelCase` and spaced text into words.
   static List<String> words(String input) {
@@ -61,6 +86,14 @@ abstract final class DartNames {
   }
 
   /// [value] as a single-quoted Dart string literal.
-  static String quote(String value) =>
-      "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll(r'$', r'\$').replaceAll('\n', r'\n')}'";
+  static String quote(String value) => "'${escape(value)}'";
+
+  /// [value] as it must be written between single quotes: `\`, `'`, `$` and
+  /// line breaks escaped.
+  static String escape(String value) => value
+      .replaceAll(r'\', r'\\')
+      .replaceAll("'", r"\'")
+      .replaceAll(r'$', r'\$')
+      .replaceAll('\n', r'\n')
+      .replaceAll('\r', r'\r');
 }

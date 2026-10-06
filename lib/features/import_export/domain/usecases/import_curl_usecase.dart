@@ -1,8 +1,6 @@
-import '../../../../core/enums/body_type.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/usecases/usecase.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
-import '../../../request_builder/domain/entities/request_body.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
 import '../../../request_builder/domain/services/importers/curl_parser.dart';
 
@@ -39,7 +37,7 @@ final class ImportCurlUseCase implements UseCase<int, ImportCurlParams> {
       url: parsed.url,
       headers: parsed.headers,
       queryParams: const [],
-      body: parsed.body == null ? RequestBody.empty : RequestBody(type: BodyType.raw, rawText: parsed.body!),
+      body: parsed.requestBody,
       auth: parsed.auth,
     ));
 

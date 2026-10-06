@@ -1,9 +1,5 @@
-import '../../../../core/enums/body_type.dart';
-import '../../../request_builder/domain/entities/key_value_item.dart';
-import '../../../request_builder/domain/entities/request_body.dart';
 import '../../../request_builder/domain/services/importers/curl_parser.dart';
 import '../entities/imported_collection.dart';
-import 'imported_body_mapper.dart';
 
 /// Reads a text with one or more `curl` commands (a pasted command, or a
 /// whole script such as the one "Export cURL script" writes) into requests.
@@ -16,71 +12,45 @@ abstract final class CurlScriptParser {
   static final _curlStart = RegExp(r'^(?:\$\s+)?curl(?:\.exe)?(?=\s|$)', caseSensitive: false);
   static final _commentPrefix = RegExp(r'^#+\s*');
 
-  /// Requests found, plus how many `curl` commands had no URL or were cut off.
-  static ({List<ImportedRequest> requests, int skipped}) parse(String script) {
+  /// Requests found, how many `curl` commands had no URL or were cut off, and what the readable ones
+  /// asked for that PostPilot cannot do (a body read from a file, ...), each prefixed with the request's name.
+  static ({List<ImportedRequest> requests, int skipped, List<String> notes}) parse(String script) {
     final requests = <ImportedRequest>[];
+    final notes = <String>[];
     var skipped = 0;
     for (final entry in _split(script)) {
-      final request = _requestOf(entry.command, entry.name);
-      if (request == null) {
+      final found = _requestOf(entry.command, entry.name);
+      if (found == null) {
         skipped++;
       } else {
-        requests.add(request);
+        requests.add(found.request);
+        notes.addAll(found.notes.map((note) => '${found.request.name}: $note'));
       }
     }
-    return (requests: requests, skipped: skipped);
+    return (requests: requests, skipped: skipped, notes: notes);
   }
 
-  static ImportedRequest? _requestOf(String command, String? name) {
-    final ParsedCurlRequest? parsed;
-    try {
-      parsed = CurlParser.parse(_normalized(command));
-    } on RangeError {
-      return null;
-    }
+  static ({ImportedRequest request, List<String> notes})? _requestOf(String command, String? name) {
+    final parsed = CurlParser.parse(_normalized(command));
     if (parsed == null) return null;
 
-    final headers = [...parsed.headers];
-    final rawBody = parsed.body;
-    var body = RequestBody.empty;
-    if (rawBody != null) {
-      body = RequestBody(
-        type: BodyType.raw,
-        rawContentType: _rawTypeOf(headers, rawBody),
-        rawText: rawBody,
-      );
-      // curl sends `-d` data as a form unless told otherwise.
-      if (!ImportedBodyMapper.hasContentType(headers) && body.rawContentType == RawContentType.text) {
-        headers.add(KeyValueItem(key: ImportedBodyMapper.contentTypeHeader, value: 'application/x-www-form-urlencoded'));
-      }
-    }
     final uri = Uri.tryParse(parsed.url);
     final path = uri == null || uri.path.isEmpty ? '/' : uri.path;
-    return ImportedRequest(
+    final request = ImportedRequest(
       name ?? '${parsed.method.label} $path',
       method: parsed.method,
       url: parsed.url,
-      headers: headers,
-      body: body,
+      headers: parsed.headers,
+      body: parsed.requestBody,
       auth: parsed.auth,
     );
+    return (request: request, notes: parsed.notes);
   }
 
-  static RawContentType _rawTypeOf(List<KeyValueItem> headers, String body) {
-    for (final h in headers) {
-      if (h.key.toLowerCase() == ImportedBodyMapper.contentTypeHeader.toLowerCase()) {
-        return ImportedBodyMapper.rawTypeOf(h.value);
-      }
-    }
-    return ImportedBodyMapper.sniffRawType(body);
-  }
-
-  /// [CurlParser] tokenizes quotes but not the shell's `'\''` idiom (an
-  /// apostrophe inside single quotes, which `CurlGenerator` emits), so that is
-  /// rewritten to the equivalent `'"'"'` first; `curl.exe` and a `$ ` prompt
-  /// are reduced to plain `curl`.
-  static String _normalized(String command) =>
-      command.trim().replaceFirst(_curlStart, 'curl').replaceAll(r"'\''", "'\"'\"'");
+  /// `curl.exe` and a `$ ` prompt are reduced to plain `curl`. (The shell's `'\''` idiom for an apostrophe
+  /// inside single quotes, which `CurlGenerator` emits, needs no rewriting: [CurlParser] reads it as the
+  /// shell does.)
+  static String _normalized(String command) => command.trim().replaceFirst(_curlStart, 'curl');
 
   /// Splits [script] into commands, each with the comment that names it.
   static List<({String? name, String command})> _split(String script) {
@@ -116,19 +86,29 @@ abstract final class CurlScriptParser {
     return entries;
   }
 
-  /// The open quote (`'`, `"` or empty) after [line], starting from [quote]
+  /// The open quote (`'`, `"`, `$'` or empty) after [line], starting from [quote]
   /// carried over from the previous line. A backslash escapes the next
-  /// character outside single quotes; an unquoted ` #` starts a comment.
+  /// character outside single quotes (inside `$'...'` too, where `\'` does not
+  /// close it); an unquoted ` #` starts a comment.
   static String _quoteStateAfter(String line, String quote) {
     var state = quote;
     for (var i = 0; i < line.length; i++) {
       final char = line[i];
       if (state == "'") {
         if (char == "'") state = '';
+      } else if (state == r"$'") {
+        if (char == r'\') {
+          i++;
+        } else if (char == "'") {
+          state = '';
+        }
       } else if (char == r'\') {
         i++;
       } else if (state == '"') {
         if (char == '"') state = '';
+      } else if (char == r'$' && i + 1 < line.length && line[i + 1] == "'") {
+        state = r"$'";
+        i++;
       } else if (char == "'" || char == '"') {
         state = char;
       } else if (char == '#' && (i == 0 || line[i - 1] == ' ' || line[i - 1] == '\t')) {

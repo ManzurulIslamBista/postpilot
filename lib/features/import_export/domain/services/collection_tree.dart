@@ -1,4 +1,5 @@
 import '../../../collections/domain/entities/collection_entity.dart';
+import '../../../collections/domain/services/collection_order.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 
 /// A request together with the "Parent / Child" path of the folder it is in
@@ -9,30 +10,19 @@ abstract final class CollectionTree {
   static const _separator = ' / ';
   static const _maxDepth = 32;
 
-  /// Every request in tree order: folders (recursively) before the requests
-  /// beside them, as the sidebar and the Postman export order them. A request
-  /// whose folder no longer exists comes last, at the top level.
+  /// Every request in the collection's canonical order (see `CollectionOrder`): depth-first, the folders and
+  /// requests of a level interleaved by their order index, as the sidebar shows them and the runner sends them.
+  /// A request whose folder no longer exists counts as top level.
   static List<PlacedRequest> ordered(List<FolderEntity> folders, List<ApiRequestEntity> requests) {
     final labels = _labels(folders);
-    final ordered = <PlacedRequest>[];
-    final placed = <ApiRequestEntity>{};
-    final visited = <int>{};
-
-    void walk(int? parentId, int depth) {
-      if (depth > _maxDepth) return;
-      for (final folder in folders.where((f) => f.parentFolderId == parentId)) {
-        if (visited.add(folder.id)) walk(folder.id, depth + 1);
-      }
-      for (final request in requests.where((r) => r.folderId == parentId)) {
-        if (placed.add(request)) ordered.add((folder: labels[parentId], request: request));
-      }
-    }
-
-    walk(null, 0);
-    for (final request in requests) {
-      if (placed.add(request)) ordered.add((folder: null, request: request));
-    }
-    return ordered;
+    final order = CollectionOrder.of(
+      folders: [for (final f in folders) (id: f.id, parentId: f.parentFolderId, orderIndex: f.orderIndex)],
+      requests: [for (final r in requests) (id: r.id, folderId: r.folderId, orderIndex: r.orderIndex)],
+    );
+    return [
+      for (final entry in order.entries)
+        if (!entry.isFolder) (folder: labels[entry.parentId], request: requests[entry.index]),
+    ];
   }
 
   static Map<int, String> _labels(List<FolderEntity> folders) {

@@ -3,6 +3,15 @@ import 'package:flutter/widgets.dart';
 import '../../request_builder/domain/entities/api_request_entity.dart';
 import '../../request_builder/domain/repositories/request_repository.dart';
 
+/// What a keyboard shortcut can ask the visible request tab to do, beyond sending.
+enum TabAction {
+  /// Puts the cursor in the URL field.
+  focusUrl,
+
+  /// Saves the response on screen as an example of the request.
+  saveResponseExample,
+}
+
 /// Owns "what's open in the main pane" — the ordered request tabs and which
 /// one is active — the one piece of state every feature's widgets need to
 /// agree on.
@@ -16,6 +25,7 @@ final class ShellViewModel with ChangeNotifier {
   final Map<int, StreamSubscription<ApiRequestEntity?>> _subscriptions = {};
   final Map<int, VoidCallback> _senders = {};
   final Map<int, VoidCallback> _bodySearches = {};
+  final Map<int, Map<TabAction, VoidCallback>> _tabActions = {};
   int? _selectedRequestId;
 
   /// Pinned tabs sit first, show a pin instead of a close button and survive
@@ -158,6 +168,41 @@ final class ShellViewModel with ChangeNotifier {
   }
 
   void findInResponse() => _bodySearches[_selectedRequestId]?.call();
+
+  /// The same per-tab registration for the other shortcut actions of [TabAction].
+  void registerTabAction(int requestId, TabAction action, VoidCallback run) =>
+      (_tabActions[requestId] ??= {})[action] = run;
+
+  void unregisterTabAction(int requestId, TabAction action, VoidCallback run) {
+    final actions = _tabActions[requestId];
+    if (actions == null || actions[action] != run) return;
+    actions.remove(action);
+    if (actions.isEmpty) _tabActions.remove(requestId);
+  }
+
+  /// Runs [action] on the active tab; false when no tab is open or it offers none.
+  bool runTabAction(TabAction action) {
+    final run = _tabActions[_selectedRequestId]?[action];
+    run?.call();
+    return run != null;
+  }
+
+  void focusUrl() => runTabAction(TabAction.focusUrl);
+  void saveResponseExample() => runTabAction(TabAction.saveResponseExample);
+
+  /// Ctrl+PageDown: the tab to the right of the active one, wrapping to the first.
+  void selectNextTab() => _stepTab(1);
+
+  /// Ctrl+PageUp: the tab to the left of the active one, wrapping to the last.
+  void selectPreviousTab() => _stepTab(-1);
+
+  void _stepTab(int step) {
+    final current = _selectedRequestId;
+    if (current == null || _openRequestIds.length < 2) return;
+    final index = _openRequestIds.indexOf(current);
+    _selectedRequestId = _openRequestIds[(index + step) % _openRequestIds.length];
+    notifyListeners();
+  }
 
   void _onRequestChanged(int id, ApiRequestEntity? request) {
     // A null row means the request was deleted (directly, or by a cascading

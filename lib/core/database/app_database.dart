@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'connection/app_connection.dart';
+import 'migrations/rebuild_table_keeping_rows.dart';
 import 'tables/collections_table.dart';
 import 'tables/requests_table.dart';
 import 'tables/environments_table.dart';
@@ -15,6 +16,9 @@ import 'tables/setting_entries_table.dart';
 import 'tables/request_settings_table.dart';
 import 'tables/entity_docs_table.dart';
 import 'tables/entity_tags_table.dart';
+import 'tables/folder_defaults_table.dart';
+import 'tables/collection_defaults_table.dart';
+import 'tables/history_payloads_table.dart';
 import 'daos/collections_dao.dart';
 import 'daos/requests_dao.dart';
 import 'daos/environments_dao.dart';
@@ -30,6 +34,9 @@ import 'daos/settings_dao.dart';
 import 'daos/request_settings_dao.dart';
 import 'daos/entity_docs_dao.dart';
 import 'daos/entity_tags_dao.dart';
+import 'daos/folder_defaults_dao.dart';
+import 'daos/collection_defaults_dao.dart';
+import 'daos/history_payloads_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -53,6 +60,9 @@ part 'app_database.g.dart';
     RequestSettingEntries,
     EntityDocs,
     EntityTags,
+    FolderDefaults,
+    CollectionDefaults,
+    HistoryPayloads,
   ],
   daos: [
     CollectionsDao,
@@ -70,6 +80,9 @@ part 'app_database.g.dart';
     RequestSettingsDao,
     EntityDocsDao,
     EntityTagsDao,
+    FolderDefaultsDao,
+    CollectionDefaultsDao,
+    HistoryPayloadsDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -86,6 +99,8 @@ class AppDatabase extends _$AppDatabase {
       await delete(responseExamples).go();
       await delete(requestScripts).go();
       await delete(requestSettingEntries).go();
+      await delete(folderDefaults).go();
+      await delete(collectionDefaults).go();
       await delete(requests).go();
       await delete(folders).go();
       await delete(collectionVariables).go();
@@ -117,6 +132,8 @@ class AppDatabase extends _$AppDatabase {
       requestScripts,
       responseExamples,
       requestSettingEntries,
+      folderDefaults,
+      collectionDefaults,
       entityDocs,
       entityTags,
       // A Git link, its last-synced base and the uids move on every connect,
@@ -128,23 +145,24 @@ class AppDatabase extends _$AppDatabase {
   );
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
-  // NOTE: pre-release schema change — `requests` is dropped and recreated
-  // (losing saved requests) rather than migrated column-by-column, because
-  // `Migrator.addColumn`'s ALTER TABLE statement reproducibly crashes the
-  // drift web worker on this project (confirmed: a fresh IndexedDB with no
-  // upgrade path has zero errors; addColumn during onUpgrade always throws
-  // inside drift_worker.js). createTable/deleteTable are proven to work
-  // since createAll() already uses them for first-run database creation.
-  // Once there's real user data to protect, this needs a real fix (likely
-  // a drift issue to file) instead of a drop-and-recreate.
+  // NOTE: never use `Migrator.addColumn` here: its ALTER TABLE statement
+  // reproducibly crashes the drift web worker on this project (confirmed: a
+  // fresh IndexedDB with no upgrade path has zero errors; addColumn during
+  // onUpgrade always throws inside drift_worker.js). createTable/deleteTable
+  // are proven to work since createAll() already uses them for first-run
+  // database creation. A table whose columns changed is therefore rebuilt
+  // with rebuildTableKeepingRows (create the new one, copy the shared
+  // columns, drop the old one, all in one transaction) so no saved request
+  // is ever lost; adding a plain new table stays a createTable.
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onUpgrade: (m, from, to) async {
-      if (from < 2) {
-        await m.deleteTable(requests.actualTableName);
-        await m.createTable(requests);
+      // v1's `requests` had another column set. The shape check also catches an old v2/v3 table that
+      // predates a column, which would otherwise fail every query the DAOs run.
+      if (from < 2 || await tableLacksColumns(this, requests)) {
+        await rebuildTableKeepingRows(this, m, requests);
       }
       if (from < 3) {
         await m.createTable(globalVariables);
@@ -165,6 +183,11 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(entityDocs);
         await m.createTable(entityTags);
         await m.createIndex(entityTagsTag);
+      }
+      if (from < 5) {
+        await m.createTable(folderDefaults);
+        await m.createTable(collectionDefaults);
+        await m.createTable(historyPayloads);
       }
     },
     // SQLite skips every ON DELETE CASCADE / SET NULL unless this is set on each connection.

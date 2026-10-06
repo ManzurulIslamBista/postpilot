@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
-import '../../../safety/domain/services/production_detector.dart';
 import '../../../safety/domain/services/production_guard.dart';
 import '../../../safety/presentation/production_confirm_dialog.dart';
 import '../../../request_builder/domain/services/collection_run_report.dart';
@@ -49,8 +48,7 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
     if (!_viewModel.canRun) return;
     // The production lock: a run sends every request, so ask once up front.
     final guard = locator.isRegistered<ProductionGuard>() ? locator<ProductionGuard>() : null;
-    final writes = _viewModel.requests.where((r) => ProductionDetector.changesData(r.method)).length;
-    final warning = await guard?.checkRun(writes, 'this collection');
+    final warning = await guard?.checkRunRequests(await _viewModel.fullRequests(widget.collectionId), 'this collection');
     if (warning != null) {
       if (!mounted) return;
       final ok = await confirmProductionSend(context, warning, onSilence: () => guard?.silenceForSession(warning.environmentName));
@@ -465,7 +463,8 @@ class _ResultTile extends StatelessWidget {
   String? _testsSummary() {
     final scripts = result.scripts;
     if (scripts == null) return null;
-    final failedTests = scripts.assertions.where((a) => !a.passed).map((a) => a.name);
+    // A test inherited from a folder or the collection says where it was set.
+    final failedTests = scripts.assertions.where((a) => !a.passed).map((a) => a.origin == null ? a.name : '${a.name} (from ${a.origin})');
     final failedSaves = scripts.extracted.where((e) => !e.ok);
     final parts = [
       if (scripts.assertions.isNotEmpty) '${scripts.passedCount}/${scripts.assertions.length} tests passed',

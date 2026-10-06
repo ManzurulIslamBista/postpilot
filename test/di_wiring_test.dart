@@ -74,6 +74,7 @@ import 'package:postpilot/features/git_sync/presentation/view_models/git_sync_vi
 import 'package:postpilot/features/git_sync/presentation/view_models/linked_collections_view_model.dart';
 import 'package:postpilot/features/history/domain/repositories/history_repository.dart';
 import 'package:postpilot/features/history/presentation/view_models/history_view_model.dart';
+import 'package:postpilot/features/settings/data/history_prefs.dart';
 import 'package:postpilot/features/import_export/domain/repositories/git_state_store.dart';
 import 'package:postpilot/features/import_export/domain/services/backup_service.dart';
 import 'package:postpilot/features/import_export/domain/services/collection_loader.dart';
@@ -89,6 +90,7 @@ import 'package:postpilot/features/import_export/domain/usecases/import_har_usec
 import 'package:postpilot/features/import_export/domain/usecases/import_insomnia_usecase.dart';
 import 'package:postpilot/features/import_export/domain/usecases/import_openapi_usecase.dart';
 import 'package:postpilot/features/import_export/domain/usecases/import_postman_collection_usecase.dart';
+import 'package:postpilot/features/import_export/domain/usecases/import_postman_environment_usecase.dart';
 import 'package:postpilot/features/import_export/domain/usecases/restore_backup_usecase.dart';
 import 'package:postpilot/features/import_export/presentation/view_models/backup_view_model.dart';
 import 'package:postpilot/features/import_export/presentation/view_models/export_collection_view_model.dart';
@@ -160,6 +162,7 @@ final _wirings = <_Wiring>[
   _wire<EnvironmentRepository>(),
   _wire<GlobalVariableRepository>(),
   _wire<EnvironmentsViewModel>(),
+  _wire<HistoryPrefs>(),
   _wire<HistoryRepository>(),
   _wire<HistoryViewModel>(),
   _wire<CookieRepository>(),
@@ -185,6 +188,7 @@ final _wirings = <_Wiring>[
   _wire<CollectionLoader>(),
   _wire<BackupService>(),
   _wire<ImportPostmanCollectionUseCase>(),
+  _wire<ImportPostmanEnvironmentUseCase>(),
   _wire<ExportPostmanCollectionUseCase>(),
   _wire<ImportCurlUseCase>(),
   _wire<ImportOpenApiUseCase>(),

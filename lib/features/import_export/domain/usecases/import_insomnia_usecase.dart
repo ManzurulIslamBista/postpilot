@@ -3,6 +3,7 @@ import '../../../../core/usecases/usecase.dart';
 import '../../../collections/domain/repositories/collection_repository.dart';
 import '../../../environments/domain/entities/environment_entity.dart';
 import '../../../environments/domain/repositories/environment_repository.dart';
+import '../../../git_sync/domain/services/secret_names.dart';
 import '../entities/import_format.dart';
 import '../entities/import_summary.dart';
 import '../services/imported_collection_writer.dart';
@@ -45,7 +46,9 @@ final class ImportInsomniaUseCase implements UseCase<ImportSummary, String> {
               environmentId: environmentId,
               key: variable.key,
               value: variable.value,
-              isSecret: false,
+              // Insomnia has no secret flag. A variable named like a credential (an API key, a token) or
+              // holding a known token is marked, so its value is not pushed to Git in plain text.
+              isSecret: SecretNames.looksSecretKey(variable.key) || SecretNames.knownTokens(variable.value).isNotEmpty,
               enabled: variable.enabled,
             ));
           }

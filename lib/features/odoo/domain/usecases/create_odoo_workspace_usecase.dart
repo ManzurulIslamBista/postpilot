@@ -1,6 +1,8 @@
 import '../../../../core/enums/body_type.dart';
 import '../../../../core/enums/http_method.dart';
 import '../../../collections/domain/repositories/collection_repository.dart';
+import '../../../documentation/domain/entities/entity_kind.dart';
+import '../../../documentation/domain/repositories/documentation_repository.dart';
 import '../../../environments/domain/entities/environment_entity.dart';
 import '../../../environments/domain/repositories/environment_repository.dart';
 import '../../../request_builder/domain/entities/key_value_item.dart';
@@ -24,7 +26,11 @@ final class CreateOdooWorkspaceUseCase {
   final CollectionRepository _collections;
   final RequestRepository _requests;
 
-  const CreateOdooWorkspaceUseCase(this._environments, this._collections, this._requests);
+  /// Where a request's description is kept; without it the notes of the ready-made
+  /// requests are not saved.
+  final DocumentationRepository? _documentation;
+
+  const CreateOdooWorkspaceUseCase(this._environments, this._collections, this._requests, [this._documentation]);
 
   Future<int> createEnvironment({
     required String name,
@@ -66,6 +72,9 @@ final class CreateOdooWorkspaceUseCase {
           headers: [for (final e in draft.headers.entries) KeyValueItem(key: e.key, value: e.value)],
           body: RequestBody(type: BodyType.raw, rawContentType: RawContentType.json, rawText: draft.bodyText),
         ));
+        // The note says what a request returns and, for write and delete, that the record
+        // id is left for the user to set.
+        if (draft.note != null) await _documentation?.setMarkdown(EntityKind.request, id, draft.note!);
         count++;
       }
     }
@@ -83,6 +92,7 @@ final class CreateOdooWorkspaceUseCase {
         headers: [for (final e in draft.headers.entries) KeyValueItem(key: e.key, value: e.value)],
         body: RequestBody(type: BodyType.raw, rawContentType: RawContentType.json, rawText: draft.bodyText),
       ));
+      if (draft.note != null) await _documentation?.setMarkdown(EntityKind.request, id, draft.note!);
     }
     return id;
   }

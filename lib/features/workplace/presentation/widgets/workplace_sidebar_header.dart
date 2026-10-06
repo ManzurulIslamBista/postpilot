@@ -199,6 +199,32 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                         ],
                       ],
                     ),
+                    // The data is safe in the database, but the file (what Git pushes) is behind: say so.
+                    if (vm.saveError != null)
+                      Tooltip(
+                        message: vm.saveError!,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 1),
+                                child: Icon(Icons.error_outline, size: 12, color: colors.statusError),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  vm.saveError!,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: textStyles.caption.copyWith(fontSize: 10, color: colors.statusError),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

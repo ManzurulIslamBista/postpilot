@@ -193,9 +193,13 @@ final class OdooStudioViewModel with ChangeNotifier {
         rows = r.json is List ? [for (final e in r.json as List) if (e is Map) Map<String, Object?>.from(e)] : const [];
       });
 
+  /// Saves the connection as an environment. The URL is stored the way Studio
+  /// itself tests it (with `https://` when no scheme was typed, no trailing `/`),
+  /// because the saved requests are sent by the normal sender, which would treat
+  /// a bare host as `http://` and put the API key on the wire unencrypted.
   Future<int?> saveEnvironment(String name) => _run('Saving environment', () => _workspace.createEnvironment(
         name: name,
-        url: url.trim(),
+        url: connection.normalizedUrl,
         database: database.trim(),
         apiKey: apiKey.trim(),
       ));

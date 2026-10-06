@@ -8,8 +8,10 @@ import 'secret_text.dart';
 /// A credential is blanked (not removed) wherever PostPilot can recognise one:
 /// the `auth` map, secret-looking collection variables, and in requests the
 /// values of `Authorization`/`Cookie`/API-key headers, secret query parameters
-/// (also inside the URL), secret form and urlencoded fields, and secret string
-/// values of JSON raw and GraphQL-variables bodies. Values that only reference
+/// (also inside the URL), secret form and urlencoded fields, secret values of
+/// raw (JSON, XML, SOAP, urlencoded text), GraphQL query and variables bodies,
+/// the expected values of assertions on such headers and fields, and
+/// unmistakable credentials in descriptions. Values that only reference
 /// `{{variables}}` hold no credential and are kept.
 abstract final class SecretFields {
   /// Keys of `RequestAuth.toJson()` that carry credentials or live tokens.
@@ -39,11 +41,13 @@ abstract final class SecretFields {
 
   /// [doc] without credentials: its `auth` map loses [authKeys], on the
   /// collection doc `variables` whose key [looksSecretKey] get an empty value,
-  /// and on a request the credentials of its headers, query parameters, URL
-  /// and body get one (see the class comment).
+  /// and on a request the credentials of its headers, query parameters, URL,
+  /// body and assertions get one (see the class comment).
   /// Idempotent, so applying it to an already stripped doc changes nothing.
   static SyncDoc stripDoc(SyncDoc doc) {
     final data = {...doc.data};
+    final description = data['description'];
+    if (description is String) data['description'] = SecretText.blankNote(description);
     final auth = data['auth'];
     if (auth is Map) data['auth'] = stripAuth(Map<String, Object?>.from(auth));
     final variables = data['variables'];
@@ -58,6 +62,7 @@ abstract final class SecretFields {
       }
     }
     if (doc.kind == SyncKind.request) _stripRequest(data);
+    if (doc.kind == SyncKind.collection || doc.kind == SyncKind.folder) _stripDefaults(data, folder: doc.kind == SyncKind.folder);
     return SyncDoc(
       uid: doc.uid,
       kind: doc.kind,
@@ -76,6 +81,32 @@ abstract final class SecretFields {
   static SyncSnapshot applyPolicy(SyncSnapshot snapshot, {required bool includeSecrets}) =>
       includeSecrets ? snapshot : stripSnapshot(snapshot);
 
+  /// What a collection or folder passes down to its requests: the values of its secret headers, the
+  /// expected values of its checks and, on a [folder], its secret variables (marked, or named like a
+  /// credential). Its `auth` is stripped with every doc's, above.
+  static void _stripDefaults(Map<String, Object?> data, {required bool folder}) {
+    _blankItems(data, 'headers', SecretNames.isSecretHeader);
+    final tests = data['tests'];
+    if (tests is Map && tests['assertions'] is List) {
+      data['tests'] = {
+        ...tests,
+        'assertions': [for (final assertion in tests['assertions'] as List) blankAssertion(assertion)],
+      };
+    }
+    final variables = data['variables'];
+    if (folder && variables is List) {
+      data['variables'] = [
+        for (final variable in variables)
+          variable is Map && (variable['secret'] == true || (variable['key'] is String && looksSecretKey(variable['key'] as String)))
+              ? _blankIfHasValue(variable)
+              : variable,
+      ];
+    }
+  }
+
+  static Object? _blankIfHasValue(Map variable) =>
+      variable.containsKey('value') ? (Map<String, Object?>.from(variable)..['value'] = '') : variable;
+
   static void _stripRequest(Map<String, Object?> data) {
     final url = data['url'];
     if (url is String) data['url'] = SecretText.blankUrl(url);
@@ -86,12 +117,85 @@ abstract final class SecretFields {
       final stripped = Map<String, Object?>.from(body);
       _blankItems(stripped, 'formFields', SecretNames.looksSecretKey);
       _blankItems(stripped, 'urlEncodedFields', SecretNames.looksSecretKey);
-      for (final key in const ['rawText', 'graphqlVariables']) {
+      for (final key in const ['rawText', 'graphqlQuery', 'graphqlVariables']) {
         final text = stripped[key];
-        if (text is String) stripped[key] = SecretText.blankJson(text);
+        if (text is String) stripped[key] = SecretText.blankBody(text);
       }
       data['body'] = stripped;
     }
+    final tests = data['tests'];
+    if (tests is Map && tests['assertions'] is List) {
+      data['tests'] = {
+        ...tests,
+        'assertions': [for (final assertion in tests['assertions'] as List) blankAssertion(assertion)],
+      };
+    }
+  }
+
+  /// [assertion] (`{type, path, expected}`) without a credential it expects:
+  /// the value of a secret header, of a secret JSON path, or credentials inside
+  /// the text a body must contain.
+  static Object? blankAssertion(Object? assertion) {
+    if (assertion is! Map) return assertion;
+    final expected = blankedExpected(assertion['type'], assertion['path'], assertion['expected']);
+    if (expected == null || expected == assertion['expected']) return assertion;
+    return Map<String, Object?>.from(assertion)..['expected'] = expected;
+  }
+
+  /// What an assertion expects once its credential is blanked, or null when
+  /// [expected] is not a string or the assertion holds no credential kind.
+  static String? blankedExpected(Object? type, Object? path, Object? expected) {
+    if (expected is! String || expected.isEmpty) return null;
+    final pathText = path is String ? path : '';
+    switch (type) {
+      case 'headerEquals':
+        return SecretNames.isSecretHeader(pathText) && SecretNames.hasLiteralSecret(expected) ? '' : expected;
+      case 'jsonPathEquals':
+        return SecretNames.looksSecretKey(_lastPathName(pathText)) && SecretNames.hasLiteralSecret(expected)
+            ? ''
+            : expected;
+      case 'bodyContains':
+        return SecretText.blankSnippet(expected);
+      default:
+        return expected;
+    }
+  }
+
+  /// [target] assertions (stripped) with the expected values [local] has for
+  /// the same assertions put back: same type and path, and the same text once
+  /// [local] is blanked.
+  static List<Object?> restoreAssertions(List<Object?> target, List<Object?> local) {
+    final unused = [for (final item in local) if (item is Map) item];
+    return [
+      for (final item in target)
+        if (item is Map && item['expected'] is String)
+          _restoreAssertion(item, unused)
+        else
+          item,
+    ];
+  }
+
+  static Object? _restoreAssertion(Map target, List<Map> unused) {
+    final expected = target['expected'] as String;
+    for (final candidate in unused) {
+      final original = candidate['expected'];
+      if (original is! String ||
+          original == expected ||
+          candidate['type'] != target['type'] ||
+          candidate['path'] != target['path']) {
+        continue;
+      }
+      if (blankedExpected(candidate['type'], candidate['path'], original) != expected) continue;
+      unused.remove(candidate);
+      return Map<String, Object?>.from(target)..['expected'] = original;
+    }
+    return target;
+  }
+
+  /// The name a JSON path ends in: `data.items[0].password` is `password`.
+  static String _lastPathName(String path) {
+    final plain = path.replaceAll(RegExp(r'\[[^\]]*\]'), '');
+    return plain.substring(plain.lastIndexOf('.') + 1);
   }
 
   static void _blankItems(Map<String, Object?> data, String field, bool Function(String key) isSecret) {

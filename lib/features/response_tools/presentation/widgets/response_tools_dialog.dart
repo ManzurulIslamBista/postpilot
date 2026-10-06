@@ -4,11 +4,18 @@ import '../../../../core/widgets/info_banner.dart';
 import '../../../../core/widgets/tool_dialog.dart';
 import '../../../ai_assistant/presentation/ai_tab.dart';
 import '../../../dart_codegen/domain/services/dart_names.dart';
+import '../../../collections/domain/repositories/collection_auth_repository.dart';
 import '../../../dart_codegen/presentation/widgets/dart_model_pane.dart';
+import '../../../environments/domain/repositories/environment_repository.dart';
+import '../../../environments/domain/repositories/global_variable_repository.dart';
 import '../../../request_builder/domain/entities/api_response_entity.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
 import '../../../request_builder/domain/repositories/request_scripts_repository.dart';
 import '../../../request_builder/domain/repositories/response_example_repository.dart';
+import '../../../request_builder/domain/usecases/build_variable_resolver_usecase.dart';
+import '../../../request_builder/domain/usecases/prepare_request_usecase.dart';
+import '../../../settings/domain/repositories/request_settings_repository.dart';
+import '../../../settings/domain/repositories/settings_repository.dart';
 import '../../domain/services/response_history.dart';
 import '../view_models/response_tools_view_model.dart';
 import 'compare_tab.dart';
@@ -51,7 +58,22 @@ class _ResponseToolsDialogState extends State<ResponseToolsDialog> {
     locator<ResponseExampleRepository>(),
     locator<ResponseHistory>(),
     widget.data,
+    prepareRequest: _prepareRequest(),
+    environments: locator.isRegistered<EnvironmentRepository>() ? locator<EnvironmentRepository>() : null,
+    globals: locator.isRegistered<GlobalVariableRepository>() ? locator<GlobalVariableRepository>() : null,
   )..load();
+
+  /// The same builder the sender uses, so Share, Timing and Ask AI see the request as it was sent. Null when
+  /// the app has not got what it needs (a test harness): the tools then use the saved request.
+  static PrepareRequestUseCase? _prepareRequest() {
+    if (!locator.isRegistered<BuildVariableResolverUseCase>() || !locator.isRegistered<CollectionAuthRepository>()) return null;
+    return PrepareRequestUseCase(
+      locator<BuildVariableResolverUseCase>(),
+      locator<CollectionAuthRepository>(),
+      settings: locator.isRegistered<SettingsRepository>() ? locator<SettingsRepository>() : null,
+      requestSettings: locator.isRegistered<RequestSettingsRepository>() ? locator<RequestSettingsRepository>() : null,
+    );
+  }
 
   @override
   void dispose() {

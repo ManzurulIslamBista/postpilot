@@ -6,6 +6,7 @@ import '../entities/import_format.dart';
 import '../entities/import_summary.dart';
 import '../services/import_format_detector.dart';
 import 'import_curl_script_usecase.dart';
+import 'summarizing_importer.dart';
 
 final class ImportAnyParams {
   final String text;
@@ -30,6 +31,7 @@ final class ImportAnyUseCase implements UseCase<ImportSummary, ImportAnyParams> 
   final UseCase<ImportSummary, String> _importHar;
   final UseCase<ImportSummary, ImportCurlScriptParams> _importCurl;
   final UseCase<ImportSummary, String> _restoreBackup;
+  final UseCase<ImportSummary, String> _importPostmanEnvironment;
   final CollectionRepository _collectionRepository;
   final RequestRepository _requestRepository;
 
@@ -41,8 +43,11 @@ final class ImportAnyUseCase implements UseCase<ImportSummary, ImportAnyParams> 
     this._importCurl,
     this._restoreBackup,
     this._collectionRepository,
-    this._requestRepository,
-  );
+    this._requestRepository, {
+    required UseCase<ImportSummary, String> importPostmanEnvironment,
+    // A named parameter cannot start with an underscore, so it cannot be an initializing formal.
+    // ignore: prefer_initializing_formals
+  }) : _importPostmanEnvironment = importPostmanEnvironment;
 
   @override
   Future<ImportSummary> call(ImportAnyParams params) async {
@@ -50,9 +55,11 @@ final class ImportAnyUseCase implements UseCase<ImportSummary, ImportAnyParams> 
     final text = params.text;
     switch (format) {
       case ImportFormat.postman:
-        return _describeCollection(format, await _importPostman(text));
+        return _importCollection(format, _importPostman, text);
+      case ImportFormat.postmanEnvironment:
+        return _importPostmanEnvironment(text);
       case ImportFormat.openApi:
-        return _describeCollection(format, await _importOpenApi(text));
+        return _importCollection(format, _importOpenApi, text);
       case ImportFormat.insomnia:
         return _importInsomnia(text);
       case ImportFormat.har:
@@ -63,13 +70,19 @@ final class ImportAnyUseCase implements UseCase<ImportSummary, ImportAnyParams> 
         return _importCurl(ImportCurlScriptParams(script: text, collectionId: params.collectionId, folderId: params.folderId));
       case ImportFormat.unknown:
         throw const ImportException(
-          "this doesn't look like a Postman collection, Insomnia export, HAR file, OpenAPI/Swagger document, cURL command or PostPilot backup.",
+          "this doesn't look like a Postman collection or environment, Insomnia export, HAR file, OpenAPI/Swagger document, cURL command or PostPilot backup.",
         );
     }
   }
 
-  /// The Postman and OpenAPI importers only return the new collection's id, so
+  /// An importer that can describe its own result (what it skipped, what it
+  /// changed) is asked to; the others only return the new collection's id, so
   /// its name and counts are read back for the success message.
+  Future<ImportSummary> _importCollection(ImportFormat format, UseCase<int, String> importer, String text) async {
+    if (importer case final SummarizingImporter summarizing) return summarizing.importWithSummary(text);
+    return _describeCollection(format, await importer(text));
+  }
+
   Future<ImportSummary> _describeCollection(ImportFormat format, int collectionId) async {
     final collections = await _collectionRepository.watchCollections().first;
     final folders = await _collectionRepository.watchFolders(collectionId).first;

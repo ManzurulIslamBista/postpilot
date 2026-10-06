@@ -8,6 +8,7 @@ import '../../../core/widgets/app_logo.dart';
 import '../../../core/widgets/split_handle.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../collections/presentation/view_models/collections_view_model.dart';
+import '../../collections/presentation/widgets/collection_runner_dialog.dart';
 import '../../collections/presentation/widgets/collections_sidebar.dart';
 import '../../command_palette/presentation/command_palette_dialog.dart';
 import '../../command_palette/presentation/palette_items.dart';
@@ -26,6 +27,7 @@ import '../../request_builder/presentation/request_builder_page.dart';
 import '../../settings/presentation/widgets/settings_dialog.dart';
 import '../../workplace/presentation/view_models/workplace_view_model.dart';
 import '../../workplace/presentation/widgets/push_to_git.dart';
+import 'new_request_action.dart';
 import 'shell_view_model.dart';
 import '../../import_export/presentation/import_any_dialog.dart';
 import 'widgets/empty_workspace.dart';
@@ -58,7 +60,7 @@ class _ShellPageState extends State<ShellPage> {
         final prefs = locator<TourPrefs>();
         if (await prefs.shouldAutoShow() && mounted) {
           await prefs.markSeen();
-          if (mounted) unawaited(TourDialog.show(context));
+          if (mounted) unawaited(TourDialog.show(context, onOpenPalette: () => _openPalette(context)));
         }
       });
     }
@@ -93,6 +95,7 @@ class _ShellPageState extends State<ShellPage> {
                             onNewRequest: () => _createRequest(context),
                             onImport: () => ImportAnyDialog.show(context),
                             onTemplates: () => TemplatesDialog.show(context),
+                            onCommandPalette: () => _openPalette(context),
                           ),
                         ),
                       ],
@@ -118,6 +121,13 @@ class _ShellPageState extends State<ShellPage> {
       findInResponse: shell.findInResponse,
       openCommandPalette: () => _openPalette(context),
       reopenClosedTab: shell.reopenClosed,
+      focusUrl: shell.focusUrl,
+      nextTab: shell.selectNextTab,
+      previousTab: shell.selectPreviousTab,
+      duplicateRequest: () => _duplicateRequest(context),
+      saveResponseExample: shell.saveResponseExample,
+      switchEnvironment: () => _switchEnvironment(context),
+      runCollection: () => _runCollection(context),
       toggleSidebar: () {
         if (narrow) {
           final scaffold = _scaffoldKey.currentState;
@@ -132,12 +142,20 @@ class _ShellPageState extends State<ShellPage> {
   /// Ctrl+Shift+P: tools, app actions and environments at once, every request loaded in the background.
   void _openPalette(BuildContext context) {
     final environments = context.read<EnvironmentsViewModel>();
+    final shell = context.read<ShellViewModel>();
     CommandPaletteDialog.show(
       context,
       items: [
         ...PaletteItems.tools(),
         ...PaletteItems.app(
           newRequest: () => _createRequest(context),
+          duplicateRequest: () => _duplicateRequest(context),
+          nextTab: shell.selectNextTab,
+          previousTab: shell.selectPreviousTab,
+          focusUrl: shell.focusUrl,
+          saveResponseExample: shell.saveResponseExample,
+          switchEnvironment: () => _switchEnvironment(context),
+          runCollection: () => _runCollection(context),
           toggleSidebar: () {
             final scaffold = _scaffoldKey.currentState;
             if (scaffold != null && scaffold.hasDrawer) {
@@ -163,21 +181,56 @@ class _ShellPageState extends State<ShellPage> {
   Future<void> _createRequest(BuildContext context) async {
     final collections = context.read<CollectionsViewModel>();
     final shell = context.read<ShellViewModel>();
-    // Beside the active request, so working in one collection keeps new
-    // requests there; the first collection is only the fallback for no tab.
-    final beside = await shell.selectedRequestLocation();
-    final collectionId = beside?.collectionId ?? collections.collections.firstOrNull?.id;
-    if (collectionId == null) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Create a collection first')));
-      }
+    final placed = await createNewRequest(collections, shell);
+    if (!context.mounted) return;
+    if (placed.createdCollection) {
+      _say(context, 'Created "${CollectionsViewModel.defaultCollectionName}" for your first request');
+    }
+    if (!collections.isExpanded(placed.collectionId)) collections.toggleExpand(placed.collectionId);
+    shell.selectRequest(placed.requestId);
+    _scaffoldKey.currentState?.closeDrawer();
+  }
+
+  void _say(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+
+  /// Ctrl+D: a copy of the open request, opened beside it.
+  Future<void> _duplicateRequest(BuildContext context) async {
+    final shell = context.read<ShellViewModel>();
+    final collections = context.read<CollectionsViewModel>();
+    final id = shell.selectedRequestId;
+    if (id == null) {
+      _say(context, 'Open a request first, then duplicate it');
       return;
     }
-    final id = await collections.createRequest(collectionId, folderId: beside?.folderId);
+    final copy = await collections.duplicateRequest(id);
     if (!context.mounted) return;
-    if (!collections.isExpanded(collectionId)) collections.toggleExpand(collectionId);
-    shell.selectRequest(id);
-    _scaffoldKey.currentState?.closeDrawer();
+    shell.selectRequest(copy);
+    _say(context, 'Request duplicated');
+  }
+
+  /// Ctrl+Shift+E: the palette narrowed to the "Switch to ..." entries, so the active one changes in two keystrokes.
+  void _switchEnvironment(BuildContext context) {
+    final environments = context.read<EnvironmentsViewModel>();
+    if (environments.environments.isEmpty) {
+      _say(context, 'No environments yet: create one with the button at the right of the top bar');
+      return;
+    }
+    CommandPaletteDialog.show(context, items: PaletteItems.environments(environments));
+  }
+
+  /// Ctrl+Shift+R: the runner for the collection of the open request (or the first collection with no tab open).
+  Future<void> _runCollection(BuildContext context) async {
+    final shell = context.read<ShellViewModel>();
+    final collections = context.read<CollectionsViewModel>();
+    final beside = await shell.selectedRequestLocation();
+    final collectionId = beside?.collectionId ?? collections.collections.firstOrNull?.id;
+    if (!context.mounted) return;
+    if (collectionId == null) {
+      _say(context, 'There is no collection to run yet: create one and add requests first');
+      return;
+    }
+    await CollectionRunnerDialog.show(context, collectionId: collectionId);
   }
 }
 
@@ -404,14 +457,25 @@ class _MainContent extends StatelessWidget {
   final VoidCallback onNewRequest;
   final VoidCallback onImport;
   final VoidCallback onTemplates;
-  const _MainContent({required this.onNewRequest, required this.onImport, required this.onTemplates});
+  final VoidCallback onCommandPalette;
+  const _MainContent({
+    required this.onNewRequest,
+    required this.onImport,
+    required this.onTemplates,
+    required this.onCommandPalette,
+  });
 
   @override
   Widget build(BuildContext context) {
     final shell = context.watch<ShellViewModel>();
     final selectedId = shell.selectedRequestId;
     if (selectedId == null) {
-      return EmptyWorkspace(onNewRequest: onNewRequest, onImport: onImport, onTemplates: onTemplates);
+      return EmptyWorkspace(
+        onNewRequest: onNewRequest,
+        onImport: onImport,
+        onTemplates: onTemplates,
+        onCommandPalette: onCommandPalette,
+      );
     }
     // One builder per open tab, kept alive off-screen so each tab holds on to
     // its own response and in-progress send across tab switches. The key sits

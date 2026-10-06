@@ -84,7 +84,8 @@ final class OdooDartGenerator {
     final path = 'lib/models/${DartNames.snake(model.model, fallback: 'model')}.dart';
     return [
       GeneratedFile(path, b.toString().trimRight()),
-      const GeneratedFile('lib/models/$supportPath', _supportFile),
+      // Shared by every generated model, so a copy already in the project is kept.
+      const GeneratedFile('lib/models/$supportPath', _supportFile, shared: true),
     ];
   }
 

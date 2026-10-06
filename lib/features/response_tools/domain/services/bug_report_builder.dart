@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../../../documentation/domain/services/secret_masker.dart';
+import 'resolved_secrets.dart';
 
 /// A Markdown write-up of one request/response, safe to paste into an issue or
 /// a pull request: every credential in the URL, headers and bodies is masked
@@ -18,6 +19,10 @@ abstract final class BugReportBuilder {
     String? responseBody,
     String? note,
     int maxBodyChars = 4000,
+
+    /// Values of secret variables (see [ResolvedSecrets]): hidden wherever they appear, since the
+    /// request is the resolved one and a secret can sit under a name that does not give it away.
+    List<String> secretValues = const [],
   }) {
     final b = StringBuffer()..writeln('## API issue');
     if (note != null && note.trim().isNotEmpty) {
@@ -65,7 +70,7 @@ abstract final class BugReportBuilder {
     b
       ..writeln()
       ..writeln('<sub>Secrets masked by PostPilot.</sub>');
-    return b.toString();
+    return ResolvedSecrets.mask(b.toString(), secretValues);
   }
 
   static String _pretty(String text) {

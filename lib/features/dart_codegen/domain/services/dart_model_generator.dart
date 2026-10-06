@@ -24,7 +24,17 @@ class DartModelOptions {
   /// `toJson` that skips nulls, and `copyWith`.
   final bool allNullable;
 
-  const DartModelOptions({this.style = DartModelStyle.plain, this.detectDates = true, this.allNullable = false});
+  /// Class names the output must not use because the file that imports it also
+  /// sees them (`Options`, `Response` of Dio). Core types (`String`, `List`...)
+  /// are always avoided.
+  final Set<String> avoidClassNames;
+
+  const DartModelOptions({
+    this.style = DartModelStyle.plain,
+    this.detectDates = true,
+    this.allNullable = false,
+    this.avoidClassNames = const {},
+  });
 }
 
 class DartModelResult {
@@ -53,6 +63,7 @@ final class DartModelGenerator {
     String rootName = 'Root',
     DartModelOptions options = const DartModelOptions(),
   }) {
+    options = _avoidAnnotationNames(options);
     final notes = <String>[];
     final values = <Object?>[];
     for (final sample in samples) {
@@ -85,7 +96,7 @@ final class DartModelGenerator {
       return DartModelResult('', 0, [...notes, 'The response has no JSON object to turn into a class.']);
     }
 
-    final root = DartNames.pascal(rootName, fallback: 'Root');
+    final root = DartNames.className(rootName, fallback: 'Root', also: options.avoidClassNames);
     final classes = <_ClassSpec>[];
     final taken = <String>{};
     _collect(shape.object!, root, classes, taken, options);
@@ -115,6 +126,19 @@ final class DartModelGenerator {
     }
     return DartModelResult(buffer.toString().trimRight(), classes.length, notes);
   }
+
+  /// The generated file imports json_annotation / freezed_annotation, whose public
+  /// names a class of ours must not shadow.
+  static const _annotationTypes = {'JsonKey', 'JsonSerializable', 'JsonConverter', 'JsonEnum', 'JsonValue', 'JsonLiteral', 'Freezed', 'Default', 'Assert'};
+
+  DartModelOptions _avoidAnnotationNames(DartModelOptions o) => o.style == DartModelStyle.plain
+      ? o
+      : DartModelOptions(
+          style: o.style,
+          detectDates: o.detectDates,
+          allNullable: o.allNullable,
+          avoidClassNames: {...o.avoidClassNames, ..._annotationTypes},
+        );
 
   // --- shape collection ----------------------------------------------------
 
@@ -150,7 +174,7 @@ final class DartModelGenerator {
           final value = _typeOf(object.mapValue(), '${suggestedName}Value', classes, taken, o);
           return _TypeRef('Map<String, ${value.name}>', _Kind.map, item: value);
         }
-        final name = _collect(object, DartNames.pascal(suggestedName), classes, taken, o);
+        final name = _collect(object, DartNames.className(suggestedName, also: o.avoidClassNames), classes, taken, o);
         return _TypeRef(name, _Kind.object);
       case _Kind.map || _Kind.date || _Kind.dynamicType:
         return const _TypeRef('dynamic', _Kind.dynamicType);
@@ -453,6 +477,17 @@ class _Shape {
 
   bool get hasObject => object != null;
 
+  /// Everything [other] saw, as if its values had been added here too.
+  void mergeFrom(_Shape other) {
+    _present += other._present;
+    sawNull = sawNull || other.sawNull;
+    _seen.addAll(other._seen);
+    _anyString = _anyString || other._anyString;
+    _allDates = _allDates && other._allDates;
+    if (other.items != null) (items ??= _Shape()).mergeFrom(other.items!);
+    if (other.object != null) (object ??= _ObjectShape()).mergeFrom(other.object!);
+  }
+
   /// Kinds seen, without null.
   Set<_Kind> get kinds => _seen;
 
@@ -503,18 +538,21 @@ class _ObjectShape {
     return dataLike > fields.length * 0.7;
   }
 
+  /// The shape every value of a map-like object has in common. The values are
+  /// merged, not picked: a field only some entries have must come out optional,
+  /// or reading the others throws.
   _Shape mapValue() {
     final merged = _Shape();
     for (final s in fields.values) {
-      merged.sawNull = merged.sawNull || s.sawNull;
-      merged._seen.addAll(s._seen);
-      merged._present++;
-      if (s.object != null) merged.object = s.object;
-      if (s.items != null) merged.items = s.items;
-      merged._anyString = merged._anyString || s._anyString;
-      merged._allDates = merged._allDates && s._allDates;
+      merged.mergeFrom(s);
     }
     return merged;
+  }
+
+  /// Folds [other] (objects seen elsewhere in the same position) into this one.
+  void mergeFrom(_ObjectShape other) {
+    count += other.count;
+    other.fields.forEach((key, shape) => fields.putIfAbsent(key, _Shape.new).mergeFrom(shape));
   }
 
   void add(Map<String, dynamic> map, DartModelOptions o) {

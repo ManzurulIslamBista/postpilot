@@ -13,7 +13,16 @@ class EmptyWorkspace extends StatelessWidget {
   /// Opens the starter-template gallery; the button is left out when null.
   final VoidCallback? onTemplates;
 
-  const EmptyWorkspace({super.key, required this.onNewRequest, required this.onImport, this.onTemplates});
+  /// Opens the command palette (Ctrl+Shift+P); the button is left out when null.
+  final VoidCallback? onCommandPalette;
+
+  const EmptyWorkspace({
+    super.key,
+    required this.onNewRequest,
+    required this.onImport,
+    this.onTemplates,
+    this.onCommandPalette,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +47,7 @@ class EmptyWorkspace extends StatelessWidget {
               Text('PostPilot', style: textStyles.heading.copyWith(fontSize: 24, letterSpacing: -0.4)),
               const SizedBox(height: 6),
               Text(
-                'Design, send and test APIs. Open a request from the sidebar, or start a new one.',
+                'Design, send and test APIs. Open a request from the sidebar, start a new one, or begin from a starter template.',
                 textAlign: TextAlign.center,
                 style: textStyles.body.copyWith(color: colors.secondaryText, height: 1.4),
               ),
@@ -64,11 +73,21 @@ class EmptyWorkspace extends StatelessWidget {
                     ),
                 ],
               ),
+              if (onCommandPalette != null) ...[
+                const SizedBox(height: 14),
+                // The one door to every tool and request, which a first-time user would not find by looking.
+                TextButton.icon(
+                  onPressed: onCommandPalette,
+                  icon: const Icon(Icons.manage_search, size: 20),
+                  label: Text('Open command palette (${AppShortcut.commandPalette.keyLabel})'),
+                ),
+              ],
               const SizedBox(height: 28),
               Divider(color: colors.borderSubtle),
               const SizedBox(height: 14),
               for (final shortcut in const [
                 AppShortcut.newRequest,
+                AppShortcut.commandPalette,
                 AppShortcut.focusSearch,
                 AppShortcut.sendRequest,
                 AppShortcut.toggleSidebar,

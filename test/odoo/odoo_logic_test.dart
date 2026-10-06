@@ -72,12 +72,13 @@ void main() {
       expect(t.length, 10);
       for (final d in t) {
         expect(d.url, contains('/json/2/sale.order/'));
-        expect(() => jsonDecode(d.bodyText), returnsNormally);
+        // Write and delete leave the record id to a variable; with a value set the body is JSON.
+        expect(() => jsonDecode(d.bodyText.replaceAll('{{recordId}}', '7')), returnsNormally, reason: d.name);
       }
       final create = t.firstWhere((d) => d.name == 'Create sale.order');
       expect(jsonDecode(create.bodyText), containsPair('vals_list', isA<List<dynamic>>()));
       final write = t.firstWhere((d) => d.name == 'Update sale.order');
-      expect(jsonDecode(write.bodyText), allOf(containsPair('ids', [1]), containsPair('vals', isA<Map<String, dynamic>>())));
+      expect(jsonDecode(write.bodyText.replaceAll('{{recordId}}', '7')), allOf(containsPair('ids', [7]), containsPair('vals', isA<Map<String, dynamic>>())));
     });
   });
 

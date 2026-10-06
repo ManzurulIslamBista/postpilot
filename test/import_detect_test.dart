@@ -8,6 +8,7 @@ import 'package:postpilot/features/import_export/domain/services/backup_codec.da
 import 'package:postpilot/features/import_export/domain/services/import_format_detector.dart';
 import 'package:postpilot/features/import_export/domain/usecases/import_any_usecase.dart';
 import 'package:postpilot/features/import_export/domain/usecases/import_curl_script_usecase.dart';
+import 'package:postpilot/features/import_export/domain/usecases/summarizing_importer.dart';
 import 'package:postpilot/features/import_export/presentation/view_models/import_any_view_model.dart';
 import 'support/in_memory_import_export_fakes.dart';
 
@@ -27,6 +28,28 @@ void main() {
 
     test('a Postman collection with no requests yet', () {
       expect(detect('{"info": {"name": "Empty"}, "item": []}'), ImportFormat.postman);
+    });
+
+    test('a Postman environment export, with or without its scope marker', () {
+      expect(
+        detect('{"id": "1", "name": "Dev", "values": [{"key": "a", "value": "b", "enabled": true}]}'),
+        ImportFormat.postmanEnvironment,
+      );
+      expect(
+        detect(
+          '{"id":"2","name":"Dev","values":[{"key":"a","value":"b","type":"default","enabled":true}],'
+          '"_postman_variable_scope":"environment","_postman_exported_at":"2026-01-01T00:00:00.000Z"}',
+        ),
+        ImportFormat.postmanEnvironment,
+      );
+    });
+
+    test('a Postman globals file and an environment with no variables yet', () {
+      expect(
+        detect('{"id":"3","name":"Globals","values":[{"key":"a","value":"1"}],"_postman_variable_scope":"globals"}'),
+        ImportFormat.postmanEnvironment,
+      );
+      expect(detect('{"name": "Empty", "values": []}'), ImportFormat.postmanEnvironment);
     });
 
     test('an Insomnia v4 export', () {
@@ -129,8 +152,9 @@ collection:
       expect(detect('{"info": {"name": "x"}}'), ImportFormat.unknown);
     });
 
-    test('a Postman environment file is not a collection', () {
-      expect(detect('{"id": "1", "name": "Dev", "values": [{"key": "a", "value": "b", "enabled": true}]}'), ImportFormat.unknown);
+    test('values lists that are not Postman variables stay unknown', () {
+      expect(detect('{"name": "Dev", "values": [1, 2]}'), ImportFormat.unknown);
+      expect(detect('{"values": [{"key": "a"}]}'), ImportFormat.unknown);
     });
 
     test('truncated JSON', () {
@@ -149,6 +173,7 @@ collection:
 
     const samples = {
       ImportFormat.postman: '{"info": {"name": "P"}, "item": []}',
+      ImportFormat.postmanEnvironment: '{"name": "Dev", "values": [], "_postman_variable_scope": "environment"}',
       ImportFormat.insomnia: '{"_type": "export", "resources": []}',
       ImportFormat.har: '{"log": {"entries": []}}',
       ImportFormat.openApi: '{"openapi": "3.0.0", "paths": {}}',
@@ -192,6 +217,28 @@ collection:
       expect(summary.collectionName, 'Pet Store');
       expect((summary.folders, summary.requests), (1, 2));
       expect(summary.description, 'Imported "Pet Store": 1 folder, 2 requests');
+    });
+
+    test('a Postman importer that can summarise itself is asked to, so its notes reach the dialog', () async {
+      final summarizing = _SummarizingPostman();
+      final useCase = ImportAnyUseCase(
+        summarizing,
+        routes.openApi,
+        routes.insomnia,
+        routes.har,
+        routes.curl,
+        routes.backup,
+        routes.db.collectionRepository,
+        routes.db.requestRepository,
+        importPostmanEnvironment: routes.postmanEnvironment,
+      );
+
+      final summary = await useCase(ImportAnyParams(text: samples[ImportFormat.postman]!));
+
+      expect(summary.skipped, 1);
+      expect(summary.notes, ['left out: scripts']);
+      expect(summarizing.plainCalls, 0, reason: 'the bare collection-id importer must not run as well');
+      expect(routes.called, isEmpty);
     });
 
     test('unrecognised text is an error naming the supported formats', () async {
@@ -370,11 +417,44 @@ final class _Routes {
   late final _Recorder<ImportSummary, String> insomnia = _Recorder(ImportFormat.insomnia, this, (_) async => _summary(ImportFormat.insomnia));
   late final _Recorder<ImportSummary, String> har = _Recorder(ImportFormat.har, this, (_) async => _summary(ImportFormat.har));
   late final _Recorder<ImportSummary, String> backup = _Recorder(ImportFormat.backup, this, (_) async => _summary(ImportFormat.backup));
+  late final _Recorder<ImportSummary, String> postmanEnvironment =
+      _Recorder(ImportFormat.postmanEnvironment, this, (_) async => _summary(ImportFormat.postmanEnvironment));
   late final _Recorder<ImportSummary, ImportCurlScriptParams> curl =
       _Recorder(ImportFormat.curl, this, (_) async => _summary(ImportFormat.curl));
 
   late final ImportAnyUseCase useCase =
-      ImportAnyUseCase(postman, openApi, insomnia, har, curl, backup, db.collectionRepository, db.requestRepository);
+      ImportAnyUseCase(
+        postman,
+        openApi,
+        insomnia,
+        har,
+        curl,
+        backup,
+        db.collectionRepository,
+        db.requestRepository,
+        importPostmanEnvironment: postmanEnvironment,
+      );
 
   static ImportSummary _summary(ImportFormat format) => ImportSummary(format: format, requests: 1);
+}
+
+/// A Postman importer that answers both ways: the bare collection id and a full summary with notes.
+final class _SummarizingPostman implements UseCase<int, String>, SummarizingImporter {
+  int plainCalls = 0;
+
+  @override
+  Future<int> call(String params) async {
+    plainCalls++;
+    return 1;
+  }
+
+  @override
+  Future<ImportSummary> importWithSummary(String text) async => const ImportSummary(
+    format: ImportFormat.postman,
+    collectionIds: [1],
+    collectionName: 'P',
+    requests: 1,
+    skipped: 1,
+    notes: ['left out: scripts'],
+  );
 }

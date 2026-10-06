@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../../documentation/domain/services/secret_masker.dart';
+import '../../response_tools/domain/services/resolved_secrets.dart';
 import '../../scripting/domain/entities/assertion_entity.dart';
 
 /// A request the model proposed from a description.
@@ -39,6 +40,9 @@ abstract final class AiTasks {
     Map<String, String> responseHeaders = const {},
     required String responseBody,
     String? question,
+
+    /// Values of secret variables (see [ResolvedSecrets]), hidden wherever they appear in the resolved request.
+    List<String> secretValues = const [],
   }) {
     String headers(Map<String, String> h) => h.entries.map((e) => '${e.key}: ${SecretMasker.maskValue(e.key, e.value)}').join('\n');
     String clip(String s) => s.length <= maxBodyChars ? s : '${s.substring(0, maxBodyChars)}\n… (cut: ${s.length - maxBodyChars} more characters)';
@@ -63,7 +67,7 @@ abstract final class AiTasks {
         ..writeln()
         ..writeln('QUESTION: ${question.trim()}');
     }
-    return b.toString();
+    return ResolvedSecrets.mask(b.toString(), secretValues);
   }
 
   // --- tests ----------------------------------------------------------------------

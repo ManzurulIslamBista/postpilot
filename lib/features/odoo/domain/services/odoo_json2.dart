@@ -6,6 +6,11 @@ abstract final class OdooVars {
   static const url = 'odooUrl';
   static const database = 'odooDb';
   static const apiKey = 'odooApiKey';
+
+  /// The record a ready-made write or delete request acts on. It is deliberately
+  /// not defined anywhere: the request fails until someone sets it, instead of
+  /// changing or deleting record 1 of whatever server the environment points at.
+  static const recordId = 'recordId';
 }
 
 /// A request in Odoo's External JSON-2 API: `POST /json/2/<model>/<method>`,
@@ -22,12 +27,18 @@ final class OdooCall {
   final Map<String, Object?> params;
   final Map<String, Object?> context;
 
+  /// Name of a `{{variable}}` that stands in for the record id in [bodyText], for
+  /// requests saved ready-made. [body] (what is sent for a call run directly)
+  /// is not affected; give it real [ids].
+  final String? idsVariable;
+
   const OdooCall({
     required this.model,
     required this.method,
     this.ids = const [],
     this.params = const {},
     this.context = const {},
+    this.idsVariable,
   });
 
   /// The body exactly as it is sent: `ids`, `context`, then the named arguments.
@@ -37,7 +48,22 @@ final class OdooCall {
         ...params,
       };
 
-  String get bodyText => const JsonEncoder.withIndent('  ').convert(body);
+  /// The body as text for a saved request. With [idsVariable] the id is the bare
+  /// `{{variable}}` (`"ids": [{{recordId}}]`), which is valid JSON only once the
+  /// variable has a value; unquoted, it can only ever be sent as a number.
+  String get bodyText {
+    const pretty = JsonEncoder.withIndent('  ');
+    final variable = idsVariable;
+    if (variable == null) return pretty.convert(body);
+    const marker = '__postpilot_record_id__';
+    final withMarker = {
+      'ids': [marker],
+      for (final e in body.entries)
+        if (e.key != 'ids') e.key: e.value,
+    };
+    // The pretty printer puts the one id on a line of its own; `[{{recordId}}]` reads better in one piece.
+    return pretty.convert(withMarker).replaceFirst(RegExp('\\[\\s*"$marker"\\s*\\]'), '[{{$variable}}]');
+  }
 
   String get path => '/json/2/$model/$method';
 }
@@ -80,8 +106,11 @@ abstract final class OdooJson2 {
   static List<OdooRequestDraft> templatesFor(String model, {List<String> sampleFields = const ['display_name']}) {
     final fields = sampleFields.isEmpty ? const ['display_name'] : sampleFields;
     OdooRequestDraft d(String name, String method,
-            {List<int> ids = const [], Map<String, Object?> params = const {}, String? note}) =>
-        draft(OdooCall(model: model, method: method, ids: ids, params: params), name: name, note: note);
+            {List<int> ids = const [], String? idsVariable, Map<String, Object?> params = const {}, String? note}) =>
+        draft(OdooCall(model: model, method: method, ids: ids, idsVariable: idsVariable, params: params), name: name, note: note);
+    // Ready-made requests that change data must not run against an id picked by us.
+    const needsId = ' Set the variable {{${OdooVars.recordId}}} to the id of the record first: it is deliberately left undefined, '
+        'so this request fails until you do, instead of touching a record you did not choose.';
     return [
       d('List $model', 'search_read', params: {'domain': <Object?>[], 'fields': fields, 'limit': 20, 'order': 'id desc'},
           note: 'Records matching the domain, newest first. Use the Domain builder to write the domain.'),
@@ -91,8 +120,10 @@ abstract final class OdooJson2 {
       d('Search by name', 'name_search', params: {'name': '', 'operator': 'ilike', 'limit': 8}),
       d('Create $model', 'create', params: {'vals_list': [{'name': 'New record'}]},
           note: 'Returns the ids of the created records. `vals_list` is a list so several records can be created at once.'),
-      d('Update $model', 'write', ids: [1], params: {'vals': {'name': 'Updated'}}, note: 'Returns true on success.'),
-      d('Delete $model', 'unlink', ids: [1], note: 'Deletes the records in `ids`. This cannot be undone.'),
+      d('Update $model', 'write', idsVariable: OdooVars.recordId, params: {'vals': {'name': 'Updated'}},
+          note: 'Returns true on success.$needsId'),
+      d('Delete $model', 'unlink', idsVariable: OdooVars.recordId,
+          note: 'Deletes the records in `ids`. This cannot be undone.$needsId'),
       d('Fields of $model', 'fields_get', params: {'attributes': ['string', 'type', 'required', 'relation', 'selection', 'readonly', 'store']},
           note: 'Describes every field. Paste the response into Odoo Studio to generate Dart models.'),
       d('Defaults of $model', 'default_get', params: {'fields_list': fields}),

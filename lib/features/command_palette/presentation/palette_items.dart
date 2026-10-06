@@ -145,6 +145,14 @@ abstract final class PaletteItems {
     required VoidCallback newRequest,
     required VoidCallback toggleSidebar,
     required VoidCallback openImport,
+    // The shortcut-only actions of the shell; each entry shows its shortcut, and is left out when not given.
+    VoidCallback? duplicateRequest,
+    VoidCallback? nextTab,
+    VoidCallback? previousTab,
+    VoidCallback? focusUrl,
+    VoidCallback? saveResponseExample,
+    VoidCallback? switchEnvironment,
+    VoidCallback? runCollection,
   }) =>
       [
         PaletteItem(id: 'app.new', title: 'New request', icon: Icons.add_rounded, category: PaletteCategory.app, shortcut: AppShortcut.newRequest.keyLabel, run: (_) => newRequest()),
@@ -163,6 +171,20 @@ abstract final class PaletteItems {
         ),
         PaletteItem(id: 'app.tour', title: 'Take the quick tour', subtitle: 'What PostPilot can do, in six steps', icon: Icons.tour_outlined, category: PaletteCategory.app, keywords: const ['help', 'guide', 'welcome', 'onboarding', 'tutorial'], run: (c) => TourDialog.show(c)),
         PaletteItem(id: 'app.shortcuts', title: 'Keyboard shortcuts', icon: Icons.keyboard_outlined, category: PaletteCategory.app, run: (c) => ShortcutsHelpDialog.show(c)),
+        if (duplicateRequest != null)
+          PaletteItem(id: 'app.duplicate', title: 'Duplicate the current request', icon: Icons.copy_all_outlined, category: PaletteCategory.app, keywords: const ['copy', 'clone'], shortcut: AppShortcut.duplicateRequest.keyLabel, run: (_) => duplicateRequest()),
+        if (focusUrl != null)
+          PaletteItem(id: 'app.focus-url', title: 'Focus the URL bar', icon: Icons.link, category: PaletteCategory.app, shortcut: AppShortcut.focusUrl.keyLabel, run: (_) => focusUrl()),
+        if (nextTab != null)
+          PaletteItem(id: 'app.next-tab', title: 'Next request tab', icon: Icons.arrow_forward, category: PaletteCategory.app, keywords: const ['switch', 'tab'], shortcut: AppShortcut.nextTab.keyLabel, run: (_) => nextTab()),
+        if (previousTab != null)
+          PaletteItem(id: 'app.previous-tab', title: 'Previous request tab', icon: Icons.arrow_back, category: PaletteCategory.app, keywords: const ['switch', 'tab'], shortcut: AppShortcut.previousTab.keyLabel, run: (_) => previousTab()),
+        if (saveResponseExample != null)
+          PaletteItem(id: 'app.save-example', title: 'Save the response as an example', icon: Icons.bookmark_add_outlined, category: PaletteCategory.app, keywords: const ['example', 'bookmark', 'mock'], shortcut: AppShortcut.saveResponseExample.keyLabel, run: (_) => saveResponseExample()),
+        if (switchEnvironment != null)
+          PaletteItem(id: 'app.switch-env', title: 'Switch environment', subtitle: 'Pick the active environment', icon: Icons.layers_outlined, category: PaletteCategory.app, keywords: const ['environment', 'prod', 'staging'], shortcut: AppShortcut.switchEnvironment.keyLabel, run: (_) => switchEnvironment()),
+        if (runCollection != null)
+          PaletteItem(id: 'app.run-collection', title: 'Run the current collection', subtitle: 'Send every request in order and see the results', icon: Icons.play_circle_outline, category: PaletteCategory.app, keywords: const ['runner', 'test', 'run all'], shortcut: AppShortcut.runCollection.keyLabel, run: (_) => runCollection()),
       ];
 
   static List<PaletteItem> environments(EnvironmentsViewModel vm) => [

@@ -1,5 +1,6 @@
 enum ImportFormat {
   postman('Postman collection'),
+  postmanEnvironment('Postman environment or globals'),
   insomnia('Insomnia export'),
   har('HAR recording'),
   openApi('OpenAPI / Swagger document'),

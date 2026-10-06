@@ -19,8 +19,11 @@ class _Row {
 
 class _Group {
   bool any;
+
+  /// `['!', ...]` over the whole group.
+  bool negate;
   final List<Object> children;
-  _Group({this.any = false, List<Object>? children}) : children = children ?? [];
+  _Group({this.any = false, this.negate = false, List<Object>? children}) : children = children ?? [];
 }
 
 /// Build an Odoo domain without writing prefix notation by hand: pick fields
@@ -54,38 +57,46 @@ class _OdooDomainTabState extends State<OdooDomainTab> {
 
   // --- conversion ----------------------------------------------------------------
 
-  DomainNode _toNode(_Group g) {
+  /// The tree for [g], or null when it holds no condition yet (an empty group, or
+  /// a negated one, would otherwise write a dangling `'!'`).
+  DomainNode? _toNode(_Group g) {
     final kids = <DomainNode>[];
     for (final c in g.children) {
       if (c is _Group) {
         final n = _toNode(c);
-        if (n is DomainGroup && n.children.isEmpty) continue;
-        kids.add(n);
+        if (n != null) kids.add(n);
       } else if (c is _Row && c.field.trim().isNotEmpty) {
         final leaf = DomainLeaf(c.field.trim(), c.op, OdooDomain.parseValue(c.raw, operator: c.op, field: _info?.field(c.field.trim())));
         kids.add(c.negate ? DomainNot(leaf) : leaf);
       }
     }
-    return DomainGroup(any: g.any, children: kids);
+    if (kids.isEmpty) return null;
+    final group = DomainGroup(any: g.any, children: kids);
+    return g.negate ? DomainNot(group) : group;
   }
 
-  _Group _fromNode(DomainNode node) {
-    if (node is DomainGroup) {
-      return _Group(any: node.any, children: [for (final c in node.children) c is DomainGroup ? _fromNode(c) : _rowOf(c)]);
-    }
-    return _Group(children: [_rowOf(node)]);
+  _Group _fromNode(DomainNode node) => node is DomainGroup ? _groupOf(node) : _Group(children: [_childOf(node)]);
+
+  _Group _groupOf(DomainGroup g, {bool negate = false}) =>
+      _Group(any: g.any, negate: negate, children: [for (final c in g.children) _childOf(c)]);
+
+  /// A row for a condition, a group for a (possibly negated) group.
+  Object _childOf(DomainNode n) {
+    if (n is DomainGroup) return _groupOf(n);
+    if (n is DomainLeaf) return _rowOf(n);
+    final inner = (n as DomainNot).child;
+    if (inner is DomainGroup) return _groupOf(inner, negate: true);
+    if (inner is DomainLeaf) return _rowOf(inner, negate: true);
+    // NOT NOT x: a group keeps both negations visible.
+    return _Group(negate: true, children: [_childOf(inner)]);
   }
 
-  _Row _rowOf(DomainNode n) {
-    final negate = n is DomainNot;
-    final leaf = n is DomainNot ? n.child : n;
-    if (leaf is DomainLeaf) {
-      final v = leaf.value;
-      final raw = v is List ? v.join(', ') : (v == null ? '' : '$v');
-      return _Row(field: leaf.field, op: leaf.operator, raw: raw, negate: negate);
-    }
-    return _Row();
-  }
+  _Row _rowOf(DomainLeaf leaf, {bool negate = false}) => _Row(
+        field: leaf.field,
+        op: leaf.operator,
+        raw: OdooDomain.formatValue(leaf.value, operator: leaf.operator, field: _info?.field(leaf.field)),
+        negate: negate,
+      );
 
   void _load(String text) {
     final tree = OdooDomain.parseText(text);
@@ -121,6 +132,18 @@ class _OdooDomainTabState extends State<OdooDomainTab> {
                 onSelectionChanged: (s) => setState(() => g.any = s.first),
               ),
               Text('  of these', style: context.textStyles.caption.copyWith(color: colors.secondaryText)),
+              if (depth > 0) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Match records that do NOT satisfy this group',
+                  child: FilterChip(
+                    label: const Text('NOT'),
+                    visualDensity: VisualDensity.compact,
+                    selected: g.negate,
+                    onSelected: (v) => setState(() => g.negate = v),
+                  ),
+                ),
+              ],
               const Spacer(),
               if (onRemove != null) IconButton(icon: const Icon(Icons.close, size: 16), tooltip: 'Remove group', onPressed: onRemove),
             ],
@@ -211,7 +234,7 @@ class _OdooDomainTabState extends State<OdooDomainTab> {
 
   @override
   Widget build(BuildContext context) {
-    final node = _toNode(_root);
+    final node = _toNode(_root) ?? const DomainGroup();
     final list = OdooDomain.toList(node);
     final json = const JsonEncoder.withIndent('  ').convert(list);
     final python = OdooDomain.toPython(node);
@@ -225,6 +248,14 @@ class _OdooDomainTabState extends State<OdooDomainTab> {
         if (_info == null)
           const Padding(padding: EdgeInsets.only(bottom: 10), child: InfoBanner(message: 'Read a model in the Explorer tab to get field suggestions and the right operators for each field type.')),
         _groupEditor(_root),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            'Value: text or a number. True, False and None are those values (parent_id = False means "has no parent"), '
+            '[1, 2] is a list, and quotes keep text exactly as typed ("False" in quotes is the word).',
+            style: context.textStyles.caption.copyWith(color: context.colors.secondaryText),
+          ),
+        ),
         ToolSection(
           title: 'Import a domain',
           hint: 'Paste JSON or Python: [("state", "=", "sale")]',

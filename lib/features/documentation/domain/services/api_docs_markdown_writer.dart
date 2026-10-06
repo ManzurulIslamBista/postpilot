@@ -106,12 +106,15 @@ final class ApiDocsMarkdownWriter {
     _table(['Key', 'Value'], fields);
   }
 
+  /// A third column says where an inherited row (a header a folder or the collection passes down) was set.
   void _table(List<String> header, List<ApiDocsField> rows) {
+    final withOrigin = rows.any((r) => r.origin.isNotEmpty);
+    final titles = [...header, if (withOrigin) 'Inherited from'];
     _out
-      ..writeln('| ${header.join(' | ')} |')
-      ..writeln('| ${header.map((_) => '---').join(' | ')} |');
+      ..writeln('| ${titles.join(' | ')} |')
+      ..writeln('| ${titles.map((_) => '---').join(' | ')} |');
     for (final row in rows) {
-      _out.writeln('| ${_cell(row.key)} | ${_cell(row.value)} |');
+      _out.writeln('| ${_cell(row.key)} | ${_cell(row.value)}${withOrigin ? ' | ${_plain(row.origin).replaceAll('|', r'\|')}' : ''} |');
     }
     _out.writeln();
   }

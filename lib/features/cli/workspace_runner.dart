@@ -3,19 +3,28 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import '../../core/enums/auth_type.dart';
+import '../../core/enums/body_type.dart';
 import '../../core/utils/variable_resolver.dart';
+import '../defaults/domain/entities/inherited_defaults.dart';
+import '../defaults/domain/services/defaults_resolver.dart';
 import '../documentation/domain/services/secret_masker.dart';
 import '../import_export/domain/services/backup_codec.dart';
+import '../request_builder/domain/entities/api_request_entity.dart';
 import '../request_builder/domain/entities/api_response_entity.dart';
+import '../request_builder/domain/entities/request_auth.dart';
+import '../request_builder/domain/services/digest_auth_challenge.dart';
 import '../request_builder/domain/services/request_spec_builder.dart';
 import '../request_builder/domain/services/resolved_request_spec.dart';
+import '../safety/domain/services/production_detector.dart';
 import '../scripting/data/models/scripts_json_codec.dart';
+import '../scripting/domain/entities/assertion_result.dart';
 import '../scripting/domain/entities/extractor_entity.dart';
 import '../scripting/domain/entities/script_run_result.dart';
 import '../scripting/domain/evaluator/assertion_evaluator.dart';
 import '../scripting/domain/evaluator/extractor_value_resolver.dart';
 import '../scripting/domain/evaluator/response_reader.dart';
 import '../workplace/domain/services/secret_splitter.dart';
+import 'production_lock.dart';
 
 /// A request as it goes over the wire.
 final class CliRequest {
@@ -43,8 +52,13 @@ typedef CliSend = Future<CliResponse> Function(CliRequest request);
 final class RunOptions {
   final String? environment;
 
-  /// `--var name=value`: beats every other source.
+  /// `--var name=value`: beats every other source. Given by the person running the process, so trusted.
   final Map<String, String> variables;
+
+  /// Variables an AI agent passed with a tool call. They beat everything else
+  /// too, except that they may never change the scheme, host or port a request
+  /// is sent to: see [WorkspaceRunner.runRequest].
+  final Map<String, String> agentVariables;
   final String? collection;
   final String? folder;
   final bool bail;
@@ -52,15 +66,24 @@ final class RunOptions {
   final bool verifySsl;
   final Duration delay;
 
+  /// The production lock; on unless `--allow-production` was given.
+  final ProductionLock production;
+
+  /// `--fail-on-skip`: a skipped request makes the run fail.
+  final bool failOnSkip;
+
   const RunOptions({
     this.environment,
     this.variables = const {},
+    this.agentVariables = const {},
     this.collection,
     this.folder,
     this.bail = false,
     this.timeout = const Duration(seconds: 30),
     this.verifySsl = true,
     this.delay = Duration.zero,
+    this.production = const ProductionLock(),
+    this.failOnSkip = false,
   });
 }
 
@@ -81,6 +104,9 @@ final class RequestOutcome {
 
   /// Why it did not run (unsupported auth, unresolved variable...).
   final String? skipped;
+
+  /// Why the production lock or the host pin refused to send it; [error] says the same.
+  final String? blocked;
   final ScriptRunResult scripts;
   final String? responseBody;
   final Map<String, String> responseHeaders;
@@ -97,6 +123,7 @@ final class RequestOutcome {
     this.sizeBytes = 0,
     this.error,
     this.skipped,
+    this.blocked,
     this.scripts = ScriptRunResult.empty,
     this.responseBody,
     this.responseHeaders = const {},
@@ -105,31 +132,75 @@ final class RequestOutcome {
   bool get isSuccess => status != null && status! >= 200 && status! < 300;
 
   /// A request with assertions passes on those alone; one without falls back to HTTP 2xx.
-  /// A request that was skipped neither passes nor fails.
+  /// A request that was skipped neither passes nor fails (see [RunSummary.ok]: skipping alone never makes a run succeed).
   bool get passed {
     if (skipped != null) return true;
     if (error != null || status == null) return false;
     return (scripts.assertions.isNotEmpty || isSuccess) && !scripts.hasFailures;
   }
 
+  /// What went wrong, in words an agent or a CI log may show: every text
+  /// that can quote a URL or a response value goes through [SecretMasker].
   List<String> get failures => [
-        ?error,
+        if (error case final message?) SecretMasker.maskMessage(message),
         if (error == null && scripts.assertions.isEmpty && !isSuccess && status != null) 'HTTP $status ${statusMessage ?? ''}'.trim(),
-        for (final a in scripts.assertions.where((a) => !a.passed)) '${a.name} (got ${a.actual})',
-        for (final e in scripts.extracted.where((e) => !e.ok)) 'variable ${e.key}: ${e.error}',
+        for (final a in scripts.assertions.where((a) => !a.passed)) failureText(a),
+        for (final e in scripts.extracted.where((e) => !e.ok))
+          'variable ${e.key}: ${SecretMasker.maskMessage('${e.error}')}${_from(e.origin)}',
       ];
+
+  /// What the evaluator says every `actual` is when it is not a value of the response.
+  static const _plainActuals = {
+    'Missing',
+    'Found in body',
+    'Not found in body',
+    'Matches',
+    'No schema',
+    'No text to search for',
+    'Body is not valid JSON',
+    'Enter a JSON path',
+    'The schema is not valid JSON',
+    'The schema must be a JSON object',
+  };
+
+  /// The value a failed check saw, masked: it is a piece of the response (a JSON
+  /// value, a header) and may hold a credential. A check whose name says it
+  /// looks at a secret (`access_token equals ...`, `Header Set-Cookie ...`)
+  /// shows no value at all.
+  static String shownActual(AssertionResult a) {
+    if (_plainActuals.contains(a.actual)) return a.actual;
+    if (SecretMasker.isSensitiveName(a.name)) return SecretMasker.mask;
+    return SecretMasker.maskMessage(SecretMasker.maskBody(a.actual));
+  }
+
+  /// `Status equals 200 (got 500)`, masked.
+  /// A check inherited from a folder or the collection says where it was set.
+  static String failureText(AssertionResult a) =>
+      '${SecretMasker.maskMessage(a.name)} (got ${shownActual(a)})${_from(a.origin)}';
+
+  static String _from(String? origin) => origin == null ? '' : ' (from ${SecretMasker.maskMessage(origin)})';
 }
 
 final class RunSummary {
   final List<RequestOutcome> outcomes;
   final Duration duration;
-  const RunSummary(this.outcomes, this.duration);
+
+  /// `--fail-on-skip`: a skipped request makes the run fail.
+  final bool failOnSkip;
+  const RunSummary(this.outcomes, this.duration, {this.failOnSkip = false});
 
   int get total => outcomes.length;
   int get skipped => outcomes.where((o) => o.skipped != null).length;
   int get failed => outcomes.where((o) => !o.passed).length;
   int get passed => total - failed - skipped;
-  bool get ok => failed == 0;
+
+  /// Nothing failed and something really ran and passed. A run in which every
+  /// request was skipped verified nothing, so it is not ok; with [failOnSkip]
+  /// a single skipped request is not ok either.
+  bool get ok => failed == 0 && passed > 0 && !(failOnSkip && skipped > 0);
+
+  /// Requests were selected but every one of them was skipped.
+  bool get allSkipped => total > 0 && skipped == total;
 }
 
 final class RequestRef {
@@ -187,73 +258,196 @@ final class WorkspaceRunner {
     return names.join('/');
   }
 
-  /// Runs every selected request in file order. [onResult] is called as each finishes.
-  Future<RunSummary> run(RunOptions options, {void Function(RequestOutcome outcome)? onResult, Map<String, String> processVariables = const {}}) async {
-    final clock = Stopwatch()..start();
-    final state = RunState(snapshot, options, processVariables);
-    final outcomes = <RequestOutcome>[];
-    var stop = false;
+  /// The requests [options] select (collection and folder filters), in file order.
+  Iterable<(BackupCollection, BackupRequest)> _selected(RunOptions options) sync* {
     for (final collection in snapshot.collections) {
-      if (stop) break;
       if (options.collection != null && collection.name != options.collection) continue;
       for (final item in collection.requests) {
         final folder = _folderPath(collection, item.request.folderId);
         if (options.folder != null && folder != options.folder && !folder.startsWith('${options.folder}/')) continue;
-        final outcome = await runRequest(collection, item, state, options);
-        outcomes.add(outcome);
-        onResult?.call(outcome);
-        if (options.bail && !outcome.passed) {
-          stop = true;
-          break;
-        }
-        if (options.delay > Duration.zero) await Future<void>.delayed(options.delay);
+        yield (collection, item);
       }
     }
-    return RunSummary(outcomes, clock.elapsed);
+  }
+
+  /// Runs every selected request in file order. [onResult] is called as each finishes.
+  /// The production lock is checked per request as it is sent; call
+  /// [productionBlocks] first to refuse a whole run before anything leaves.
+  Future<RunSummary> run(RunOptions options, {void Function(RequestOutcome outcome)? onResult, Map<String, String> processVariables = const {}}) async {
+    final clock = Stopwatch()..start();
+    final state = RunState(snapshot, options, processVariables);
+    final outcomes = <RequestOutcome>[];
+    for (final (collection, item) in _selected(options)) {
+      final outcome = await runRequest(collection, item, state, options);
+      outcomes.add(outcome);
+      onResult?.call(outcome);
+      if (options.bail && !outcome.passed) break;
+      if (options.delay > Duration.zero) await Future<void>.delayed(options.delay);
+    }
+    return RunSummary(outcomes, clock.elapsed, failOnSkip: options.failOnSkip);
+  }
+
+  /// The selected requests the production lock would refuse, judged without
+  /// sending anything; empty when `--allow-production` was given. Requests that
+  /// are not sent at all (skipped for their auth) are not listed.
+  List<ProductionBlock> productionBlocks(RunOptions options, {Map<String, String> processVariables = const {}}) {
+    if (options.production.allow) return const [];
+    final state = RunState(snapshot, options, processVariables);
+    return [
+      for (final (collection, item) in _selected(options))
+        if (!_isSkippedForAuth(collection, item.request))
+          ?_blockFor(
+            collection,
+            item,
+            options,
+            _preview(collection, item.request, state.resolver(collection, agent: options.agentVariables, folderId: item.request.folderId)),
+          ),
+    ];
+  }
+
+  /// What a request inherits from its collection and folders: the same rules, from the same
+  /// levels, as the app (see `DefaultsResolver`), so a request is built identically in both.
+  InheritedDefaults _inherited(BackupCollection collection, int? folderId) =>
+      DefaultsResolver.resolve(collection.defaultsTree.chainFor(folderId));
+
+  bool _isSkippedForAuth(BackupCollection collection, ApiRequestEntity request) =>
+      request.auth.resolveInherited(_inherited(collection, request.folderId).auth).type == AuthType.oauth2;
+
+  /// The wire form of a request for the lock to judge. The built request when it
+  /// can be built, otherwise the URL and body resolved by hand.
+  _Wire _preview(BackupCollection collection, ApiRequestEntity request, VariableResolver resolver) {
+    try {
+      final inherited = _inherited(collection, request.folderId);
+      final spec = _builder.build(request, resolver, inheritedAuth: inherited.auth, inheritedHeaders: inherited.headerRows);
+      return _Wire(spec.url, spec.bodyBytes == null ? null : utf8.decode(spec.bodyBytes!, allowMalformed: true));
+    } catch (_) {
+      final body = request.body;
+      return body.type == BodyType.graphql
+          ? _Wire(resolver.resolve(request.url), null, graphqlQuery: resolver.resolve(body.graphqlQuery))
+          : _Wire(resolver.resolve(request.url), resolver.resolve(body.rawText));
+    }
+  }
+
+  ProductionBlock? _blockFor(BackupCollection collection, BackupRequest item, RunOptions options, _Wire wire) {
+    final request = item.request;
+    final effect = ProductionDetector.classify(request.method, url: wire.url, body: wire.body, graphqlQuery: wire.graphqlQuery);
+    if (!effect.changesData) return null;
+    final reason = options.production.reason(options.environment, wire.url);
+    if (reason == null) return null;
+    return ProductionBlock(
+      collection: collection.name,
+      folder: _folderPath(collection, request.folderId),
+      name: request.name,
+      method: request.method.label,
+      effect: effect,
+      reason: reason,
+    );
+  }
+
+  static final _unresolvedToken = RegExp(r'\{\{([^{}]+)\}\}');
+
+  /// `scheme://authority` of [url] as written, `http://` assumed like the
+  /// request builder does; what a variable must not be able to change.
+  static String _origin(String url) {
+    final text = url.trim();
+    final withScheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(text) ? text : 'http://$text';
+    final match = RegExp(r'^([a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*)').firstMatch(withScheme);
+    return match?[1] ?? withScheme;
+  }
+
+  /// `scheme://host:port` without credentials, for a message.
+  static String _originForMessage(String origin) {
+    final at = origin.lastIndexOf('@');
+    if (at < 0) return origin;
+    return '${origin.substring(0, origin.indexOf('://') + 3)}${origin.substring(at + 1)}';
+  }
+
+  /// A message when the variables an agent passed decide where [request] goes;
+  /// `null` when its scheme, host and port come from the workspace alone.
+  ///
+  /// The agent's values sit above every other source, so an injected
+  /// instruction ("set baseUrl to https://evil.example") would otherwise send the
+  /// workspace's Bearer token or API key to a stranger. The URL is resolved
+  /// twice, with and without the agent's variables, and the two must agree on
+  /// the origin, whichever variable (or chain of variables) builds it. A host
+  /// that only an agent variable could fill in is refused too.
+  String? _hostOverride(ApiRequestEntity request, RunState state, BackupCollection collection, RunOptions options) {
+    final agent = options.agentVariables;
+    if (agent.isEmpty) return null;
+    final trusted = state.resolver(collection, folderId: request.folderId).resolve(request.url);
+    final actual = state.resolver(collection, agent: agent, folderId: request.folderId).resolve(request.url);
+    final trustedOrigin = _origin(trusted);
+    final mentioned = [
+      for (final m in _unresolvedToken.allMatches(request.url))
+        if (agent.containsKey(m[1])) m[1]!,
+    ];
+    final names = (mentioned.isEmpty ? agent.keys.toList() : mentioned).join(', ');
+    const rule = 'Only the workspace, the chosen environment or the --var options of the person running PostPilot decide where a request is sent, '
+        'so credentials cannot be redirected by a variable an agent passes.';
+    final open = _unresolvedToken.firstMatch(trustedOrigin);
+    if (open != null) {
+      return 'Refused: the host of "${request.name}" comes from {{${open[1]}}}, which the workspace does not define, '
+          'and variables passed by an agent cannot fill it in. $rule Choose an environment that defines it, or ask the operator to start the server with --var ${open[1]}=...';
+    }
+    final actualOrigin = _origin(actual);
+    if (actualOrigin.toLowerCase() == trustedOrigin.toLowerCase()) return null;
+    return 'Refused: the variable(s) passed ($names) change where "${request.name}" is sent '
+        '(${_originForMessage(trustedOrigin)} would become ${_originForMessage(actualOrigin)}). $rule';
   }
 
   /// Runs one request by name (the first match), sharing [state] so extracted variables carry over.
   Future<RequestOutcome> runRequest(BackupCollection collection, BackupRequest item, RunState state, RunOptions options) async {
     final request = item.request;
     final folder = _folderPath(collection, request.folderId);
-    RequestOutcome outcome({String? skipped, String? error, String? url}) => RequestOutcome(
+    RequestOutcome outcome({String? skipped, String? error, String? url, String? blocked}) => RequestOutcome(
           collection: collection.name,
           folder: folder,
           name: request.name,
           method: request.method.label,
           url: SecretMasker.maskUrl(url ?? request.url),
           skipped: skipped,
-          error: error,
+          error: error == null ? null : SecretMasker.maskMessage(error),
+          blocked: blocked == null ? null : SecretMasker.maskMessage(blocked),
         );
 
-    final inherited = collection.auth;
-    final effective = request.auth.resolveInherited(inherited);
-    if (effective.type == AuthType.digest || effective.type == AuthType.oauth2) {
-      return outcome(skipped: '${effective.type.name} auth needs the app (a handshake or a browser); skipped');
+    // The auth, headers, variables and tests the request inherits from its folders and collection.
+    final inherited = _inherited(collection, request.folderId);
+    final effective = request.auth.resolveInherited(inherited.auth);
+    if (effective.type == AuthType.oauth2) {
+      return outcome(skipped: 'oauth2 auth needs the app (it gets its token through a browser or a token request); skipped');
     }
 
-    final resolver = state.resolver(collection);
+    final override = _hostOverride(request, state, collection, options);
+    if (override != null) return outcome(error: override, blocked: override);
+
+    final resolver = state.resolver(collection, agent: options.agentVariables, folderId: request.folderId);
     final ResolvedRequestSpec spec;
     try {
-      spec = _builder.build(request, resolver, inheritedAuth: inherited);
+      spec = _builder.build(request, resolver, inheritedAuth: inherited.auth, inheritedHeaders: inherited.headerRows);
     } catch (e) {
       return outcome(error: 'Could not build the request: $e');
     }
-    final unresolved = RegExp(r'\{\{([^{}]+)\}\}').firstMatch(spec.url);
+    final unresolved = _unresolvedToken.firstMatch(spec.url);
     if (unresolved != null) {
       return outcome(error: 'The URL still contains {{${unresolved[1]}}}: pass --env or --var ${unresolved[1]}=...', url: spec.url);
     }
 
-    final CliResponse response;
+    if (!options.production.allow) {
+      final bodyText = spec.bodyBytes == null ? null : utf8.decode(spec.bodyBytes!, allowMalformed: true);
+      final block = _blockFor(collection, item, options, _Wire(spec.url, bodyText));
+      if (block != null) {
+        final message = 'Refused by the production lock: ${block.line}. This request changes data; read-only requests still run. '
+            'Only the person who starts PostPilot can allow it, with --allow-production.';
+        return outcome(error: message, blocked: message, url: spec.url);
+      }
+    }
+
+    CliResponse response;
     try {
-      response = await send(CliRequest(
-        method: spec.method,
-        url: spec.url,
-        headers: spec.headers,
-        body: spec.bodyBytes,
-        timeout: options.timeout,
-        verifySsl: options.verifySsl,
-      ));
+      response = await send(_wireRequest(spec, spec.headers, options));
+      if (effective.type == AuthType.digest && response.statusCode == 401) {
+        response = await _retryWithDigest(effective, resolver, spec, response, options);
+      }
     } catch (e) {
       return outcome(error: '$e', url: spec.url);
     }
@@ -265,7 +459,7 @@ final class WorkspaceRunner {
       bodyBytes: Uint8List.fromList(response.bodyBytes),
       duration: response.duration,
     );
-    final scripts = _runScripts(item, entity, resolver, state);
+    final scripts = _runScripts(item, inherited, entity, resolver, state);
     final reader = ResponseReader(entity);
     return RequestOutcome(
       collection: collection.name,
@@ -283,28 +477,75 @@ final class WorkspaceRunner {
     );
   }
 
-  ScriptRunResult _runScripts(BackupRequest item, ApiResponseEntity response, VariableResolver resolver, RunState state) {
+  CliRequest _wireRequest(ResolvedRequestSpec spec, Map<String, String> headers, RunOptions options) => CliRequest(
+        method: spec.method,
+        url: spec.url,
+        headers: headers,
+        body: spec.bodyBytes,
+        timeout: options.timeout,
+        verifySsl: options.verifySsl,
+      );
+
+  /// Digest auth is a handshake: the first answer is a 401 with a challenge, and
+  /// the request is sent again signed for it. The challenge is read and answered
+  /// by the same [DigestAuthChallenge] the app uses. Without a usable challenge
+  /// the 401 stands.
+  Future<CliResponse> _retryWithDigest(RequestAuth auth, VariableResolver resolver, ResolvedRequestSpec spec, CliResponse challengeResponse, RunOptions options) async {
+    final header = challengeResponse.headers.entries.where((e) => e.key.toLowerCase() == 'www-authenticate').firstOrNull?.value;
+    final challenge = DigestAuthChallenge.parse(header);
+    if (challenge == null) return challengeResponse;
+    final authorization = challenge.buildAuthorizationHeader(
+      username: resolver.resolve(auth.basicUsername),
+      password: resolver.resolve(auth.basicPassword),
+      method: spec.method,
+      digestUri: _digestRequestUri(spec.url),
+    );
+    return send(_wireRequest(spec, {...spec.headers, 'Authorization': authorization}, options));
+  }
+
+  /// The Request-URI the Digest `uri` covers (RFC 7616 3.4): path plus query, as on the request line.
+  /// The same rule as `digestRequestUri` in `SendRequestUseCase`, which sits beside the app's HTTP client and history and is not pulled into this entry point.
+  static String _digestRequestUri(String url) {
+    final uri = Uri.parse(url);
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    return uri.hasQuery ? '$path?${uri.query}' : path;
+  }
+
+  /// The tests of the collection and of the folders above the request run first, outermost level first, then
+  /// the request's own (the order the app runs them in); each result of an inherited one says where it comes from.
+  ScriptRunResult _runScripts(
+    BackupRequest item,
+    InheritedDefaults inherited,
+    ApiResponseEntity response,
+    VariableResolver resolver,
+    RunState state,
+  ) {
     final scripts = item.scripts;
-    if (scripts == null) return ScriptRunResult.empty;
-    final assertions = _evaluator.evaluate(response, ScriptsJsonCodec.decodeAssertions(scripts.assertionsJson), resolver);
+    if (scripts == null && inherited.tests.isEmpty) return ScriptRunResult.empty;
+    final assertions = <AssertionResult>[
+      for (final level in inherited.tests)
+        for (final result in _evaluator.evaluate(response, level.assertions, resolver)) result.fromOrigin(level.origin.label),
+      if (scripts != null) ..._evaluator.evaluate(response, ScriptsJsonCodec.decodeAssertions(scripts.assertionsJson), resolver),
+    ];
     final reader = ResponseReader(response);
-    final extracted = <ExtractionResult>[];
-    for (final raw in ScriptsJsonCodec.decodeExtractors(scripts.extractorsJson)) {
+
+    ExtractionResult extract(ExtractorEntity raw) {
       final extractor = raw.copyWith(path: resolver.resolve(raw.path));
       final key = extractor.variableKey.trim();
       final configError = extractor.keyError ?? extractor.pathError;
-      if (configError != null) {
-        extracted.add(ExtractionResult(key: key, scope: extractor.scope, error: configError));
-        continue;
-      }
+      if (configError != null) return ExtractionResult(key: key, scope: extractor.scope, error: configError);
       final value = ExtractorValueResolver.resolve(reader, extractor);
-      if (value == null) {
-        extracted.add(ExtractionResult(key: key, scope: extractor.scope, error: 'Not found in response'));
-        continue;
-      }
+      if (value == null) return ExtractionResult(key: key, scope: extractor.scope, error: 'Not found in response');
       (extractor.scope == ExtractorScope.environment ? state.environment : state.globals)[key] = value;
-      extracted.add(ExtractionResult(key: key, scope: extractor.scope, value: value));
+      return ExtractionResult(key: key, scope: extractor.scope, value: value);
     }
+
+    final extracted = <ExtractionResult>[
+      for (final level in inherited.tests)
+        for (final extractor in level.extractors) extract(extractor).fromOrigin(level.origin.label),
+      if (scripts != null)
+        for (final extractor in ScriptsJsonCodec.decodeExtractors(scripts.extractorsJson)) extract(extractor),
+    ];
     return ScriptRunResult(assertions: assertions, extracted: extracted);
   }
 
@@ -337,10 +578,25 @@ final class RunState {
     );
   }
 
-  VariableResolver resolver(BackupCollection collection) => VariableResolver.layered([
+  /// [agent] are the variables an agent passed with this one call. They go on top
+  /// of everything, and belong to the call, not to the state: the next call
+  /// brings its own (or none). The variables of the request's folders ([folderId]) sit between the
+  /// environment and the collection's, the innermost folder first, as in the app.
+  VariableResolver resolver(BackupCollection collection, {Map<String, String> agent = const {}, int? folderId}) =>
+      VariableResolver.layered([
+        if (agent.isNotEmpty) agent,
         overrides,
         environment,
+        ...DefaultsResolver.resolve(collection.defaultsTree.chainFor(folderId)).variableScopes,
         {for (final v in collection.variables) if (v.enabled) v.key: v.value},
         globals,
       ]);
+}
+
+/// A request as the production lock judges it: where it goes and what it carries.
+final class _Wire {
+  final String url;
+  final String? body;
+  final String? graphqlQuery;
+  const _Wire(this.url, this.body, {this.graphqlQuery});
 }

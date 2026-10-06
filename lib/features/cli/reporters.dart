@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../documentation/domain/services/secret_masker.dart';
 import 'workspace_runner.dart';
 
 /// Turns a finished run into text for a terminal, a CI system or another program.
@@ -31,6 +32,13 @@ abstract final class RunReporters {
       ..writeln('${s.total} requests, ${paint('32', '${s.passed} passed')}, '
           '${s.failed == 0 ? '0 failed' : paint('31', '${s.failed} failed')}'
           '${s.skipped == 0 ? '' : ', ${s.skipped} skipped'} in ${(s.duration.inMilliseconds / 1000).toStringAsFixed(2)} s');
+    final skipped = s.outcomes.where((o) => o.skipped != null).toList();
+    if (skipped.isNotEmpty) {
+      b.writeln(paint('33', 'Skipped, not sent${s.failOnSkip ? ' (--fail-on-skip: this fails the run)' : ''}:'));
+      for (final o in skipped) {
+        b.writeln('  ${o.method.padRight(6)} ${_label(o)}: ${o.skipped}');
+      }
+    }
     return b.toString();
   }
 
@@ -86,7 +94,12 @@ abstract final class RunReporters {
               'passed': o.passed,
               'skipped': o.skipped,
               'failures': o.failures,
-              'assertions': [for (final a in o.scripts.assertions) {'name': a.name, 'passed': a.passed, 'actual': a.actual}],
+              'blocked': o.blocked,
+              // What a check saw is a piece of the response, so it is masked like the rest of the report.
+              'assertions': [
+                for (final a in o.scripts.assertions)
+                  {'name': SecretMasker.maskMessage(a.name), 'passed': a.passed, 'actual': RequestOutcome.shownActual(a)},
+              ],
             },
         ],
       });

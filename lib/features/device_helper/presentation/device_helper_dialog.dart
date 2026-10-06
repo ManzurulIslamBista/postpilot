@@ -61,6 +61,8 @@ class _DeviceHelperDialogState extends State<DeviceHelperDialog> {
     final addresses = _addresses;
     final targets = DeviceTargets.forEmulators();
     final qrData = _qrHost == null ? null : 'http://$_qrHost:$_portNumber';
+    // Any host stands in for the real ones: only the scheme of the rewritten URLs matters here.
+    final rewriteSample = _url.text.trim().isEmpty ? null : DeviceTargets.rewrite(_url.text, 'x');
     return ToolDialog(
       icon: Icons.phonelink_setup,
       title: 'Device helper',
@@ -159,6 +161,11 @@ class _DeviceHelperDialogState extends State<DeviceHelperDialog> {
                       ),
                   ],
                 ),
+                // The address above is http://, which Android and iOS refuse to open until the app allows it.
+                if (qrData != null && DeviceTargets.usesCleartext(qrData)) ...const [
+                  SizedBox(height: 12),
+                  _CleartextNote(key: ValueKey('cleartext-note-device')),
+                ],
               ],
             ),
           ),
@@ -201,6 +208,8 @@ class _DeviceHelperDialogState extends State<DeviceHelperDialog> {
                         trailing: IconButton(icon: const Icon(Icons.copy, size: 16), tooltip: 'Copy', onPressed: () => _copy(rewritten, 'URL copied')),
                       );
                     }),
+                if (rewriteSample != null && DeviceTargets.usesCleartext(rewriteSample))
+                  const Padding(padding: EdgeInsets.only(top: 8), child: _CleartextNote(key: ValueKey('cleartext-note-rewrite'))),
               ],
             ),
           ),
@@ -208,4 +217,16 @@ class _DeviceHelperDialogState extends State<DeviceHelperDialog> {
       ),
     );
   }
+}
+
+/// What an app needs before it may open an `http://` address on a phone.
+class _CleartextNote extends StatelessWidget {
+  const _CleartextNote({super.key});
+
+  @override
+  Widget build(BuildContext context) => const InfoBanner(
+        kind: BannerKind.warning,
+        title: 'Plain http:// needs a setting in your app',
+        message: DeviceTargets.cleartextNote,
+      );
 }

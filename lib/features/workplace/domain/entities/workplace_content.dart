@@ -28,6 +28,8 @@ final class WorkplaceContent {
     // every sync look like a change (and carry one machine's state to another).
     wpJson['lastSyncedAt'] = null;
     wpJson['lastSyncedSha'] = null;
+    // The same for the environment that is active here: what is selected is each device's own choice.
+    wpJson['activeEnvironment'] = null;
     snapshotJson['workplace'] = wpJson;
     return const JsonEncoder.withIndent('  ').convert(snapshotJson);
   }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../entities/odoo_model_info.dart';
+import 'python_literal.dart';
 
 /// Operators of an Odoo domain leaf, with what each means in plain words.
 abstract final class OdooOperators {
@@ -91,20 +92,31 @@ abstract final class OdooDomain {
 
   /// The same domain as a Python expression, which is how Odoo developers
   /// write domains in models and views.
-  static String toPython(DomainNode node) => _python(toList(node));
+  static String toPython(DomainNode node) => '[${toList(node).map(_term).join(', ')}]';
+
+  /// One item of the prefix list: an operator string, or a leaf as a tuple.
+  /// A leaf's own value stays a plain list (`('id', 'in', [1, 2, 3])`).
+  static String _term(Object? item) => item is List ? '(${item.map(_python).join(', ')})' : _python(item);
 
   static String _python(Object? v) => switch (v) {
         null => 'None',
         true => 'True',
         false => 'False',
-        String s => "'${s.replaceAll(r'\', r'\\').replaceAll("'", r"\'")}'",
-        List<dynamic> l when l.length == 3 && l.first is String && !_isOp(l.first as String) =>
-          '(${l.map(_python).join(', ')})',
+        String s => _pythonString(s),
         List<dynamic> l => '[${l.map(_python).join(', ')}]',
+        Map<dynamic, dynamic> m => '{${m.entries.map((e) => '${_python(e.key)}: ${_python(e.value)}').join(', ')}}',
         _ => '$v',
       };
 
-  static bool _isOp(String s) => s == '&' || s == '|' || s == '!';
+  static String _pythonString(String s) {
+    final escaped = s
+        .replaceAll(r'\', r'\\')
+        .replaceAll("'", r"\'")
+        .replaceAll('\n', r'\n')
+        .replaceAll('\r', r'\r')
+        .replaceAll('\t', r'\t');
+    return "'$escaped'";
+  }
 
   /// Reads a prefix-notation domain back into a tree. `null` if [domain] is malformed.
   static DomainNode? fromList(List<dynamic> domain) {
@@ -142,55 +154,135 @@ abstract final class OdooDomain {
     return nodes.length == 1 && nodes.single is DomainGroup ? nodes.single : DomainGroup(children: nodes);
   }
 
-  /// Parses JSON or a Python-style domain (`[('a','=',1)]`).
+  /// Parses JSON or a Python-style domain (`[('a','=',1)]`). The Python form is
+  /// read as real Python literals, so quotes and brackets inside a string stay
+  /// where they are; a name that is not a literal (`user.id`) becomes a
+  /// `{{user.id}}` variable like in the Convert tab.
   static DomainNode? parseText(String text) {
     final t = text.trim();
     if (t.isEmpty) return const DomainGroup();
+    Object? parsed;
     try {
-      final json = jsonDecode(t);
-      if (json is List) return fromList(json);
+      parsed = jsonDecode(t);
     } on FormatException {
-      // Fall through to the Python form.
+      parsed = PythonLiteral.parse(t);
     }
-    try {
-      final py = t
-          .replaceAll("'", '"')
-          .replaceAll('(', '[')
-          .replaceAll(')', ']')
-          .replaceAllMapped(RegExp(r'\bTrue\b'), (_) => 'true')
-          .replaceAllMapped(RegExp(r'\bFalse\b'), (_) => 'false')
-          .replaceAllMapped(RegExp(r'\bNone\b'), (_) => 'null')
-          .replaceAll(RegExp(r',\s*\]'), ']');
-      final json = jsonDecode(py);
-      if (json is List) return fromList(json);
-    } on FormatException {
-      return null;
-    }
-    return null;
+    return parsed is List ? fromList(parsed) : null;
   }
 
-  /// Turns what was typed into the value a field expects: `42` for an
-  /// integer, `true` for a boolean, a list for `in`, text otherwise.
+  static const _likeOperators = {'like', 'not like', 'ilike', 'not ilike', '=like', '=ilike'};
+
+  /// Turns what was typed into the value a field expects. Plain text follows
+  /// the field's type (`42` is a number for an integer field, text for a char
+  /// field). `True`, `False` and `None` are those values (`('parent_id', '=',
+  /// False)` means "has no parent"), `[1, 2]` is a list, and quoted text is
+  /// taken exactly as written, so `'False'` is the word. For `in` a bare list
+  /// may be comma separated. Pattern operators (`ilike`...) always search for
+  /// text. [formatValue] is the inverse.
   static Object? parseValue(String raw, {required String operator, OdooField? field}) {
     final text = raw.trim();
-    Object? one(String s) {
-      final t = s.trim();
-      switch (field?.type) {
-        case 'integer' || 'many2one' || 'one2many' || 'many2many':
-          return int.tryParse(t) ?? t;
-        case 'float' || 'monetary':
-          return num.tryParse(t) ?? t;
-        case 'boolean':
-          return t.toLowerCase() == 'true' || t == '1';
-        default:
-          return t;
-      }
+    final pattern = _likeOperators.contains(operator);
+    if (!pattern && (text.startsWith('[') || text.startsWith('(') || text.startsWith('{'))) {
+      final literal = PythonLiteral.parse(text, strict: true);
+      if (literal is List || literal is Map) return literal;
     }
-
     if (operator == 'in' || operator == 'not in') {
-      return text.isEmpty ? <Object?>[] : text.split(',').map(one).toList();
+      return [for (final part in _splitTopLevel(text)) _element(part, pattern: false, field: field)];
     }
-    if (field?.type == 'boolean') return one(text);
-    return one(text);
+    return _element(text, pattern: pattern, field: field);
+  }
+
+  static final _number = RegExp(r'^-?\d+(\.\d+)?([eE][+-]?\d+)?$');
+
+  static Object? _element(String raw, {required bool pattern, OdooField? field}) {
+    final t = raw.trim();
+    if (t.length >= 2 && (t.startsWith("'") || t.startsWith('"'))) {
+      final quoted = PythonLiteral.parse(t, strict: true);
+      if (quoted is String) return quoted;
+    }
+    if (pattern) return t;
+    switch (t) {
+      case 'True' || 'true':
+        return true;
+      case 'False' || 'false':
+        return false;
+      case 'None' || 'null':
+        return null;
+    }
+    num? number() => _number.hasMatch(t) ? num.parse(t) : null;
+    switch (field?.type) {
+      case 'integer' || 'many2one' || 'one2many' || 'many2many' || 'many2one_reference':
+        return int.tryParse(t) ?? number() ?? t;
+      case 'float' || 'monetary':
+        return number() ?? t;
+      case 'boolean':
+        return t.toLowerCase() == 'true' || t == '1';
+      case null:
+        // Without the model's field list a bare number is the best guess.
+        return number() ?? t;
+      default:
+        return t;
+    }
+  }
+
+  /// [text] cut at commas that are outside quotes and brackets; blank pieces drop.
+  static List<String> _splitTopLevel(String text) {
+    final parts = <String>[];
+    final current = StringBuffer();
+    String? quote;
+    var depth = 0;
+    for (var i = 0; i < text.length; i++) {
+      final c = text[i];
+      if (quote != null) {
+        current.write(c);
+        if (c == r'\' && i + 1 < text.length) {
+          current.write(text[++i]);
+        } else if (c == quote) {
+          quote = null;
+        }
+        continue;
+      }
+      if (c == "'" || c == '"') {
+        quote = c;
+      } else if (c == '[' || c == '(' || c == '{') {
+        depth++;
+      } else if ((c == ']' || c == ')' || c == '}') && depth > 0) {
+        depth--;
+      } else if (c == ',' && depth == 0) {
+        parts.add(current.toString());
+        current.clear();
+        continue;
+      }
+      current.write(c);
+    }
+    parts.add(current.toString());
+    return [
+      for (final p in parts)
+        if (p.trim().isNotEmpty) p.trim(),
+    ];
+  }
+
+  /// The text to show in a value box for [value] so that [parseValue] reads it
+  /// back to exactly [value]: plain text where that is unambiguous, a Python
+  /// literal (`'False'`, `[1, 2]`, `None`) where it is not.
+  static String formatValue(Object? value, {required String operator, OdooField? field}) {
+    final plain = switch (value) {
+      String s => s,
+      List<dynamic> l when operator == 'in' || operator == 'not in' => l.map((e) => e is String ? e : _python(e)).join(', '),
+      _ => null,
+    };
+    if (plain != null && _same(parseValue(plain, operator: operator, field: field), value)) return plain;
+    return _python(value);
+  }
+
+  static bool _same(Object? a, Object? b) {
+    if (a is List && b is List) {
+      return a.length == b.length && [for (var i = 0; i < a.length; i++) _same(a[i], b[i])].every((same) => same);
+    }
+    if (a is Map && b is Map) {
+      return a.length == b.length && a.keys.every((k) => b.containsKey(k) && _same(a[k], b[k]));
+    }
+    // 1 and 1.0 are different JSON, so type matters, not only value.
+    return a.runtimeType == b.runtimeType && a == b;
   }
 }

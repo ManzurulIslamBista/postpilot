@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import '../documentation/domain/services/secret_masker.dart';
 import 'workspace_runner.dart';
 
 const _maxBodyBytes = 20 * 1024 * 1024;
@@ -45,6 +46,14 @@ Future<CliResponse> sendWithDartIo(CliRequest request) async {
     throw 'TLS error: ${e.message}. Use --insecure to skip certificate checks.';
   } on SocketException catch (e) {
     throw "Can't reach the server: ${e.message}";
+  } on HttpException catch (e) {
+    // Its text can quote the whole URL (`?token=...` and all); only the message is kept, masked.
+    throw 'The HTTP exchange failed: ${SecretMasker.maskMessage(e.message)}';
+  } on FormatException catch (e) {
+    // `Uri.parse` and the HTTP client append the offending text; the message alone says what is wrong.
+    throw 'The request URL is not valid: ${SecretMasker.maskMessage(e.message)}';
+  } on TlsException catch (e) {
+    throw 'TLS error: ${e.message}';
   } finally {
     client.close(force: true);
   }

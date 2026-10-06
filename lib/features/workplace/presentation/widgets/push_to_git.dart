@@ -120,8 +120,8 @@ class _SecretsWarningDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'This workspace holds ${secrets.length} secret value${secrets.length == 1 ? '' : 's'} that would be '
-              'written, in plain text, to workspace.json in $repository. Anyone who can read that repository can read them.',
+              'This workspace holds ${secrets.length} value${secrets.length == 1 ? '' : 's'} that look${secrets.length == 1 ? 's' : ''} like '
+              'secrets and would be written, in plain text, to workspace.json in $repository. Anyone who can read that repository can read them.',
             ),
             const SizedBox(height: 12),
             Text('$listed$more', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),

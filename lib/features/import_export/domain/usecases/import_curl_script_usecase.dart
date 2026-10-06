@@ -29,6 +29,12 @@ final class ImportCurlScriptUseCase implements UseCase<ImportSummary, ImportCurl
     final parsed = CurlScriptParser.parse(params.script);
     if (parsed.requests.isEmpty) throw const ImportException('no cURL command with a URL was found.');
 
+    final skipped = parsed.skipped;
+    final notes = [
+      if (skipped == 1) '1 command had no URL or was cut off, so it was skipped.',
+      if (skipped > 1) '$skipped commands had no URL or were cut off, so they were skipped.',
+      ...parsed.notes,
+    ];
     final targetId = params.collectionId;
     if (targetId != null) {
       await _writer.addItems(targetId, params.folderId, parsed.requests);
@@ -37,6 +43,7 @@ final class ImportCurlScriptUseCase implements UseCase<ImportSummary, ImportCurl
         collectionIds: [targetId],
         requests: parsed.requests.length,
         skipped: parsed.skipped,
+        notes: notes,
       );
     }
     final written = await _writer.write(ImportedCollection(newCollectionName, parsed.requests));
@@ -46,6 +53,7 @@ final class ImportCurlScriptUseCase implements UseCase<ImportSummary, ImportCurl
       collectionName: newCollectionName,
       requests: written.requests,
       skipped: parsed.skipped,
+      notes: notes,
     );
   }
 }

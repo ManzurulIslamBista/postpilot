@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../../core/widgets/busy_label.dart';
 import '../../../../core/widgets/info_banner.dart';
-import '../../../request_builder/domain/usecases/build_variable_resolver_usecase.dart';
 import '../../data/network_probe.dart';
 import '../view_models/response_tools_view_model.dart';
 
@@ -30,11 +28,14 @@ class _TimingTabState extends State<TimingTab> {
       _error = null;
     });
     try {
-      final resolver = await locator<BuildVariableResolverUseCase>()(request.collectionId);
-      var url = resolver.resolve(request.url).trim();
-      if (!url.contains('://')) url = 'https://$url';
-      final uri = Uri.tryParse(url);
-      if (uri == null || uri.host.isEmpty) {
+      // The URL the sender builds: variables resolved, and a host typed without a scheme gets the scheme the
+      // sender gives it (http://), so the probe measures the connection the request really made.
+      final url = widget.viewModel.prepared?.spec.url.trim();
+      final uri = url == null ? null : Uri.tryParse(url);
+      if (url == null) {
+        final why = widget.viewModel.prepareError;
+        _error = "Couldn't build the request to find its host${why == null ? '.' : ': $why.'}";
+      } else if (uri == null || uri.host.isEmpty) {
         _error = 'The request URL has no host to measure.';
       } else {
         final probe = await probeNetwork(uri);

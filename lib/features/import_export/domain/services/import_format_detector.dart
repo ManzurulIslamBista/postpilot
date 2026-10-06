@@ -38,7 +38,18 @@ abstract final class ImportFormatDetector {
     if (log is Map && log['entries'] is List) return ImportFormat.har;
     if (map.containsKey('openapi') || map.containsKey('swagger')) return ImportFormat.openApi;
     if (map['info'] is Map && map['item'] is List) return ImportFormat.postman;
+    if (_isPostmanEnvironment(map)) return ImportFormat.postmanEnvironment;
     return ImportFormat.unknown;
+  }
+
+  /// An exported environment or globals file: a `values` list of `{key, value, ...}` entries, which
+  /// Postman marks with `_postman_variable_scope`. A hand-trimmed file without the marker still counts
+  /// when it has a name and every entry is a keyed object.
+  static bool _isPostmanEnvironment(Map<dynamic, dynamic> map) {
+    final values = map['values'];
+    if (values is! List) return false;
+    if (map['_postman_variable_scope'] is String) return true;
+    return map['name'] is String && values.every((entry) => entry is Map && entry.containsKey('key'));
   }
 
   static ImportFormat _detectYaml(String text) {

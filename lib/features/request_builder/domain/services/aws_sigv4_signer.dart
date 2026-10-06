@@ -21,8 +21,14 @@ final class AwsSigV4Signer {
     this.sessionToken = '',
   });
 
-  /// Returns the extra headers (Authorization, X-Amz-Date, and, if a session
-  /// token is set, X-Amz-Security-Token) to add to the request.
+  /// Amazon S3 differs from every other service in two ways: it wants the
+  /// payload hash sent (and signed) as an `x-amz-content-sha256` header, and
+  /// it takes the path URI-encoded once where the others take it twice.
+  bool get _isS3 => const {'s3', 's3-object-lambda', 's3express'}.contains(service.trim().toLowerCase());
+
+  /// Returns the extra headers (Authorization, X-Amz-Date, for S3 also
+  /// X-Amz-Content-Sha256, and, if a session token is set,
+  /// X-Amz-Security-Token) to add to the request.
   Map<String, String> sign({
     required String method,
     required Uri uri,
@@ -56,9 +62,24 @@ final class AwsSigV4Signer {
     return {
       'X-Amz-Date': amzDate,
       if (sessionToken.isNotEmpty) 'X-Amz-Security-Token': sessionToken,
+      // A header the request already carries is signed as it is; adding it again would send it twice.
+      if (_isS3 && _headerValue(headers, 'x-amz-content-sha256') == null) 'X-Amz-Content-Sha256': _payloadHash(headers, body),
       'Authorization': authorization,
     };
   }
+
+  String? _headerValue(Map<String, String> headers, String lowerName) {
+    for (final entry in headers.entries) {
+      if (entry.key.toLowerCase() == lowerName && entry.value.trim().isNotEmpty) return entry.value.trim();
+    }
+    return null;
+  }
+
+  /// What the last line of the canonical request holds: the hash of the body,
+  /// except that S3 takes the value of the request's own `x-amz-content-sha256`
+  /// header when it has one (`UNSIGNED-PAYLOAD`, say).
+  String _payloadHash(Map<String, String> headers, List<int> body) =>
+      (_isS3 ? _headerValue(headers, 'x-amz-content-sha256') : null) ?? sha256.convert(body).toString();
 
   /// Step 1 of the signing process, and the `SignedHeaders` list it names.
   /// Public so the canonical form can be checked against AWS's documented
@@ -70,11 +91,13 @@ final class AwsSigV4Signer {
     required List<int> body,
     required String amzDate,
   }) {
+    final payloadHash = _payloadHash(headers, body);
     final signedHeaderMap = <String, String>{
-      ...{for (final e in headers.entries) e.key.toLowerCase(): e.value.trim()},
+      ...{for (final e in headers.entries) e.key.toLowerCase(): _canonicalValue(e.value)},
       'host': _hostHeader(uri),
       'x-amz-date': amzDate,
       if (sessionToken.isNotEmpty) 'x-amz-security-token': sessionToken,
+      if (_isS3) 'x-amz-content-sha256': payloadHash,
     };
 
     final sortedHeaderNames = signedHeaderMap.keys.toList()..sort();
@@ -87,10 +110,13 @@ final class AwsSigV4Signer {
       _canonicalQuery(uri),
       canonicalHeaders,
       signedHeaders,
-      sha256.convert(body).toString(),
+      payloadHash,
     ].join('\n');
     return (request: request, signedHeaders: signedHeaders);
   }
+
+  /// Trimmed, with each run of spaces folded into one, as the canonical form wants.
+  String _canonicalValue(String value) => value.trim().replaceAll(RegExp(r'\s+'), ' ');
 
   /// The `Host` header `dart:io` sends: the port is part of it unless it is
   /// the scheme's default, and the signature must cover it exactly as sent
@@ -114,9 +140,24 @@ final class AwsSigV4Signer {
     return '${utc.year}${two(utc.month)}${two(utc.day)}T${two(utc.hour)}${two(utc.minute)}${two(utc.second)}Z';
   }
 
+  /// Each path segment, taken back to what the user meant (the path of a `Uri`
+  /// is percent-encoded however the URL was typed), is encoded once for S3 and
+  /// twice for every other service, which is what the service itself does with
+  /// the path it receives.
   String _canonicalUri(Uri uri) {
     final path = uri.path.isEmpty ? '/' : uri.path;
-    return path.split('/').map(_uriEncode).join('/');
+    return path.split('/').map((segment) {
+      final once = _uriEncode(_decode(segment));
+      return _isS3 ? once : _uriEncode(once);
+    }).join('/');
+  }
+
+  String _decode(String segment) {
+    try {
+      return Uri.decodeComponent(segment);
+    } on FormatException {
+      return segment; // a stray `%`: signed as written
+    }
   }
 
   String _canonicalQuery(Uri uri) {

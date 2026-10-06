@@ -52,6 +52,13 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
 
   void _push() => _vm.setConnection(url: _url.text, database: _db.text, apiKey: _key.text);
 
+  /// Pushes the fields to the view model and refreshes what depends on the URL text
+  /// (the plain-http warning, the Save button).
+  void _edited() {
+    _push();
+    setState(() {});
+  }
+
   String get _defaultEnvName {
     final host = Uri.tryParse(_url.text.contains('://') ? _url.text : 'https://${_url.text}')?.host ?? '';
     return 'Odoo · ${_db.text.trim().isNotEmpty ? _db.text.trim() : (host.isNotEmpty ? host : 'server')}';
@@ -63,7 +70,9 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
     final id = await _vm.saveEnvironment(name);
     if (id != null && mounted) {
       context.read<EnvironmentsViewModel>().watchVariables(id);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Environment "$name" saved and selected')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Environment "$name" saved and selected, with the URL ${_vm.connection.normalizedUrl}')),
+      );
     }
   }
 
@@ -96,8 +105,17 @@ class _OdooConnectTabState extends State<OdooConnectTab> {
                 TextField(
                   controller: _url,
                   decoration: const InputDecoration(labelText: 'Server URL', hintText: 'https://mycompany.odoo.com', prefixIcon: Icon(Icons.dns_outlined, size: 18)),
-                  onChanged: (_) => _push(),
+                  onChanged: (_) => _edited(),
                 ),
+                if (_vm.connection.sendsKeyUnencrypted) ...[
+                  const SizedBox(height: 10),
+                  const InfoBanner(
+                    kind: BannerKind.warning,
+                    title: 'This URL uses plain http://',
+                    message: 'The API key is sent unencrypted, so anyone on the path to the server can read it. '
+                        'Use https:// unless the server is on this computer or your own network.',
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,

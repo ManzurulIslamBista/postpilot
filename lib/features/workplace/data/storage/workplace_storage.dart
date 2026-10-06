@@ -21,6 +21,11 @@ abstract interface class WorkplaceStorage {
   Future<String?> readRegistry();
   Future<void> writeRegistry(String json);
 
+  /// Keeps [json], a registry that could not be read, under a timestamped
+  /// `.bak` name beside the registry, so repairing or replacing the registry
+  /// never destroys it. Returns where the copy is, or null when it could not be made.
+  Future<String?> backupRegistry(String json);
+
   /// The `workspace.json` inside [folderPath], or null when there is none yet.
   Future<String?> readWorkspace(String folderPath);
 
@@ -29,9 +34,19 @@ abstract interface class WorkplaceStorage {
   Future<void> writeWorkspace(String folderPath, String json);
 
   /// The secrets of the workplace in [folderPath] (`workspace.local.json`), or
-  /// null when there are none. They stay on this device: nothing pushes this file.
+  /// null when there are none. They are kept in this file instead of in
+  /// `workspace.json`, and nothing pushes it. A failed write throws: the
+  /// secrets must never be lost silently. On disk the folder's `.gitignore`
+  /// is made to list the file.
   Future<String?> readLocalSecrets(String folderPath);
   Future<void> writeLocalSecrets(String folderPath, String json);
+
+  /// Whether the database holds changes of the workplace in [folderPath] that its
+  /// `workspace.json` has not received (a write failed, or the app closed before
+  /// it ran). Kept on this device only, outside the workplace folder, so that
+  /// the next start does not replace the newer database with the older file.
+  Future<bool> isDirty(String folderPath);
+  Future<void> setDirty(String folderPath, bool dirty);
 
   /// The folder new workplaces are suggested under (no name appended).
   Future<String> defaultWorkplacesDirectory();

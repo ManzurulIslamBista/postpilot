@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show HttpException;
+import 'dart:io' show HandshakeException, HttpException, SocketException;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -198,6 +198,70 @@ void main() {
       expect(other.headers['Cookie'] ?? '', isEmpty);
       expect(other.headers['X-Other'], '1');
     });
+
+    group('headers that carry a credential, whatever they are called', () {
+      const credentials = {
+        'Authorization': 'Bearer t',
+        'Proxy-Authorization': 'Basic cDpw',
+        'X-API-Key': 'k-123',
+        'X-Auth-Token': 'tok',
+        'X-Custom-Key': 'ck',
+        'X-Session-Id': 'sid',
+        'Cookie': 'a=b',
+      };
+      const harmless = {'X-Other': '1', 'Accept': 'application/json', 'X-Request-Id': 'r-1', 'Content-Type': 'text/plain'};
+
+      Future<RequestOptions> secondHop(String from, String location, {String method = 'GET'}) async {
+        final adapter = _FakeAdapter((_, index) => index == 0 ? _redirect(location, status: 307) : _ok(const []));
+        await _clientOver(adapter).send(_spec(from, method: method, headers: {...credentials, ...harmless}, body: method == 'GET' ? null : Uint8List.fromList([1])));
+        return adapter.requests[1];
+      }
+
+      Set<String> sent(RequestOptions hop) => {for (final key in hop.headers.keys) key.toLowerCase()};
+
+      test('are all dropped on the way to another host, and nothing else is', () async {
+        final hop = await secondHop('https://api.example.com/start', 'https://elsewhere.io/next');
+
+        expect(sent(hop), containsAll(harmless.keys.map((k) => k.toLowerCase())));
+        // The cookie interceptor sets the header on every hop, empty when the jar has nothing for the host.
+        for (final name in credentials.keys.where((k) => k != 'Cookie')) {
+          expect(sent(hop), isNot(contains(name.toLowerCase())), reason: name);
+        }
+        expect(hop.headers['Cookie'] ?? '', isEmpty);
+        expect(hop.headers['X-Other'], '1');
+      });
+
+      test('are all kept on the same host', () async {
+        final hop = await secondHop('https://api.example.com/start', 'https://api.example.com/next');
+
+        for (final name in credentials.keys.where((k) => k != 'Cookie')) {
+          expect(hop.headers[name], credentials[name], reason: name);
+        }
+      });
+
+      test('are dropped when only the scheme or the port changes, as for Authorization', () async {
+        for (final target in ['http://api.example.com/next', 'https://api.example.com:8443/next']) {
+          final hop = await secondHop('https://api.example.com/start', target);
+
+          expect(sent(hop), isNot(contains('x-api-key')), reason: target);
+          expect(sent(hop), isNot(contains('proxy-authorization')), reason: target);
+        }
+      });
+
+      test('are kept for a subdomain, which dart:io trusts as well', () async {
+        final hop = await secondHop('https://example.com/start', 'https://api.example.com/next');
+
+        expect(hop.headers['X-API-Key'], 'k-123');
+      });
+
+      test('a redirect that replays a POST to another host leaves its credentials behind too', () async {
+        final hop = await secondHop('https://api.example.com/start', 'https://elsewhere.io/next', method: 'POST');
+
+        expect(hop.method, 'POST');
+        expect(sent(hop), isNot(contains('x-api-key')));
+        expect(sent(hop), isNot(contains('x-auth-token')));
+      });
+    });
   });
 
   group('response size cap', () {
@@ -389,9 +453,31 @@ void main() {
       expect(response.statusCode, 201);
       expect(response.statusMessage, 'Created');
       expect(response.headers['set-cookie'], 'a=1, b=2');
+      expect(response.setCookies, ['a=1', 'b=2']);
       expect(response.headers['content-type'], 'text/plain');
       expect(response.duration, isNotNull);
       expect(response.truncated, isFalse);
+    });
+
+    test('a cookie whose Expires holds a comma stays one cookie in setCookies, though the joined header cannot tell', () async {
+      const first = 'sid=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/';
+      final adapter = _FakeAdapter(
+        (_, _) => ResponseBody.fromString('', 200, headers: {
+          'set-cookie': [first, 'theme=dark; Path=/'],
+        }),
+      );
+
+      final response = await _clientOver(adapter).send(_spec('https://example.com/'));
+
+      expect(response.setCookies, [first, 'theme=dark; Path=/']);
+    });
+
+    test('a response without cookies has an empty list', () async {
+      final adapter = _FakeAdapter((_, _) => _ok(const []));
+
+      final response = await _clientOver(adapter).send(_spec('https://example.com/'));
+
+      expect(response.setCookies, isEmpty);
     });
 
     test('an error status is a response, not an exception', () async {
@@ -401,6 +487,70 @@ void main() {
 
       expect(response.statusCode, 500);
       expect(String.fromCharCodes(response.bodyBytes), 'nope');
+    });
+  });
+
+  group('failures carry a one-line summary beside the technical message', () {
+    Future<NetworkException> failureOf(Object error, {ApiRequestOptions options = const ApiRequestOptions()}) async {
+      final adapter = _FakeAdapter((_, _) => throw error);
+      try {
+        await _clientOver(adapter).send(_spec('https://api.example.com/users?api_key=s3cret', options: options));
+      } on NetworkException catch (e) {
+        return e;
+      }
+      fail('expected a NetworkException');
+    }
+
+    test('a host that does not resolve', () async {
+      final e = await failureOf(
+        DioException.connectionError(
+          requestOptions: RequestOptions(path: 'https://api.example.com/users'),
+          reason: "Failed host lookup: 'api.example.com'",
+          error: const SocketException("Failed host lookup: 'api.example.com'"),
+        ),
+      );
+
+      expect(e.kind, NetworkErrorKind.connectionError);
+      expect(e.summary, startsWith("Couldn't find the server \"api.example.com\""));
+      expect(e.message, contains("Failed host lookup: 'api.example.com'"), reason: 'the technical text stays');
+      expect(e.summary, isNot(contains('s3cret')));
+    });
+
+    test('a timeout names the limit that was configured', () async {
+      final e = await failureOf(
+        DioException.receiveTimeout(timeout: const Duration(seconds: 5), requestOptions: RequestOptions(path: 'https://api.example.com/')),
+        options: const ApiRequestOptions(timeout: Duration(seconds: 5)),
+      );
+
+      expect(e.kind, NetworkErrorKind.timeout);
+      expect(e.summary, contains('did not answer within 5 seconds'));
+    });
+
+    test('a certificate problem points at the Verify SSL setting, in the summary and in the text', () async {
+      final e = await failureOf(
+        DioException(
+          requestOptions: RequestOptions(path: 'https://api.example.com/'),
+          error: const HandshakeException('CERTIFICATE_VERIFY_FAILED: self signed certificate'),
+        ),
+      );
+
+      expect(e.summary, contains('self-signed'));
+      expect(e.summary, contains('"Verify SSL certificates"'));
+      expect(e.message, contains('"Verify SSL certificates"'));
+    });
+
+    test('the credentials of a proxy never reach the summary or the message', () async {
+      const proxy = ProxyConfig(mode: ProxyMode.custom, host: 'proxy.corp', port: 3128, username: 'ann', password: 'hunter2');
+      final e = await failureOf(
+        DioException(
+          requestOptions: RequestOptions(path: 'https://api.example.com/'),
+          error: const FormatException('bad proxy directive PROXY ann:hunter2@proxy.corp:3128'),
+        ),
+        options: const ApiRequestOptions(proxy: proxy),
+      );
+
+      expect(e.message, isNot(contains('hunter2')));
+      expect(e.summary, isNot(contains('hunter2')));
     });
   });
 

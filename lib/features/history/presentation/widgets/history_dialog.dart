@@ -99,13 +99,10 @@ class _HistoryEntryTile extends StatelessWidget {
   }
 
   Future<void> _openInBuilder(BuildContext context, HistoryEntryEntity entry) async {
-    final collections = context.read<CollectionsViewModel>().collections;
-    if (collections.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Create a collection first')));
-      return;
-    }
-    final requestId =
-        await context.read<HistoryViewModel>().openInBuilder(entry, collectionId: collections.first.id);
+    // With no collection yet, the first one is created for it ("My collection") instead of refusing.
+    final collection = await context.read<CollectionsViewModel>().ensureCollection();
+    if (!context.mounted) return;
+    final requestId = await context.read<HistoryViewModel>().openInBuilder(entry, collectionId: collection.id);
     if (!context.mounted) return;
     context.read<ShellViewModel>().selectRequest(requestId);
     Navigator.of(context).pop();

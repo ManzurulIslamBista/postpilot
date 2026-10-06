@@ -152,7 +152,8 @@ abstract final class StarterTemplates {
     return StarterTemplate(
       id: 'odoo',
       title: 'Odoo JSON-2',
-      description: 'Search, read, create, update and delete contacts on an Odoo 19+ server. Fill in the URL, database and API key in the environment.',
+      description: 'Search, read, create, update and delete contacts on an Odoo 19+ server. Fill in the URL, database and API key in the environment. '
+          'Update and Delete need a {{${OdooVars.recordId}}} variable: it is left undefined on purpose, so they fail until you set the id of a record.',
       icon: Icons.hub_outlined,
       tags: const ['Odoo', 'JSON-2'],
       environmentName: 'Odoo',
@@ -164,7 +165,8 @@ abstract final class StarterTemplates {
       collection: ImportedCollection('Odoo · res.partner', [
         for (final d in requests)
           ImportedRequest(
-            d.name,
+            // A request has no description field, so the name says what it waits for.
+            d.bodyText.contains('{{${OdooVars.recordId}}}') ? '${d.name} (set recordId first)' : d.name,
             method: HttpMethod.post,
             url: d.url,
             headers: [for (final e in d.headers.entries) KeyValueItem(key: e.key, value: e.value)],

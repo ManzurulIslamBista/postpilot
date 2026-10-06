@@ -3,11 +3,13 @@ import 'dart:typed_data';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../features/git_sync/domain/services/secret_names.dart';
 import '../errors/app_exception.dart';
 import 'api_client.dart';
 import 'api_http_response.dart';
 import 'http_adapter_config.dart';
 import 'lenient_cookie_manager.dart';
+import 'network_failure.dart';
 
 typedef NetworkAdapterFactory = HttpClientAdapter Function({required bool verifySsl, required ProxyConfig proxy});
 
@@ -42,11 +44,13 @@ final class DioApiClient implements ApiClient {
     } on DioException catch (e) {
       // Dio leaves `message` null when it merely wraps a foreign error (bad
       // scheme or host, TLS handshake failure); the cause lives in `error`.
-      final message = _withoutProxyCredentials(
-        e.message ?? e.error?.toString() ?? 'Network request failed.',
-        spec.options.proxy,
+      final proxy = spec.options.proxy;
+      final message = _withoutProxyCredentials(e.message ?? e.error?.toString() ?? 'Network request failed.', proxy);
+      throw NetworkException(
+        NetworkFailure.isCertificateProblem(e) ? '$message\n\n${NetworkFailure.certificateHint}' : message,
+        kind: _kindOf(e.type),
+        summary: _withoutProxyCredentials(NetworkFailure.summarize(e, spec.options), proxy),
       );
-      throw NetworkException(_isCertificateProblem(e) ? '$message\n\n$_certificateHint' : message, kind: _kindOf(e.type));
     }
   }
 
@@ -55,16 +59,6 @@ final class DioApiClient implements ApiClient {
   String _withoutProxyCredentials(String message, ProxyConfig proxy) {
     if (proxy.username.isEmpty || proxy.password.isEmpty) return message;
     return message.replaceAll('${proxy.username}:${proxy.password}@', '${proxy.username}:***@');
-  }
-
-  static const _certificateHint = 'If you trust this server, turn off "Verify SSL certificates" in Settings.';
-
-  /// A TLS failure over a certificate the platform does not trust, told apart
-  /// by name because `dart:io`'s exception types cannot be imported here.
-  bool _isCertificateProblem(DioException e) {
-    if (e.type == DioExceptionType.badCertificate) return true;
-    final cause = '${e.error}';
-    return cause.contains('CERTIFICATE_VERIFY_FAILED') || cause.contains('HandshakeException');
   }
 
   /// Follows redirects hop by hop instead of letting dart:io do it inside one
@@ -110,6 +104,7 @@ final class DioApiClient implements ApiClient {
           bodyBytes: read.bytes,
           duration: stopwatch.elapsed,
           truncated: read.truncated,
+          setCookies: List.unmodifiable(response.headers['set-cookie'] ?? const <String>[]),
         );
       }
       hopToken.cancel();
@@ -123,10 +118,7 @@ final class DioApiClient implements ApiClient {
         headers.removeWhere((name, _) => name.toLowerCase().startsWith('content-'));
       }
       final keepsCredentials = _keepsCredentials(response.requestOptions.uri, target);
-      headers.removeWhere((name, _) {
-        final lower = name.toLowerCase();
-        return lower == 'host' || (!keepsCredentials && (lower == 'authorization' || lower == 'cookie'));
-      });
+      headers.removeWhere((name, _) => name.toLowerCase() == 'host' || (!keepsCredentials && _carriesCredential(name)));
       url = target.toString();
     }
   }
@@ -180,8 +172,16 @@ final class DioApiClient implements ApiClient {
 
   /// dart:io's own rule for a followed redirect: `Authorization` and `Cookie`
   /// only travel to the same scheme and port on the same host or a subdomain.
+  /// A header the user added to carry a credential (`X-API-Key`,
+  /// `Proxy-Authorization`, `X-Auth-Token`, ...) is held to the same rule: it
+  /// would otherwise be handed to whatever host the redirect names.
   bool _keepsCredentials(Uri from, Uri to) =>
       to.scheme == from.scheme && to.port == from.port && (to.host == from.host || to.host.endsWith('.${from.host}'));
+
+  bool _carriesCredential(String header) {
+    final lower = header.toLowerCase();
+    return lower == 'authorization' || lower == 'cookie' || SecretNames.isSecretHeader(header);
+  }
 
   NetworkErrorKind _kindOf(DioExceptionType type) => switch (type) {
         DioExceptionType.connectionTimeout ||

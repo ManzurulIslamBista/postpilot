@@ -22,7 +22,8 @@ class HistoryDao extends DatabaseAccessor<AppDatabase> with _$HistoryDaoMixin {
         historyEntries.durationMs,
         historyEntries.sentAt,
       ])
-      ..orderBy([OrderingTerm.desc(historyEntries.sentAt)])
+      // `sent_at` only has the resolution of a second; the id breaks the tie between sends within one.
+      ..orderBy([OrderingTerm.desc(historyEntries.sentAt), OrderingTerm.desc(historyEntries.id)])
       ..limit(limit);
     return query
         .map((row) => (
@@ -36,7 +37,37 @@ class HistoryDao extends DatabaseAccessor<AppDatabase> with _$HistoryDaoMixin {
         .watch();
   }
 
-  Future<int> record(HistoryEntriesCompanion entry) => into(historyEntries).insert(entry);
+  /// Rows kept on disk. The list shows the newest [watchRecent] 200; the rest is
+  /// headroom for a longer view, so the table cannot grow for ever.
+  static const maxRows = 1000;
+
+  /// Adds [entry] and drops whatever falls out of the newest [keep] (the
+  /// history settings' "max entries"), in one transaction so the watchers see a
+  /// single change.
+  Future<int> record(HistoryEntriesCompanion entry, {int keep = maxRows}) => transaction(() async {
+        final id = await into(historyEntries).insert(entry);
+        await prune(keep: keep);
+        return id;
+      });
+
+  /// Deletes every row sent before [cutoff] (the history settings' retention in days).
+  Future<int> pruneOlderThan(DateTime cutoff) =>
+      (delete(historyEntries)..where((row) => row.sentAt.isSmallerThanValue(cutoff))).go();
+
+  /// Deletes every row but the [keep] newest. Newest by send time, then by id
+  /// because `sent_at` only has the resolution of a second.
+  Future<void> prune({int keep = maxRows}) {
+    final newest = selectOnly(historyEntries)
+      ..addColumns([historyEntries.id])
+      ..orderBy([OrderingTerm.desc(historyEntries.sentAt), OrderingTerm.desc(historyEntries.id)])
+      ..limit(keep);
+    return (delete(historyEntries)..where((row) => row.id.isNotInQuery(newest))).go();
+  }
+
+  /// Empties the response headers older versions stored with every row: they
+  /// held `Set-Cookie` and token headers, and nothing ever read them back.
+  Future<int> forgetStoredHeaders() => (update(historyEntries)..where((row) => row.responseHeadersJson.isNotValue('{}')))
+      .write(const HistoryEntriesCompanion(responseHeadersJson: Value('{}')));
 
   Future<void> clear() => delete(historyEntries).go();
 }

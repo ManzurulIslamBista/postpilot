@@ -3,6 +3,7 @@ import '../entities/git_sync_exceptions.dart';
 import '../entities/git_sync_results.dart';
 import '../repositories/git_host_client.dart';
 import '../repositories/git_link_repository.dart';
+import '../services/commit_message.dart';
 import '../services/sync_engine.dart';
 
 final class GitCommitPushParams {
@@ -48,7 +49,7 @@ final class GitCommitPushUseCase implements UseCase<PushResult, GitCommitPushPar
       link.repo,
       branch: link.branch,
       parentSha: head ?? '',
-      message: message.isEmpty ? 'Update ${changes.length} item(s) from PostPilot' : message,
+      message: message.isEmpty ? CommitMessage.fromChanges('', changes) : message,
       changes: writes,
     );
 

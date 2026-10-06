@@ -1,15 +1,21 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../../../../core/enums/body_type.dart';
+import '../../../environments/domain/repositories/environment_repository.dart';
+import '../../../environments/domain/repositories/global_variable_repository.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/entities/api_response_entity.dart';
+import '../../../request_builder/domain/entities/key_value_item.dart';
 import '../../../request_builder/domain/entities/request_scripts_entity.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
 import '../../../request_builder/domain/repositories/request_scripts_repository.dart';
 import '../../../request_builder/domain/entities/response_example_entity.dart';
 import '../../../request_builder/domain/repositories/response_example_repository.dart';
+import '../../../request_builder/domain/usecases/prepare_request_usecase.dart';
 import '../../../scripting/data/models/scripts_json_codec.dart';
 import '../../../scripting/domain/entities/assertion_entity.dart';
 import '../../../scripting/domain/entities/extractor_entity.dart';
+import '../../domain/services/resolved_secrets.dart';
 import '../../domain/services/response_history.dart';
 
 /// One response, decoded once for all the tools.
@@ -70,17 +76,100 @@ final class ResponseToolsViewModel with ChangeNotifier {
   final ResponseHistory _history;
   final ResponseToolsData data;
 
-  ResponseToolsViewModel(this._requests, this._scripts, this._examples, this._history, this.data);
+  /// Builds the request the way the sender does. Without it the tools fall back to the saved request.
+  final PrepareRequestUseCase? _prepareRequest;
+
+  /// Which variables the user marked secret: the active environment's and the globals.
+  final EnvironmentRepository? _environments;
+  final GlobalVariableRepository? _globals;
+
+  ResponseToolsViewModel(
+    this._requests,
+    this._scripts,
+    this._examples,
+    this._history,
+    this.data, {
+    this._prepareRequest,
+    this._environments,
+    this._globals,
+  });
 
   ApiRequestEntity? request;
   List<ResponseExampleEntity> examples = const [];
   bool loaded = false;
 
+  /// The request as it was sent: variables resolved, auth applied, query parameters in the URL. Null
+  /// when it could not be built (see [prepareError]) or no builder was given.
+  PreparedRequest? prepared;
+  String? prepareError;
+
+  /// Values of the secret variables behind [prepared], to hide wherever they show up in text built from it.
+  List<String> secretValues = const [];
+
   Future<void> load() async {
     request = await _requests.findById(data.requestId);
     examples = await _examples.watchByRequest(data.requestId).first;
+    await _prepare();
     loaded = true;
     notifyListeners();
+  }
+
+  Future<void> _prepare() async {
+    final saved = request;
+    final prepare = _prepareRequest;
+    if (saved == null || prepare == null) return;
+    try {
+      final built = await prepare(saved);
+      prepared = built;
+      secretValues = ResolvedSecrets.valuesOf(built.resolver, flaggedKeys: await _flaggedSecretKeys());
+    } catch (e) {
+      prepared = null;
+      prepareError = e.toString().replaceFirst(RegExp(r'^(Exception|Bad state): '), '');
+    }
+  }
+
+  Future<Set<String>> _flaggedSecretKeys() async {
+    final keys = <String>{};
+    try {
+      final environments = _environments;
+      if (environments != null) {
+        final active = await environments.watchActive().first;
+        if (active != null) {
+          for (final v in await environments.watchVariables(active.id).first) {
+            if (v.isSecret && v.enabled) keys.add(v.key);
+          }
+        }
+      }
+      for (final g in await _globals?.watchAll().first ?? const []) {
+        if (g.isSecret && g.enabled) keys.add(g.key);
+      }
+    } catch (_) {
+      // The names that look secret are still hidden.
+    }
+    return keys;
+  }
+
+  // What the tools show of the request. The saved request holds `{{baseUrl}}` and no query parameters or
+  // auth header, so everything below prefers the request as it was built to be sent.
+
+  String get requestMethod => prepared?.spec.method ?? request?.method.label ?? 'GET';
+
+  String get requestUrl => prepared?.spec.url ?? request?.url ?? data.requestName;
+
+  Map<String, String> get requestHeaders =>
+      prepared?.spec.headers ??
+      {for (final h in request?.headers ?? const <KeyValueItem>[]) if (h.enabled && h.key.isNotEmpty) h.key: h.value};
+
+  /// The body as text; a GraphQL request shows the JSON that is posted.
+  String? get requestBodyText {
+    final built = prepared;
+    if (built != null) {
+      final bytes = built.spec.bodyBytes;
+      return bytes == null || bytes.isEmpty ? null : utf8.decode(bytes, allowMalformed: true);
+    }
+    final saved = request;
+    if (saved == null) return null;
+    return saved.body.type == BodyType.graphql ? saved.body.graphqlQuery : saved.body.rawText;
   }
 
   /// Earlier responses of this request, newest first, without the current one.

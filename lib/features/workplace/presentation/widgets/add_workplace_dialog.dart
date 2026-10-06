@@ -308,7 +308,7 @@ class _AddWorkplaceDialogState extends State<AddWorkplaceDialog> {
                               subtitle: Text(
                                 _connectGit
                                     ? 'Syncs single workspace.json directly with GitHub'
-                                    : 'Optional: if unchecked, the workplace stays on this device only',
+                                    : 'Optional: if unchecked, nothing is pushed to GitHub',
                                 style: textStyles.caption.copyWith(color: colors.secondaryText),
                               ),
                               controlAffinity: ListTileControlAffinity.trailing,

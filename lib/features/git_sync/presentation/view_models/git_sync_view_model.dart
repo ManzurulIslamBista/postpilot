@@ -4,6 +4,7 @@ import '../../domain/entities/git_sync_exceptions.dart';
 import '../../domain/entities/git_sync_results.dart';
 import '../../domain/repositories/git_link_repository.dart';
 import '../../domain/repositories/local_collection_store.dart';
+import '../../domain/services/commit_message.dart';
 import '../../domain/usecases/git_commit_push_usecase.dart';
 import '../../domain/usecases/git_connect_usecase.dart';
 import '../../domain/usecases/git_create_branch_usecase.dart';
@@ -53,6 +54,7 @@ final class GitSyncViewModel extends GitOperationViewModel {
   RequestsReplacedCallback? onRequestsReplaced;
 
   late int _collectionId;
+  String _collectionName = '';
   String _defaultCommitMessage = 'Update collection';
   bool _historyLoaded = false;
   bool _branchesLoaded = false;
@@ -96,8 +98,8 @@ final class GitSyncViewModel extends GitOperationViewModel {
 
   Future<void> load(int collectionId, {String? collectionName}) async {
     _collectionId = collectionId;
-    final name = collectionName?.trim() ?? '';
-    _defaultCommitMessage = name.isEmpty ? 'Update collection' : 'Update $name';
+    _collectionName = collectionName?.trim() ?? '';
+    _defaultCommitMessage = CommitMessage.fromChanges(_collectionName, const []);
     commitMessage = _defaultCommitMessage;
     await run('Loading…', () async {
       await loadTokenState();
@@ -300,12 +302,21 @@ final class GitSyncViewModel extends GitOperationViewModel {
     final result = await _statusUseCase(GitStatusParams(collectionId: _collectionId, checkRemote: checkRemote));
     status = result;
     link = result.link;
+    _followChangesInMessage();
     repoInfo = result.repoInfo ?? repoInfo;
     final behind = result.behind;
     if (behind != null) {
       needsPull = behind;
       remoteChecked = true;
     }
+  }
+
+  /// The default commit message says what changed ("Change 1 request in Users API", the first names under it), so
+  /// the Git history reads well without the person typing anything. A message they have edited is left alone.
+  void _followChangesInMessage() {
+    final previous = _defaultCommitMessage;
+    _defaultCommitMessage = CommitMessage.fromChanges(_collectionName, localChanges);
+    if (commitMessage == previous) commitMessage = _defaultCommitMessage;
   }
 
   /// The remote query needs the network; when it fails the local status already on screen stays valid.

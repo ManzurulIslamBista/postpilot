@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
+import '../../../../core/shortcuts/app_shortcuts.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../../core/widgets/status_chip.dart';
 import '../../../../core/utils/file_download.dart';
+import '../../../../core/utils/set_cookie.dart';
 import '../../domain/entities/api_response_entity.dart';
 import '../../domain/entities/response_example_entity.dart';
 import '../../../response_tools/domain/services/response_history.dart';
@@ -23,11 +25,15 @@ const _toolbarOneLineMinWidth = 460.0;
 const _headerOneLineMinWidth = 600.0;
 
 /// Lets the screen around a [ResponseViewer] open its body search, which is
-/// what Ctrl/Cmd+F does. The viewer attaches itself while it is on screen.
+/// what Ctrl/Cmd+F does, and save the response as an example (Ctrl/Cmd+Shift+S).
+/// The viewer attaches itself while it is on screen.
 class ResponseFindController {
   VoidCallback? _open;
+  VoidCallback? _saveExample;
 
   void open() => _open?.call();
+
+  void saveExample() => _saveExample?.call();
 }
 
 class ResponseViewer extends StatefulWidget {
@@ -91,6 +97,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
     _liveFormatter = _formatterFor(widget.response);
     _remember(widget.response);
     widget.findController?._open = _openSearch;
+    widget.findController?._saveExample = _saveLiveResponseAsExample;
   }
 
   @override
@@ -98,7 +105,9 @@ class _ResponseViewerState extends State<ResponseViewer> {
     super.didUpdateWidget(oldWidget);
     if (widget.findController != oldWidget.findController) {
       if (oldWidget.findController?._open == _openSearch) oldWidget.findController?._open = null;
+      if (oldWidget.findController?._saveExample == _saveLiveResponseAsExample) oldWidget.findController?._saveExample = null;
       widget.findController?._open = _openSearch;
+      widget.findController?._saveExample = _saveLiveResponseAsExample;
     }
     if (widget.response != oldWidget.response) {
       _liveFormatter = _formatterFor(widget.response);
@@ -125,6 +134,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
   @override
   void dispose() {
     if (widget.findController?._open == _openSearch) widget.findController?._open = null;
+    if (widget.findController?._saveExample == _saveLiveResponseAsExample) widget.findController?._saveExample = null;
     _searchTimer?.cancel();
     _searchController.dispose();
     _searchFocus.dispose();
@@ -158,7 +168,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
                       child: TabBarView(
                         children: [
                           _buildBodyTab(context, formatter, example: example),
-                          _buildHeadersTab(context, headers),
+                          _buildHeadersTab(context, headers, setCookies: example == null ? widget.response?.setCookies : null),
                           ResponseExamplesTab(selectedId: example?.id, onSelect: _selectExample),
                         ],
                       ),
@@ -355,9 +365,22 @@ class _ResponseViewerState extends State<ResponseViewer> {
     );
   }
 
-  Widget _buildHeadersTab(BuildContext context, Map<String, String>? headers) {
+  /// One row per header, except `Set-Cookie`, which gets one row per cookie:
+  /// joined into a single line the cookies cannot be told apart, and a cookie's
+  /// `Expires` date has a comma of its own.
+  List<MapEntry<String, String>> _headerRows(Map<String, String> headers, List<String>? setCookies) => [
+        for (final entry in headers.entries)
+          if (entry.key.toLowerCase() == 'set-cookie')
+            for (final cookie in (setCookies != null && setCookies.isNotEmpty ? setCookies : SetCookies.split(entry.value)))
+              MapEntry(entry.key, cookie)
+          else
+            entry,
+      ];
+
+  Widget _buildHeadersTab(BuildContext context, Map<String, String>? headers, {List<String>? setCookies}) {
     if (headers == null) return const _EmptyState();
-    final headersText = headers.entries.map((e) => '${e.key}: ${e.value}').join('\n');
+    final rows = _headerRows(headers, setCookies);
+    final headersText = rows.map((e) => '${e.key}: ${e.value}').join('\n');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -365,12 +388,12 @@ class _ResponseViewerState extends State<ResponseViewer> {
           padding: const EdgeInsets.only(top: 8, left: 8),
           child: Row(
             children: [
-              Text('${headers.length} headers', style: context.textStyles.caption),
+              Text('${rows.length} headers', style: context.textStyles.caption),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.copy, size: 18),
                 tooltip: 'Copy headers',
-                onPressed: headers.isEmpty ? null : () => _copy(context, headersText, 'Headers copied'),
+                onPressed: rows.isEmpty ? null : () => _copy(context, headersText, 'Headers copied'),
               ),
             ],
           ),
@@ -379,7 +402,7 @@ class _ResponseViewerState extends State<ResponseViewer> {
           child: ListView(
             padding: const EdgeInsets.all(8),
             children: [
-              for (final entry in headers.entries)
+              for (final entry in rows)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: SelectableText('${entry.key}: ${entry.value}', style: context.textStyles.mono),
@@ -524,6 +547,28 @@ class _ResponseViewerState extends State<ResponseViewer> {
     }
   }
 
+  /// The shortcut's route into "Save as example": the live response, never an example being viewed. Says why
+  /// when there is nothing to save, since a shortcut that does nothing looks broken.
+  void _saveLiveResponseAsExample() {
+    final response = widget.response;
+    final formatter = _liveFormatter;
+    final body = formatter?.text;
+    final String? reason = !widget.canSaveExamples
+        ? 'This request has no saved row to attach an example to'
+        : response == null
+        ? 'Send the request first: there is no response to save'
+        : formatter == null || body == null || !formatter.isTextual
+        ? "Binary responses can't be saved as examples"
+        : _selectedExample != null
+        ? 'Switch back to the live response to save it as an example'
+        : null;
+    if (reason != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(reason)));
+      return;
+    }
+    _saveAsExample(context, response!, body!);
+  }
+
   Future<void> _saveAsExample(BuildContext context, ApiResponseEntity response, String body) async {
     if (response.truncated) {
       final proceed = await showConfirmDialog(
@@ -577,7 +622,8 @@ class _NoResponseSummary extends StatelessWidget {
   const _NoResponseSummary();
 
   @override
-  Widget build(BuildContext context) => Text('No response yet', style: context.textStyles.caption);
+  Widget build(BuildContext context) =>
+      Text('No response yet. Press Send or ${AppShortcut.sendRequest.keyLabel}.', style: context.textStyles.caption);
 }
 
 class _EmptyState extends StatelessWidget {
@@ -587,7 +633,7 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Text(
-        'Send the request to see its response, or open a saved example from the Examples tab.',
+        'Press Send or ${AppShortcut.sendRequest.keyLabel} to see the response, or open a saved example from the Examples tab.',
         textAlign: TextAlign.center,
         style: context.textStyles.caption,
       ),

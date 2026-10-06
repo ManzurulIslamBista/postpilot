@@ -4,6 +4,7 @@ import '../../../../core/enums/http_method.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/errors/unreachable_message.dart';
 import '../../../../core/network/api_http_response.dart';
+import '../../../documentation/domain/services/secret_masker.dart';
 import '../../domain/entities/api_request_entity.dart';
 import '../../domain/entities/api_response_entity.dart';
 import '../../domain/entities/key_value_item.dart';
@@ -83,17 +84,32 @@ final class RequestBuilderViewModel with ChangeNotifier {
     try {
       sent = await _sendRequestUseCase(current, cancelToken: cancelToken);
       response = sent;
-      lastScriptResult = await _runRequestScriptsUseCase(
-        RunRequestScriptsParams(requestId: current.id, collectionId: current.collectionId, response: sent),
-      );
     } catch (e) {
       if (!cancelToken.isCancelled) {
         // A failed send has no response of its own; keeping the previous one
         // would show (and let the user save) a result this send never produced.
-        if (sent == null) response = null;
+        response = null;
         errorMessage = _describeError(e);
-        // The message of an InvalidRequestException already says it all.
-        errorDetail = e is InvalidRequestException ? null : e.toString();
+        errorDetail = _detailOf(e, errorMessage!);
+      }
+    }
+    if (sent != null) {
+      // Apart from the send: a failing script is not a server that could not be reached.
+      try {
+        lastScriptResult = await _runRequestScriptsUseCase(
+          RunRequestScriptsParams(
+            requestId: current.id,
+            collectionId: current.collectionId,
+            response: sent,
+            folderId: current.folderId,
+          ),
+        );
+      } catch (e) {
+        if (!cancelToken.isCancelled) {
+          errorMessage = 'The response arrived, but the tests and variable saves could not run: '
+              '${_firstLine(_masked(e.toString()))}';
+          errorDetail = _detailOf(e, errorMessage!);
+        }
       }
     }
 
@@ -105,34 +121,56 @@ final class RequestBuilderViewModel with ChangeNotifier {
   /// Abandons the send in flight; [send] then finishes without an error.
   void cancelSend() => _cancelToken?.cancel();
 
-  /// Translates the exceptions actually thrown by [SendRequestUseCase] into
-  /// short, human-readable text. [DioApiClient] wraps every network failure
-  /// in a [NetworkException] with a [NetworkErrorKind]; an unsendable URL is
-  /// an [InvalidUrlException], and one `Uri.parse` can't read surfaces as a
-  /// [FormatException] before the request ever reaches Dio.
+  /// The one line shown for what [SendRequestUseCase] threw, saying what went
+  /// wrong and what to do. [DioApiClient] wraps every network failure in a
+  /// [NetworkException] that carries its own `summary` (DNS, refused
+  /// connection, TLS, timeout with its limit, ...); an unsendable URL is an
+  /// [InvalidUrlException], an undefined `{{variable}}` or bad JSON an
+  /// [InvalidRequestException], and a URL `Uri.parse` can't read surfaces as a
+  /// [FormatException] before the request ever reaches Dio. The text can
+  /// quote the URL or a proxy, so it is masked.
   String _describeError(Object error) {
-    if (error is NetworkException) {
-      switch (error.kind) {
-        case NetworkErrorKind.timeout:
-          return 'Request timed out';
-        case NetworkErrorKind.connectionError:
-          return unreachableServerMessage();
-        case NetworkErrorKind.badResponse:
-          return 'The server returned an unexpected response';
-        case NetworkErrorKind.cancelled:
-          return 'Request cancelled';
-        case NetworkErrorKind.other:
-          return 'Something went wrong sending this request';
-      }
+    switch (error) {
+      case NetworkException(kind: NetworkErrorKind.cancelled):
+        return 'Request cancelled';
+      case NetworkException(:final summary?):
+        return _masked(summary);
+      case NetworkException(:final kind, :final message):
+        return switch (kind) {
+          NetworkErrorKind.timeout =>
+            'The request timed out — raise the "Request timeout" in Settings if the server is just slow.',
+          NetworkErrorKind.connectionError => unreachableServerMessage(),
+          NetworkErrorKind.badResponse => 'The server returned a response that could not be read.',
+          _ => 'The request failed: ${_firstLine(_masked(message))}',
+        };
+      case InvalidUrlException():
+        return "That URL isn't valid — it needs an http(s) scheme and a host, e.g. https://api.example.com/users";
+      case InvalidRequestException(:final message):
+        return _masked(message);
+      case FormatException(:final message):
+        return 'The URL or a header could not be read: ${_firstLine(_masked(message))}';
+      default:
+        return 'The request failed: ${_firstLine(_masked(error.toString()))}';
     }
-    if (error is InvalidUrlException) {
-      return "That URL isn't valid — it needs a host, e.g. https://api.example.com/users";
+  }
+
+  /// The full text behind [summary], for the expandable details; null when it
+  /// would only repeat it (an [InvalidRequestException] already says it all).
+  String? _detailOf(Object error, String summary) {
+    if (error is InvalidRequestException) return null;
+    final detail = _masked(error.toString()).trim();
+    return detail.isEmpty || detail == summary ? null : detail;
+  }
+
+  /// Secrets can ride along in an exception's text: the URL a failure quotes,
+  /// the credentials of a proxy, a token in a header.
+  static String _masked(String text) => SecretMasker.maskMessage(text);
+
+  static String _firstLine(String text) {
+    for (final line in text.split(RegExp(r'[\r\n]+'))) {
+      if (line.trim().isNotEmpty) return line.trim();
     }
-    if (error is InvalidRequestException) return error.message;
-    if (error is FormatException) {
-      return unreachableServerMessage();
-    }
-    return 'Something went wrong sending this request';
+    return text.trim();
   }
 
   void updateName(String name) => _update((r) => r.copyWith(name: name));
@@ -150,15 +188,12 @@ final class RequestBuilderViewModel with ChangeNotifier {
     if (!RegExp(r'^curl\s', caseSensitive: false).hasMatch(trimmed)) return false;
     final parsed = CurlParser.parse(trimmed);
     if (parsed == null || parsed.url.isEmpty) return false;
-    final raw = parsed.body;
-    final looksJson = raw != null && (raw.trimLeft().startsWith('{') || raw.trimLeft().startsWith('['));
+    final pasted = parsed.requestBody;
     _update((r) => r.copyWith(
           method: parsed.method,
           url: parsed.url,
           headers: parsed.headers,
-          body: raw == null
-              ? r.body
-              : RequestBody(type: BodyType.raw, rawContentType: looksJson ? RawContentType.json : RawContentType.text, rawText: raw),
+          body: pasted.type == BodyType.none ? r.body : pasted,
           auth: parsed.auth,
         ));
     urlRevision++;
@@ -179,11 +214,19 @@ final class RequestBuilderViewModel with ChangeNotifier {
   }
 
   /// Every edit re-saves the whole request from this snapshot, so a rename made
-  /// elsewhere (the sidebar) must land here or the next edit would undo it.
+  /// elsewhere (the sidebar) must land here or the next edit would undo it. A
+  /// move to another folder lands too: what the request inherits (headers,
+  /// auth, variables, tests) follows its folder.
   void _mergeExternalName(ApiRequestEntity? latest) {
     final current = request;
-    if (latest == null || current == null || latest.name == current.name) return;
-    request = current.copyWith(name: latest.name);
+    if (latest == null || current == null) return;
+    final renamed = latest.name != current.name;
+    final moved = latest.folderId != current.folderId;
+    if (!renamed && !moved) return;
+    var merged = current;
+    if (renamed) merged = merged.copyWith(name: latest.name);
+    if (moved) merged = merged.inFolder(latest.folderId);
+    request = merged;
     notifyListeners();
   }
 

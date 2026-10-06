@@ -12,6 +12,8 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
   static const _registryKey = 'postpilot.workplaces.registry';
   static const _filePrefix = 'postpilot.workplaces.file:';
   static const _secretsPrefix = 'postpilot.workplaces.secrets:';
+  static const _dirtyPrefix = 'postpilot.workplaces.unsaved:';
+  static const _registryBackupPrefix = 'postpilot.workplaces.registry.bak:';
   static const _maxBytes = 4 * 1024 * 1024;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
@@ -35,6 +37,16 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
   Future<void> writeRegistry(String json) => _write(_registryKey, json);
 
   @override
+  Future<String?> backupRegistry(String json) async {
+    try {
+      final key = '$_registryBackupPrefix${DateTime.now().toUtc().toIso8601String()}';
+      return await (await _prefs).setString(key, json) ? 'browser storage ($key)' : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Future<String?> readWorkspace(String folderPath) async => (await _prefs).getString(_fileKey(folderPath));
 
   @override
@@ -43,13 +55,18 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
   @override
   Future<String?> readLocalSecrets(String folderPath) async => (await _prefs).getString(_secretsKey(folderPath));
 
+  /// Not swallowed when the browser's store is full: with the secrets gone from the workspace, they would be lost.
   @override
-  Future<void> writeLocalSecrets(String folderPath, String json) async {
-    try {
-      await _write(_secretsKey(folderPath), json);
-    } on WorkplaceException {
-      // Secrets are optional extras; a full browser store must not stop the workspace from saving.
-    }
+  Future<void> writeLocalSecrets(String folderPath, String json) => _write(_secretsKey(folderPath), json);
+
+  @override
+  Future<bool> isDirty(String folderPath) async => (await _prefs).getBool(_dirtyKey(folderPath)) ?? false;
+
+  @override
+  Future<void> setDirty(String folderPath, bool dirty) async {
+    final prefs = await _prefs;
+    final ok = dirty ? await prefs.setBool(_dirtyKey(folderPath), true) : await prefs.remove(_dirtyKey(folderPath));
+    if (!ok) throw const WorkplaceException('The browser refused to update the save marker (storage may be full or blocked).');
   }
 
   @override
@@ -64,6 +81,8 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
 
   @override
   Future<void> revealFolder(String folderPath) async {}
+
+  String _dirtyKey(String folderPath) => '$_dirtyPrefix${p.normalize(folderPath.trim()).toLowerCase()}';
 
   String _secretsKey(String folderPath) => '$_secretsPrefix${p.normalize(folderPath.trim()).toLowerCase()}';
 

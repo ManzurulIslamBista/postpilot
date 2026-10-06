@@ -74,12 +74,13 @@ void main() {
     final ds = file(r, 'lib/features/users_api/data/datasources/users_api_remote_data_source.dart');
     expect(ds, contains('class UsersApiRemoteDataSource'));
     expect(ds, contains("Future<GetUserResponse> getUser({required String userId, String expand = 'profile'})"));
-    expect(ds, contains(r"_dio.get<dynamic>('/users/${userId}'"));
+    // Path arguments are URL-encoded: an id with a slash or a space must not change the path.
+    expect(ds, contains(r"_dio.get<dynamic>('/users/${Uri.encodeComponent(userId)}'"));
     expect(ds, contains("'expand': expand"));
     expect(ds, contains('Future<List<ListUsersResponse>> listUsers({String? page, String limit = \'20\'})'));
     expect(ds, contains("'limit': limit"));
     expect(ds, contains('required String id'));
-    expect(ds, contains(r"'/users/${id}'"));
+    expect(ds, contains(r"'/users/${Uri.encodeComponent(id)}'"));
   });
 
   test('json bodies get a request DTO; variables inside are quoted so the body parses', () {

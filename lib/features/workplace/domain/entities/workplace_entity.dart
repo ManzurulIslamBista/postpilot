@@ -13,6 +13,11 @@ final class WorkplaceEntity {
   /// if the repository's sha differs when pushing, someone else changed it meanwhile.
   final String? lastSyncedSha;
 
+  /// Name of the environment that was active when this workplace was last saved. A workspace
+  /// file cannot say which one was active, so without this, switching to another workplace
+  /// and back, or pulling, would leave no environment active. Per device: never written to workspace.json.
+  final String? activeEnvironment;
+
   const WorkplaceEntity({
     required this.id,
     required this.name,
@@ -24,6 +29,7 @@ final class WorkplaceEntity {
     required this.updatedAt,
     this.lastSyncedAt,
     this.lastSyncedSha,
+    this.activeEnvironment,
   });
 
   bool get isGitConnected => gitRepoUrl != null && gitRepoUrl!.trim().isNotEmpty;
@@ -39,6 +45,7 @@ final class WorkplaceEntity {
     DateTime? updatedAt,
     Object? lastSyncedAt = _sentinel,
     Object? lastSyncedSha = _sentinel,
+    Object? activeEnvironment = _sentinel,
   }) =>
       WorkplaceEntity(
         id: id,
@@ -51,6 +58,7 @@ final class WorkplaceEntity {
         updatedAt: updatedAt ?? this.updatedAt,
         lastSyncedAt: lastSyncedAt == _sentinel ? this.lastSyncedAt : lastSyncedAt as DateTime?,
         lastSyncedSha: lastSyncedSha == _sentinel ? this.lastSyncedSha : lastSyncedSha as String?,
+        activeEnvironment: activeEnvironment == _sentinel ? this.activeEnvironment : activeEnvironment as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -64,6 +72,7 @@ final class WorkplaceEntity {
         'updatedAt': updatedAt.toUtc().toIso8601String(),
         'lastSyncedAt': lastSyncedAt?.toUtc().toIso8601String(),
         'lastSyncedSha': lastSyncedSha,
+        'activeEnvironment': activeEnvironment,
       };
 
   factory WorkplaceEntity.fromJson(Map<String, dynamic> json) => WorkplaceEntity(
@@ -77,5 +86,6 @@ final class WorkplaceEntity {
         updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? '') ?? DateTime.now(),
         lastSyncedAt: json['lastSyncedAt'] != null ? DateTime.tryParse(json['lastSyncedAt'].toString()) : null,
         lastSyncedSha: json['lastSyncedSha'] as String?,
+        activeEnvironment: json['activeEnvironment'] as String?,
       );
 }

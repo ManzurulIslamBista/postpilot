@@ -1,8 +1,8 @@
-import '../../../core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
+import '../../../core/theme/context_theme_extensions.dart';
+import 'postman_export_body.dart';
 import 'view_models/import_export_view_model.dart';
 
 /// Shows a collection serialized as Postman v2.1 JSON, ready to copy.
@@ -33,11 +33,6 @@ class _ExportPostmanDialogState extends State<ExportPostmanDialog> {
     super.dispose();
   }
 
-  void _copy(String json) {
-    Clipboard.setData(ClipboardData(text: json));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Exported to clipboard')));
-  }
-
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<ImportExportViewModel>.value(
@@ -45,8 +40,8 @@ class _ExportPostmanDialogState extends State<ExportPostmanDialog> {
       child: Consumer<ImportExportViewModel>(
         builder: (context, vm, _) => Dialog(
           child: SizedBox(
-            width: 600,
-            height: 480,
+            width: 640,
+            height: 560,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -54,14 +49,8 @@ class _ExportPostmanDialogState extends State<ExportPostmanDialog> {
                 children: [
                   Row(
                     children: [
-                      const Text('Export as Postman collection', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text('Export as Postman collection', style: context.textStyles.body.copyWith(fontWeight: FontWeight.bold)),
                       const Spacer(),
-                      if (vm.exportedJson != null)
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 18),
-                          tooltip: 'Copy',
-                          onPressed: () => _copy(vm.exportedJson!),
-                        ),
                       IconButton(icon: const Icon(Icons.close), tooltip: 'Close', onPressed: () => Navigator.pop(context)),
                     ],
                   ),
@@ -71,9 +60,7 @@ class _ExportPostmanDialogState extends State<ExportPostmanDialog> {
                         ? Text(vm.exportError!, style: TextStyle(color: Theme.of(context).colorScheme.error))
                         : vm.exportedJson == null
                             ? const Center(child: CircularProgressIndicator())
-                            : SingleChildScrollView(
-                                child: SelectableText(vm.exportedJson!, style: const TextStyle(fontFamily: AppFonts.monoFamily, fontFamilyFallback: AppFonts.monoFallback, fontSize: 12)),
-                              ),
+                            : PostmanExportBody(json: vm.exportedJson!),
                   ),
                 ],
               ),

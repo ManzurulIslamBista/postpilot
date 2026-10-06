@@ -78,7 +78,9 @@ String _workspace() => BackupCodec.encode(BackupSnapshot(
               assertions: [AssertionEntity(type: AssertionType.jsonPathEquals, path: 'id', expected: '42')],
             ),
             _req('Broken', '{{baseUrl}}/broken', assertions: [AssertionEntity(type: AssertionType.statusEquals, expected: '200')]),
-            _req('Digest thing', '{{baseUrl}}/digest', auth: const RequestAuth(type: AuthType.digest)),
+            // OAuth 2.0 needs the app (a browser or a token request), so the CLI skips it. Digest is no longer
+            // skipped: the CLI answers its challenge (see cli_safety_test.dart).
+            _req('OAuth thing', '{{baseUrl}}/oauth', auth: const RequestAuth(type: AuthType.oauth2)),
           ],
         ),
       ],
@@ -131,7 +133,7 @@ void main() {
       expect(byName['Get order']!.passed, isTrue);
       expect(byName['Broken']!.passed, isFalse);
       expect(byName['Broken']!.failures.single, contains('(got 500)'));
-      expect(byName['Digest thing']!.skipped, contains('digest'));
+      expect(byName['OAuth thing']!.skipped, contains('oauth2'));
       expect(summary.ok, isFalse);
       expect(summary.failed, 1);
       expect(summary.skipped, 1);
@@ -320,7 +322,7 @@ void main() {
     test('lists requests and environments', () async {
       final s = server();
       final requests = jsonDecode(text(await ask(s, 'tools/call', {'name': 'list_requests', 'arguments': {}}))) as List;
-      expect(requests.map((r) => r['name']), ['Login', 'Get order', 'Broken', 'Digest thing']);
+      expect(requests.map((r) => r['name']), ['Login', 'Get order', 'Broken', 'OAuth thing']);
       final envs = jsonDecode(text(await ask(s, 'tools/call', {'name': 'list_environments'})));
       expect(envs['environments'], ['Staging', 'Prod']);
       expect(envs['default'], 'Staging');

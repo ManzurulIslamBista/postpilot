@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart_io_sender.dart';
 import 'mcp_server.dart';
+import 'production_lock.dart';
 import 'reporters.dart';
 import 'workspace_runner.dart';
 
@@ -26,13 +27,25 @@ Options for run and mcp:
   --insecure            Do not verify TLS certificates
   --report <kind>       console (default), junit or json
   --out <file>          Write the junit/json report to a file
+  --fail-on-skip        Fail the run when any request was skipped (OAuth 2.0 requests need the app)
   --no-color            Plain output
+
+Production lock: while the environment looks like production (a name with
+prod, production, prd or live) or a request goes to a production host, requests
+that change data (POST, PUT, PATCH, DELETE, an Odoo write, a GraphQL mutation)
+are refused before anything is sent, with exit code 2. Reads still run.
+  --allow-production    Send data-changing requests to production anyway
+  --production-word <w> Another word that marks an environment as production (repeatable)
+  --production-host <h> A host that is production under any environment name, for
+                        example api.acme.com, *.acme.com or acme.com:8443 (repeatable)
 
 Secrets: the shared workspace.json holds none of your secret values. If
 workspace.local.json sits beside it, it is read too. In CI, pass secrets as
 environment variables named POSTPILOT_VAR_<name> (for example POSTPILOT_VAR_odooApiKey).
 
-Exit code: 0 all passed, 1 a request or test failed, 2 usage or file error.
+Exit code: 0 all passed, 1 a request or test failed (or nothing was verified:
+every request was skipped, or --fail-on-skip and one was), 2 usage or file error,
+a production lock refusal, or no request matched.
 ''';
 
 /// Parses the command line and runs it. Returns the process exit code.
@@ -108,6 +121,12 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
     timeout: Duration(seconds: int.tryParse(parsed.options['timeout'] ?? '') ?? 30),
     delay: Duration(milliseconds: int.tryParse(parsed.options['delay'] ?? '') ?? 0),
     verifySsl: !parsed.flags.contains('insecure'),
+    production: ProductionLock(
+      allow: parsed.flags.contains('allow-production'),
+      extraWords: parsed.lists['production-word'] ?? const [],
+      hosts: parsed.lists['production-host'] ?? const [],
+    ),
+    failOnSkip: parsed.flags.contains('fail-on-skip'),
   );
 
   if (command == 'mcp') {
@@ -128,6 +147,16 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
   final color = !parsed.flags.contains('no-color') && stdoutSink == stdout && stdout.hasTerminal;
   final live = report == 'console' || parsed.options['out'] != null;
   try {
+    // The production lock refuses the whole run up front: sending half of a
+    // collection to production and then stopping is worse than sending none.
+    final blocks = runner.productionBlocks(options, processVariables: processVariables);
+    if (blocks.isNotEmpty) {
+      stderrSink.writeln(ProductionBlock.describe(
+        blocks,
+        howToAllow: 'Pass --allow-production to send them anyway, or select only read-only requests with --collection or --folder.',
+      ));
+      return 2;
+    }
     final summary = await runner.run(
       options,
       processVariables: processVariables,
@@ -152,6 +181,11 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
       stderrSink.writeln('Nothing ran: no request matched${options.collection == null ? '' : ' collection "${options.collection}"'}.');
       return 2;
     }
+    if (summary.allSkipped) {
+      stderrSink.writeln('Nothing was verified: all ${summary.total} selected request${summary.total == 1 ? ' was' : 's were'} skipped, so no request was sent or checked.');
+    } else if (options.failOnSkip && summary.skipped > 0 && summary.failed == 0) {
+      stderrSink.writeln('--fail-on-skip: ${summary.skipped} request${summary.skipped == 1 ? ' was' : 's were'} skipped.');
+    }
     return summary.ok ? 0 : 1;
   } on ArgumentError catch (e) {
     stderrSink.writeln(e.message);
@@ -163,11 +197,15 @@ final class _Args {
   final List<String> positional = [];
   final Map<String, String> options = {};
   final Map<String, String> variables = {};
+
+  /// Options that may be given more than once (`--production-host a --production-host b`).
+  final Map<String, List<String>> lists = {};
   final Set<String> flags = {};
   String? error;
 
   static const _valued = {'env', 'collection', 'folder', 'timeout', 'delay', 'report', 'out'};
-  static const _boolean = {'bail', 'insecure', 'no-color'};
+  static const _repeatable = {'production-word', 'production-host'};
+  static const _boolean = {'bail', 'insecure', 'no-color', 'allow-production', 'fail-on-skip'};
 
   static _Args parse(List<String> args) {
     final result = _Args();
@@ -183,7 +221,7 @@ final class _Args {
         result.flags.add(name);
         continue;
       }
-      if (name != 'var' && !_valued.contains(name)) {
+      if (name != 'var' && !_valued.contains(name) && !_repeatable.contains(name)) {
         result.error = 'Unknown option --$name.';
         return result;
       }
@@ -203,6 +241,8 @@ final class _Args {
           return result;
         }
         result.variables[value.substring(0, split)] = value.substring(split + 1);
+      } else if (_repeatable.contains(name)) {
+        result.lists.putIfAbsent(name, () => []).add(value);
       } else {
         result.options[name] = value;
       }

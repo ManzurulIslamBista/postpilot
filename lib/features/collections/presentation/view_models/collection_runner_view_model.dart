@@ -89,6 +89,9 @@ final class CollectionRunnerViewModel with ChangeNotifier {
 
   CollectionRunSummary get summary => _summary ??= CollectionRunSummary.of(results);
 
+  /// Full requests of the run, for the production lock.
+  Future<List<ApiRequestEntity>> fullRequests(int collectionId) => _collectionRunnerService.fullRequestsIn(collectionId);
+
   Future<void> load(int collectionId) async {
     final found = await _collectionRunnerService.requestsIn(collectionId);
     if (_disposed) return;

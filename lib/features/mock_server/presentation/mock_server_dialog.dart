@@ -30,6 +30,7 @@ class _MockServerDialogState extends State<MockServerDialog> {
   final MockServerViewModel _vm = locator<MockServerViewModel>();
   late final _port = TextEditingController(text: _vm.portText);
   late final _delay = TextEditingController(text: '${_vm.delayMs}');
+  late final _origin = TextEditingController(text: _vm.allowedOrigin);
   String? _lanIp;
 
   @override
@@ -50,6 +51,7 @@ class _MockServerDialogState extends State<MockServerDialog> {
   void dispose() {
     _port.dispose();
     _delay.dispose();
+    _origin.dispose();
     super.dispose();
   }
 
@@ -137,6 +139,16 @@ class _MockServerDialogState extends State<MockServerDialog> {
                                 ),
                               ),
                               FilterChip(label: const Text('CORS'), selected: _vm.cors, onSelected: running ? null : (v) => _vm.update(corsOn: v)),
+                              SizedBox(
+                                width: 250,
+                                child: TextField(
+                                  controller: _origin,
+                                  enabled: !running && _vm.cors,
+                                  autocorrect: false,
+                                  decoration: const InputDecoration(labelText: 'Allowed origin', hintText: '* or http://localhost:5173'),
+                                  onChanged: (v) => _vm.update(origin: v),
+                                ),
+                              ),
                               FilterChip(label: const Text('Allow other devices'), selected: _vm.allowOtherDevices, onSelected: running ? null : (v) => _vm.update(others: v)),
                               if (running)
                                 OutlinedButton.icon(onPressed: _vm.reload, icon: const Icon(Icons.refresh, size: 16), label: const Text('Reload examples'))
@@ -151,6 +163,15 @@ class _MockServerDialogState extends State<MockServerDialog> {
                             ],
                           ),
                           const SizedBox(height: 10),
+                          if (_vm.allowsEveryWebsite)
+                            const InfoBanner(
+                              kind: BannerKind.warning,
+                              title: 'Every website can read these answers',
+                              message: 'CORS is on for any origin (*): while the server runs, any page open in your browser can fetch these '
+                                  'responses from this computer. Put the origin of your app (for example http://localhost:5173) in Allowed origin to limit that, '
+                                  'or switch CORS off.',
+                              margin: EdgeInsets.only(bottom: 8),
+                            ),
                           if (_vm.error != null) InfoBanner(kind: BannerKind.error, message: _vm.error!, margin: const EdgeInsets.only(bottom: 8)),
                           if (running)
                             InfoBanner(

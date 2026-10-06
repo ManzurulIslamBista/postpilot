@@ -37,6 +37,10 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
   late final VariableScope _variableScope;
   final _responseFind = ResponseFindController();
 
+  /// Ctrl/Cmd+L puts the cursor here.
+  final _urlFocus = FocusNode();
+  Object? _seenScriptResult;
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +52,9 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
     _viewModel.load(widget.requestId);
     locator<ShellViewModel>()
       ..registerSender(widget.requestId, _viewModel.send)
-      ..registerBodySearch(widget.requestId, _responseFind.open);
+      ..registerBodySearch(widget.requestId, _responseFind.open)
+      ..registerTabAction(widget.requestId, TabAction.focusUrl, _urlFocus.requestFocus)
+      ..registerTabAction(widget.requestId, TabAction.saveResponseExample, _responseFind.saveExample);
   }
 
   @override
@@ -59,8 +65,12 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
       locator<ShellViewModel>()
         ..unregisterSender(oldWidget.requestId, _viewModel.send)
         ..unregisterBodySearch(oldWidget.requestId, _responseFind.open)
+        ..unregisterTabAction(oldWidget.requestId, TabAction.focusUrl, _urlFocus.requestFocus)
+        ..unregisterTabAction(oldWidget.requestId, TabAction.saveResponseExample, _responseFind.saveExample)
         ..registerSender(widget.requestId, _viewModel.send)
-        ..registerBodySearch(widget.requestId, _responseFind.open);
+        ..registerBodySearch(widget.requestId, _responseFind.open)
+        ..registerTabAction(widget.requestId, TabAction.focusUrl, _urlFocus.requestFocus)
+        ..registerTabAction(widget.requestId, TabAction.saveResponseExample, _responseFind.saveExample);
     }
   }
 
@@ -68,7 +78,7 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
   Future<bool> _confirmSend(ApiRequestEntity request) async {
     if (!locator.isRegistered<ProductionGuard>()) return true;
     final guard = locator<ProductionGuard>();
-    final warning = await guard.checkSend(request.method, request.name);
+    final warning = await guard.checkRequest(request);
     if (warning == null || !mounted) return true;
     return confirmProductionSend(context, warning, onSilence: () => guard.silenceForSession(warning.environmentName));
   }
@@ -76,13 +86,23 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
   void _bindVariableScope() {
     final request = _viewModel.request;
     if (request != null) _variableScope.bindCollection(request.collectionId);
+    // A script that just ran may have saved variables. The repositories' own
+    // change streams say so too; this just makes the editors not wait for them.
+    final scripts = _viewModel.lastScriptResult;
+    if (!identical(scripts, _seenScriptResult)) {
+      _seenScriptResult = scripts;
+      if (scripts != null) _variableScope.refresh();
+    }
   }
 
   @override
   void dispose() {
     locator<ShellViewModel>()
       ..unregisterSender(widget.requestId, _viewModel.send)
-      ..unregisterBodySearch(widget.requestId, _responseFind.open);
+      ..unregisterBodySearch(widget.requestId, _responseFind.open)
+      ..unregisterTabAction(widget.requestId, TabAction.focusUrl, _urlFocus.requestFocus)
+      ..unregisterTabAction(widget.requestId, TabAction.saveResponseExample, _responseFind.saveExample);
+    _urlFocus.dispose();
     _viewModel.removeListener(_bindVariableScope);
     _viewModel.dispose();
     _variableScope.dispose();
@@ -102,7 +122,7 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
           if (vm.isLoading || vm.request == null) {
             return const Center(child: CircularProgressIndicator());
           }
-          return _RequestBuilderBody(vm: vm);
+          return _RequestBuilderBody(vm: vm, urlFocus: _urlFocus);
         },
       ),
     );
@@ -119,7 +139,8 @@ const _phoneMaxWidth = 600.0;
 
 class _RequestBuilderBody extends StatelessWidget {
   final RequestBuilderViewModel vm;
-  const _RequestBuilderBody({required this.vm});
+  final FocusNode urlFocus;
+  const _RequestBuilderBody({required this.vm, required this.urlFocus});
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +152,7 @@ class _RequestBuilderBody extends StatelessWidget {
           final phone = constraints.maxWidth < _phoneMaxWidth;
           return Column(
             children: [
-              _UrlBar(vm: vm, canChooseLayout: canSplitSideways, compact: phone),
+              _UrlBar(vm: vm, canChooseLayout: canSplitSideways, compact: phone, focusNode: urlFocus),
               const SizedBox(height: 12),
               Expanded(
                 child: phone ? _PhoneSplit(vm: vm) : _SplitArea(vm: vm, canSplitSideways: canSplitSideways),
@@ -265,7 +286,8 @@ class _UrlBar extends StatefulWidget {
 
   /// Phone width: Send drops its icon so the URL keeps usable room.
   final bool compact;
-  const _UrlBar({required this.vm, required this.canChooseLayout, this.compact = false});
+  final FocusNode? focusNode;
+  const _UrlBar({required this.vm, required this.canChooseLayout, this.compact = false, this.focusNode});
 
   @override
   State<_UrlBar> createState() => _UrlBarState();
@@ -315,6 +337,7 @@ class _UrlBarState extends State<_UrlBar> {
               onFocusChange: (focused) => setState(() => _focused = focused),
               child: VariableTextFormField(
                 key: ValueKey('url-${vm.urlRevision}'),
+                focusNode: widget.focusNode,
                 initialValue: request.url,
                 style: context.textStyles.body.copyWith(fontSize: 14),
                 decoration: const InputDecoration(

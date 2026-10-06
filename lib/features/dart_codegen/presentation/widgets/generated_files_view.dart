@@ -7,6 +7,7 @@ import '../../../../core/widgets/code_block.dart';
 import '../../../../core/widgets/info_banner.dart';
 import '../../../workplace/presentation/view_models/workplace_view_model.dart';
 import '../../domain/entities/generated_file.dart';
+import 'generated_files_save.dart';
 
 /// A generated project as a file list beside the selected file's code, with
 /// "Copy all" and (on desktop) "Save to folder". Used by every generator that
@@ -49,10 +50,12 @@ class _GeneratedFilesViewState extends State<GeneratedFilesView> {
     final messenger = ScaffoldMessenger.of(context);
     final workplaces = context.read<WorkplaceViewModel>();
     final folder = await workplaces.pickFolder();
-    if (folder == null) return;
+    if (folder == null || !mounted) return;
     try {
-      final count = await writeFilesToFolder(folder, {for (final f in widget.files) f.path: f.content});
-      messenger.showSnackBar(SnackBar(content: Text('Wrote $count files to $folder')));
+      // Never replaces anything on its own: it asks first, and the result lists what was written and what was kept.
+      final result = await saveGeneratedFiles(context, folder, widget.files);
+      if (result == null || !mounted) return;
+      await showWriteResult(context, folder, result);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text("Couldn't write the files: $e")));
     }

@@ -82,7 +82,7 @@ class _ExtractorRowState extends State<_ExtractorRow> {
     final pathField = TextFormField(
       initialValue: _local.path,
       decoration: InputDecoration(
-        hintText: _local.source == ExtractorSource.header ? 'Header name' : 'JSON path, e.g. data.token',
+        hintText: _local.source == ExtractorSource.header ? 'Header name, or Set-Cookie[name]' : 'JSON path, e.g. data.token',
         isDense: true,
       ),
       onChanged: (v) => _apply(path: v),

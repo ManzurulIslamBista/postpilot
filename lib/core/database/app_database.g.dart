@@ -6799,6 +6799,1091 @@ class EntityTagsCompanion extends UpdateCompanion<EntityTag> {
   }
 }
 
+class $FolderDefaultsTable extends FolderDefaults
+    with TableInfo<$FolderDefaultsTable, FolderDefault> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FolderDefaultsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _folderIdMeta = const VerificationMeta(
+    'folderId',
+  );
+  @override
+  late final GeneratedColumn<int> folderId = GeneratedColumn<int>(
+    'folder_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES folders (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _headersJsonMeta = const VerificationMeta(
+    'headersJson',
+  );
+  @override
+  late final GeneratedColumn<String> headersJson = GeneratedColumn<String>(
+    'headers_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _variablesJsonMeta = const VerificationMeta(
+    'variablesJson',
+  );
+  @override
+  late final GeneratedColumn<String> variablesJson = GeneratedColumn<String>(
+    'variables_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _authJsonMeta = const VerificationMeta(
+    'authJson',
+  );
+  @override
+  late final GeneratedColumn<String> authJson = GeneratedColumn<String>(
+    'auth_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _scriptsJsonMeta = const VerificationMeta(
+    'scriptsJson',
+  );
+  @override
+  late final GeneratedColumn<String> scriptsJson = GeneratedColumn<String>(
+    'scripts_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    folderId,
+    headersJson,
+    variablesJson,
+    authJson,
+    scriptsJson,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'folder_defaults';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FolderDefault> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('folder_id')) {
+      context.handle(
+        _folderIdMeta,
+        folderId.isAcceptableOrUnknown(data['folder_id']!, _folderIdMeta),
+      );
+    }
+    if (data.containsKey('headers_json')) {
+      context.handle(
+        _headersJsonMeta,
+        headersJson.isAcceptableOrUnknown(
+          data['headers_json']!,
+          _headersJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('variables_json')) {
+      context.handle(
+        _variablesJsonMeta,
+        variablesJson.isAcceptableOrUnknown(
+          data['variables_json']!,
+          _variablesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('auth_json')) {
+      context.handle(
+        _authJsonMeta,
+        authJson.isAcceptableOrUnknown(data['auth_json']!, _authJsonMeta),
+      );
+    }
+    if (data.containsKey('scripts_json')) {
+      context.handle(
+        _scriptsJsonMeta,
+        scriptsJson.isAcceptableOrUnknown(
+          data['scripts_json']!,
+          _scriptsJsonMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {folderId};
+  @override
+  FolderDefault map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FolderDefault(
+      folderId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}folder_id'],
+      )!,
+      headersJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}headers_json'],
+      )!,
+      variablesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}variables_json'],
+      )!,
+      authJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}auth_json'],
+      )!,
+      scriptsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scripts_json'],
+      )!,
+    );
+  }
+
+  @override
+  $FolderDefaultsTable createAlias(String alias) {
+    return $FolderDefaultsTable(attachedDatabase, alias);
+  }
+}
+
+class FolderDefault extends DataClass implements Insertable<FolderDefault> {
+  final int folderId;
+  final String headersJson;
+  final String variablesJson;
+  final String authJson;
+  final String scriptsJson;
+  const FolderDefault({
+    required this.folderId,
+    required this.headersJson,
+    required this.variablesJson,
+    required this.authJson,
+    required this.scriptsJson,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['folder_id'] = Variable<int>(folderId);
+    map['headers_json'] = Variable<String>(headersJson);
+    map['variables_json'] = Variable<String>(variablesJson);
+    map['auth_json'] = Variable<String>(authJson);
+    map['scripts_json'] = Variable<String>(scriptsJson);
+    return map;
+  }
+
+  FolderDefaultsCompanion toCompanion(bool nullToAbsent) {
+    return FolderDefaultsCompanion(
+      folderId: Value(folderId),
+      headersJson: Value(headersJson),
+      variablesJson: Value(variablesJson),
+      authJson: Value(authJson),
+      scriptsJson: Value(scriptsJson),
+    );
+  }
+
+  factory FolderDefault.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FolderDefault(
+      folderId: serializer.fromJson<int>(json['folderId']),
+      headersJson: serializer.fromJson<String>(json['headersJson']),
+      variablesJson: serializer.fromJson<String>(json['variablesJson']),
+      authJson: serializer.fromJson<String>(json['authJson']),
+      scriptsJson: serializer.fromJson<String>(json['scriptsJson']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'folderId': serializer.toJson<int>(folderId),
+      'headersJson': serializer.toJson<String>(headersJson),
+      'variablesJson': serializer.toJson<String>(variablesJson),
+      'authJson': serializer.toJson<String>(authJson),
+      'scriptsJson': serializer.toJson<String>(scriptsJson),
+    };
+  }
+
+  FolderDefault copyWith({
+    int? folderId,
+    String? headersJson,
+    String? variablesJson,
+    String? authJson,
+    String? scriptsJson,
+  }) => FolderDefault(
+    folderId: folderId ?? this.folderId,
+    headersJson: headersJson ?? this.headersJson,
+    variablesJson: variablesJson ?? this.variablesJson,
+    authJson: authJson ?? this.authJson,
+    scriptsJson: scriptsJson ?? this.scriptsJson,
+  );
+  FolderDefault copyWithCompanion(FolderDefaultsCompanion data) {
+    return FolderDefault(
+      folderId: data.folderId.present ? data.folderId.value : this.folderId,
+      headersJson: data.headersJson.present
+          ? data.headersJson.value
+          : this.headersJson,
+      variablesJson: data.variablesJson.present
+          ? data.variablesJson.value
+          : this.variablesJson,
+      authJson: data.authJson.present ? data.authJson.value : this.authJson,
+      scriptsJson: data.scriptsJson.present
+          ? data.scriptsJson.value
+          : this.scriptsJson,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FolderDefault(')
+          ..write('folderId: $folderId, ')
+          ..write('headersJson: $headersJson, ')
+          ..write('variablesJson: $variablesJson, ')
+          ..write('authJson: $authJson, ')
+          ..write('scriptsJson: $scriptsJson')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(folderId, headersJson, variablesJson, authJson, scriptsJson);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FolderDefault &&
+          other.folderId == this.folderId &&
+          other.headersJson == this.headersJson &&
+          other.variablesJson == this.variablesJson &&
+          other.authJson == this.authJson &&
+          other.scriptsJson == this.scriptsJson);
+}
+
+class FolderDefaultsCompanion extends UpdateCompanion<FolderDefault> {
+  final Value<int> folderId;
+  final Value<String> headersJson;
+  final Value<String> variablesJson;
+  final Value<String> authJson;
+  final Value<String> scriptsJson;
+  const FolderDefaultsCompanion({
+    this.folderId = const Value.absent(),
+    this.headersJson = const Value.absent(),
+    this.variablesJson = const Value.absent(),
+    this.authJson = const Value.absent(),
+    this.scriptsJson = const Value.absent(),
+  });
+  FolderDefaultsCompanion.insert({
+    this.folderId = const Value.absent(),
+    this.headersJson = const Value.absent(),
+    this.variablesJson = const Value.absent(),
+    this.authJson = const Value.absent(),
+    this.scriptsJson = const Value.absent(),
+  });
+  static Insertable<FolderDefault> custom({
+    Expression<int>? folderId,
+    Expression<String>? headersJson,
+    Expression<String>? variablesJson,
+    Expression<String>? authJson,
+    Expression<String>? scriptsJson,
+  }) {
+    return RawValuesInsertable({
+      if (folderId != null) 'folder_id': folderId,
+      if (headersJson != null) 'headers_json': headersJson,
+      if (variablesJson != null) 'variables_json': variablesJson,
+      if (authJson != null) 'auth_json': authJson,
+      if (scriptsJson != null) 'scripts_json': scriptsJson,
+    });
+  }
+
+  FolderDefaultsCompanion copyWith({
+    Value<int>? folderId,
+    Value<String>? headersJson,
+    Value<String>? variablesJson,
+    Value<String>? authJson,
+    Value<String>? scriptsJson,
+  }) {
+    return FolderDefaultsCompanion(
+      folderId: folderId ?? this.folderId,
+      headersJson: headersJson ?? this.headersJson,
+      variablesJson: variablesJson ?? this.variablesJson,
+      authJson: authJson ?? this.authJson,
+      scriptsJson: scriptsJson ?? this.scriptsJson,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (folderId.present) {
+      map['folder_id'] = Variable<int>(folderId.value);
+    }
+    if (headersJson.present) {
+      map['headers_json'] = Variable<String>(headersJson.value);
+    }
+    if (variablesJson.present) {
+      map['variables_json'] = Variable<String>(variablesJson.value);
+    }
+    if (authJson.present) {
+      map['auth_json'] = Variable<String>(authJson.value);
+    }
+    if (scriptsJson.present) {
+      map['scripts_json'] = Variable<String>(scriptsJson.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FolderDefaultsCompanion(')
+          ..write('folderId: $folderId, ')
+          ..write('headersJson: $headersJson, ')
+          ..write('variablesJson: $variablesJson, ')
+          ..write('authJson: $authJson, ')
+          ..write('scriptsJson: $scriptsJson')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $CollectionDefaultsTable extends CollectionDefaults
+    with TableInfo<$CollectionDefaultsTable, CollectionDefault> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CollectionDefaultsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _collectionIdMeta = const VerificationMeta(
+    'collectionId',
+  );
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+    'collection_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES collections (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _headersJsonMeta = const VerificationMeta(
+    'headersJson',
+  );
+  @override
+  late final GeneratedColumn<String> headersJson = GeneratedColumn<String>(
+    'headers_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _scriptsJsonMeta = const VerificationMeta(
+    'scriptsJson',
+  );
+  @override
+  late final GeneratedColumn<String> scriptsJson = GeneratedColumn<String>(
+    'scripts_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    collectionId,
+    headersJson,
+    scriptsJson,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'collection_defaults';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<CollectionDefault> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('collection_id')) {
+      context.handle(
+        _collectionIdMeta,
+        collectionId.isAcceptableOrUnknown(
+          data['collection_id']!,
+          _collectionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('headers_json')) {
+      context.handle(
+        _headersJsonMeta,
+        headersJson.isAcceptableOrUnknown(
+          data['headers_json']!,
+          _headersJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('scripts_json')) {
+      context.handle(
+        _scriptsJsonMeta,
+        scriptsJson.isAcceptableOrUnknown(
+          data['scripts_json']!,
+          _scriptsJsonMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {collectionId};
+  @override
+  CollectionDefault map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CollectionDefault(
+      collectionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}collection_id'],
+      )!,
+      headersJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}headers_json'],
+      )!,
+      scriptsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scripts_json'],
+      )!,
+    );
+  }
+
+  @override
+  $CollectionDefaultsTable createAlias(String alias) {
+    return $CollectionDefaultsTable(attachedDatabase, alias);
+  }
+}
+
+class CollectionDefault extends DataClass
+    implements Insertable<CollectionDefault> {
+  final int collectionId;
+  final String headersJson;
+  final String scriptsJson;
+  const CollectionDefault({
+    required this.collectionId,
+    required this.headersJson,
+    required this.scriptsJson,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['collection_id'] = Variable<int>(collectionId);
+    map['headers_json'] = Variable<String>(headersJson);
+    map['scripts_json'] = Variable<String>(scriptsJson);
+    return map;
+  }
+
+  CollectionDefaultsCompanion toCompanion(bool nullToAbsent) {
+    return CollectionDefaultsCompanion(
+      collectionId: Value(collectionId),
+      headersJson: Value(headersJson),
+      scriptsJson: Value(scriptsJson),
+    );
+  }
+
+  factory CollectionDefault.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CollectionDefault(
+      collectionId: serializer.fromJson<int>(json['collectionId']),
+      headersJson: serializer.fromJson<String>(json['headersJson']),
+      scriptsJson: serializer.fromJson<String>(json['scriptsJson']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'collectionId': serializer.toJson<int>(collectionId),
+      'headersJson': serializer.toJson<String>(headersJson),
+      'scriptsJson': serializer.toJson<String>(scriptsJson),
+    };
+  }
+
+  CollectionDefault copyWith({
+    int? collectionId,
+    String? headersJson,
+    String? scriptsJson,
+  }) => CollectionDefault(
+    collectionId: collectionId ?? this.collectionId,
+    headersJson: headersJson ?? this.headersJson,
+    scriptsJson: scriptsJson ?? this.scriptsJson,
+  );
+  CollectionDefault copyWithCompanion(CollectionDefaultsCompanion data) {
+    return CollectionDefault(
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      headersJson: data.headersJson.present
+          ? data.headersJson.value
+          : this.headersJson,
+      scriptsJson: data.scriptsJson.present
+          ? data.scriptsJson.value
+          : this.scriptsJson,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionDefault(')
+          ..write('collectionId: $collectionId, ')
+          ..write('headersJson: $headersJson, ')
+          ..write('scriptsJson: $scriptsJson')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(collectionId, headersJson, scriptsJson);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CollectionDefault &&
+          other.collectionId == this.collectionId &&
+          other.headersJson == this.headersJson &&
+          other.scriptsJson == this.scriptsJson);
+}
+
+class CollectionDefaultsCompanion extends UpdateCompanion<CollectionDefault> {
+  final Value<int> collectionId;
+  final Value<String> headersJson;
+  final Value<String> scriptsJson;
+  const CollectionDefaultsCompanion({
+    this.collectionId = const Value.absent(),
+    this.headersJson = const Value.absent(),
+    this.scriptsJson = const Value.absent(),
+  });
+  CollectionDefaultsCompanion.insert({
+    this.collectionId = const Value.absent(),
+    this.headersJson = const Value.absent(),
+    this.scriptsJson = const Value.absent(),
+  });
+  static Insertable<CollectionDefault> custom({
+    Expression<int>? collectionId,
+    Expression<String>? headersJson,
+    Expression<String>? scriptsJson,
+  }) {
+    return RawValuesInsertable({
+      if (collectionId != null) 'collection_id': collectionId,
+      if (headersJson != null) 'headers_json': headersJson,
+      if (scriptsJson != null) 'scripts_json': scriptsJson,
+    });
+  }
+
+  CollectionDefaultsCompanion copyWith({
+    Value<int>? collectionId,
+    Value<String>? headersJson,
+    Value<String>? scriptsJson,
+  }) {
+    return CollectionDefaultsCompanion(
+      collectionId: collectionId ?? this.collectionId,
+      headersJson: headersJson ?? this.headersJson,
+      scriptsJson: scriptsJson ?? this.scriptsJson,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (headersJson.present) {
+      map['headers_json'] = Variable<String>(headersJson.value);
+    }
+    if (scriptsJson.present) {
+      map['scripts_json'] = Variable<String>(scriptsJson.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionDefaultsCompanion(')
+          ..write('collectionId: $collectionId, ')
+          ..write('headersJson: $headersJson, ')
+          ..write('scriptsJson: $scriptsJson')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $HistoryPayloadsTable extends HistoryPayloads
+    with TableInfo<$HistoryPayloadsTable, HistoryPayload> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $HistoryPayloadsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _historyIdMeta = const VerificationMeta(
+    'historyId',
+  );
+  @override
+  late final GeneratedColumn<int> historyId = GeneratedColumn<int>(
+    'history_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES history_entries (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _requestJsonMeta = const VerificationMeta(
+    'requestJson',
+  );
+  @override
+  late final GeneratedColumn<String> requestJson = GeneratedColumn<String>(
+    'request_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _responseTextMeta = const VerificationMeta(
+    'responseText',
+  );
+  @override
+  late final GeneratedColumn<String> responseText = GeneratedColumn<String>(
+    'response_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _responseContentTypeMeta =
+      const VerificationMeta('responseContentType');
+  @override
+  late final GeneratedColumn<String> responseContentType =
+      GeneratedColumn<String>(
+        'response_content_type',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _responseTruncatedMeta = const VerificationMeta(
+    'responseTruncated',
+  );
+  @override
+  late final GeneratedColumn<bool> responseTruncated = GeneratedColumn<bool>(
+    'response_truncated',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("response_truncated" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _searchTextMeta = const VerificationMeta(
+    'searchText',
+  );
+  @override
+  late final GeneratedColumn<String> searchText = GeneratedColumn<String>(
+    'search_text',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    historyId,
+    requestJson,
+    responseText,
+    responseContentType,
+    responseTruncated,
+    searchText,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'history_payloads';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<HistoryPayload> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('history_id')) {
+      context.handle(
+        _historyIdMeta,
+        historyId.isAcceptableOrUnknown(data['history_id']!, _historyIdMeta),
+      );
+    }
+    if (data.containsKey('request_json')) {
+      context.handle(
+        _requestJsonMeta,
+        requestJson.isAcceptableOrUnknown(
+          data['request_json']!,
+          _requestJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('response_text')) {
+      context.handle(
+        _responseTextMeta,
+        responseText.isAcceptableOrUnknown(
+          data['response_text']!,
+          _responseTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('response_content_type')) {
+      context.handle(
+        _responseContentTypeMeta,
+        responseContentType.isAcceptableOrUnknown(
+          data['response_content_type']!,
+          _responseContentTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('response_truncated')) {
+      context.handle(
+        _responseTruncatedMeta,
+        responseTruncated.isAcceptableOrUnknown(
+          data['response_truncated']!,
+          _responseTruncatedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('search_text')) {
+      context.handle(
+        _searchTextMeta,
+        searchText.isAcceptableOrUnknown(data['search_text']!, _searchTextMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {historyId};
+  @override
+  HistoryPayload map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return HistoryPayload(
+      historyId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}history_id'],
+      )!,
+      requestJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}request_json'],
+      )!,
+      responseText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}response_text'],
+      ),
+      responseContentType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}response_content_type'],
+      ),
+      responseTruncated: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}response_truncated'],
+      )!,
+      searchText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}search_text'],
+      )!,
+    );
+  }
+
+  @override
+  $HistoryPayloadsTable createAlias(String alias) {
+    return $HistoryPayloadsTable(attachedDatabase, alias);
+  }
+}
+
+class HistoryPayload extends DataClass implements Insertable<HistoryPayload> {
+  final int historyId;
+
+  /// The request snapshot (method, url, headers, params, body, auth type, name, collection).
+  final String requestJson;
+  final String? responseText;
+  final String? responseContentType;
+
+  /// The response was longer than what is kept.
+  final bool responseTruncated;
+
+  /// Lower-cased method, url, name, status and a body excerpt: what the search box matches.
+  final String searchText;
+  const HistoryPayload({
+    required this.historyId,
+    required this.requestJson,
+    this.responseText,
+    this.responseContentType,
+    required this.responseTruncated,
+    required this.searchText,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['history_id'] = Variable<int>(historyId);
+    map['request_json'] = Variable<String>(requestJson);
+    if (!nullToAbsent || responseText != null) {
+      map['response_text'] = Variable<String>(responseText);
+    }
+    if (!nullToAbsent || responseContentType != null) {
+      map['response_content_type'] = Variable<String>(responseContentType);
+    }
+    map['response_truncated'] = Variable<bool>(responseTruncated);
+    map['search_text'] = Variable<String>(searchText);
+    return map;
+  }
+
+  HistoryPayloadsCompanion toCompanion(bool nullToAbsent) {
+    return HistoryPayloadsCompanion(
+      historyId: Value(historyId),
+      requestJson: Value(requestJson),
+      responseText: responseText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(responseText),
+      responseContentType: responseContentType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(responseContentType),
+      responseTruncated: Value(responseTruncated),
+      searchText: Value(searchText),
+    );
+  }
+
+  factory HistoryPayload.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return HistoryPayload(
+      historyId: serializer.fromJson<int>(json['historyId']),
+      requestJson: serializer.fromJson<String>(json['requestJson']),
+      responseText: serializer.fromJson<String?>(json['responseText']),
+      responseContentType: serializer.fromJson<String?>(
+        json['responseContentType'],
+      ),
+      responseTruncated: serializer.fromJson<bool>(json['responseTruncated']),
+      searchText: serializer.fromJson<String>(json['searchText']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'historyId': serializer.toJson<int>(historyId),
+      'requestJson': serializer.toJson<String>(requestJson),
+      'responseText': serializer.toJson<String?>(responseText),
+      'responseContentType': serializer.toJson<String?>(responseContentType),
+      'responseTruncated': serializer.toJson<bool>(responseTruncated),
+      'searchText': serializer.toJson<String>(searchText),
+    };
+  }
+
+  HistoryPayload copyWith({
+    int? historyId,
+    String? requestJson,
+    Value<String?> responseText = const Value.absent(),
+    Value<String?> responseContentType = const Value.absent(),
+    bool? responseTruncated,
+    String? searchText,
+  }) => HistoryPayload(
+    historyId: historyId ?? this.historyId,
+    requestJson: requestJson ?? this.requestJson,
+    responseText: responseText.present ? responseText.value : this.responseText,
+    responseContentType: responseContentType.present
+        ? responseContentType.value
+        : this.responseContentType,
+    responseTruncated: responseTruncated ?? this.responseTruncated,
+    searchText: searchText ?? this.searchText,
+  );
+  HistoryPayload copyWithCompanion(HistoryPayloadsCompanion data) {
+    return HistoryPayload(
+      historyId: data.historyId.present ? data.historyId.value : this.historyId,
+      requestJson: data.requestJson.present
+          ? data.requestJson.value
+          : this.requestJson,
+      responseText: data.responseText.present
+          ? data.responseText.value
+          : this.responseText,
+      responseContentType: data.responseContentType.present
+          ? data.responseContentType.value
+          : this.responseContentType,
+      responseTruncated: data.responseTruncated.present
+          ? data.responseTruncated.value
+          : this.responseTruncated,
+      searchText: data.searchText.present
+          ? data.searchText.value
+          : this.searchText,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('HistoryPayload(')
+          ..write('historyId: $historyId, ')
+          ..write('requestJson: $requestJson, ')
+          ..write('responseText: $responseText, ')
+          ..write('responseContentType: $responseContentType, ')
+          ..write('responseTruncated: $responseTruncated, ')
+          ..write('searchText: $searchText')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    historyId,
+    requestJson,
+    responseText,
+    responseContentType,
+    responseTruncated,
+    searchText,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is HistoryPayload &&
+          other.historyId == this.historyId &&
+          other.requestJson == this.requestJson &&
+          other.responseText == this.responseText &&
+          other.responseContentType == this.responseContentType &&
+          other.responseTruncated == this.responseTruncated &&
+          other.searchText == this.searchText);
+}
+
+class HistoryPayloadsCompanion extends UpdateCompanion<HistoryPayload> {
+  final Value<int> historyId;
+  final Value<String> requestJson;
+  final Value<String?> responseText;
+  final Value<String?> responseContentType;
+  final Value<bool> responseTruncated;
+  final Value<String> searchText;
+  const HistoryPayloadsCompanion({
+    this.historyId = const Value.absent(),
+    this.requestJson = const Value.absent(),
+    this.responseText = const Value.absent(),
+    this.responseContentType = const Value.absent(),
+    this.responseTruncated = const Value.absent(),
+    this.searchText = const Value.absent(),
+  });
+  HistoryPayloadsCompanion.insert({
+    this.historyId = const Value.absent(),
+    this.requestJson = const Value.absent(),
+    this.responseText = const Value.absent(),
+    this.responseContentType = const Value.absent(),
+    this.responseTruncated = const Value.absent(),
+    this.searchText = const Value.absent(),
+  });
+  static Insertable<HistoryPayload> custom({
+    Expression<int>? historyId,
+    Expression<String>? requestJson,
+    Expression<String>? responseText,
+    Expression<String>? responseContentType,
+    Expression<bool>? responseTruncated,
+    Expression<String>? searchText,
+  }) {
+    return RawValuesInsertable({
+      if (historyId != null) 'history_id': historyId,
+      if (requestJson != null) 'request_json': requestJson,
+      if (responseText != null) 'response_text': responseText,
+      if (responseContentType != null)
+        'response_content_type': responseContentType,
+      if (responseTruncated != null) 'response_truncated': responseTruncated,
+      if (searchText != null) 'search_text': searchText,
+    });
+  }
+
+  HistoryPayloadsCompanion copyWith({
+    Value<int>? historyId,
+    Value<String>? requestJson,
+    Value<String?>? responseText,
+    Value<String?>? responseContentType,
+    Value<bool>? responseTruncated,
+    Value<String>? searchText,
+  }) {
+    return HistoryPayloadsCompanion(
+      historyId: historyId ?? this.historyId,
+      requestJson: requestJson ?? this.requestJson,
+      responseText: responseText ?? this.responseText,
+      responseContentType: responseContentType ?? this.responseContentType,
+      responseTruncated: responseTruncated ?? this.responseTruncated,
+      searchText: searchText ?? this.searchText,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (historyId.present) {
+      map['history_id'] = Variable<int>(historyId.value);
+    }
+    if (requestJson.present) {
+      map['request_json'] = Variable<String>(requestJson.value);
+    }
+    if (responseText.present) {
+      map['response_text'] = Variable<String>(responseText.value);
+    }
+    if (responseContentType.present) {
+      map['response_content_type'] = Variable<String>(
+        responseContentType.value,
+      );
+    }
+    if (responseTruncated.present) {
+      map['response_truncated'] = Variable<bool>(responseTruncated.value);
+    }
+    if (searchText.present) {
+      map['search_text'] = Variable<String>(searchText.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('HistoryPayloadsCompanion(')
+          ..write('historyId: $historyId, ')
+          ..write('requestJson: $requestJson, ')
+          ..write('responseText: $responseText, ')
+          ..write('responseContentType: $responseContentType, ')
+          ..write('responseTruncated: $responseTruncated, ')
+          ..write('searchText: $searchText')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -6827,6 +7912,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $RequestSettingEntriesTable(this);
   late final $EntityDocsTable entityDocs = $EntityDocsTable(this);
   late final $EntityTagsTable entityTags = $EntityTagsTable(this);
+  late final $FolderDefaultsTable folderDefaults = $FolderDefaultsTable(this);
+  late final $CollectionDefaultsTable collectionDefaults =
+      $CollectionDefaultsTable(this);
+  late final $HistoryPayloadsTable historyPayloads = $HistoryPayloadsTable(
+    this,
+  );
   late final Index collectionVariablesCollectionId = Index(
     'collection_variables_collection_id',
     'CREATE INDEX collection_variables_collection_id ON collection_variables (collection_id)',
@@ -6873,6 +7964,14 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final EntityDocsDao entityDocsDao = EntityDocsDao(this as AppDatabase);
   late final EntityTagsDao entityTagsDao = EntityTagsDao(this as AppDatabase);
+  late final FolderDefaultsDao folderDefaultsDao = FolderDefaultsDao(
+    this as AppDatabase,
+  );
+  late final CollectionDefaultsDao collectionDefaultsDao =
+      CollectionDefaultsDao(this as AppDatabase);
+  late final HistoryPayloadsDao historyPayloadsDao = HistoryPayloadsDao(
+    this as AppDatabase,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -6896,6 +7995,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     requestSettingEntries,
     entityDocs,
     entityTags,
+    folderDefaults,
+    collectionDefaults,
+    historyPayloads,
     collectionVariablesCollectionId,
     responseExamplesRequestId,
     entityUidsUid,
@@ -6986,6 +8088,27 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('request_setting_entries', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'folders',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('folder_defaults', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'collections',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('collection_defaults', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'history_entries',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('history_payloads', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -7102,6 +8225,27 @@ final class $$CollectionsTableReferences
     ).filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_gitLinksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$CollectionDefaultsTable, List<CollectionDefault>>
+  _collectionDefaultsRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.collectionDefaults,
+        aliasName: 'collections__id__collection_defaults__collection_id',
+      );
+
+  $$CollectionDefaultsTableProcessedTableManager get collectionDefaultsRefs {
+    final manager = $$CollectionDefaultsTableTableManager(
+      $_db,
+      $_db.collectionDefaults,
+    ).filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _collectionDefaultsRefsTable($_db),
+    );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -7253,6 +8397,31 @@ class $$CollectionsTableFilterComposer
           }) => $$GitLinksTableFilterComposer(
             $db: $db,
             $table: $db.gitLinks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> collectionDefaultsRefs(
+    Expression<bool> Function($$CollectionDefaultsTableFilterComposer f) f,
+  ) {
+    final $$CollectionDefaultsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.collectionDefaults,
+      getReferencedColumn: (t) => t.collectionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CollectionDefaultsTableFilterComposer(
+            $db: $db,
+            $table: $db.collectionDefaults,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -7441,6 +8610,32 @@ class $$CollectionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> collectionDefaultsRefs<T extends Object>(
+    Expression<T> Function($$CollectionDefaultsTableAnnotationComposer a) f,
+  ) {
+    final $$CollectionDefaultsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.collectionDefaults,
+          getReferencedColumn: (t) => t.collectionId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$CollectionDefaultsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.collectionDefaults,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$CollectionsTableTableManager
@@ -7462,6 +8657,7 @@ class $$CollectionsTableTableManager
             bool collectionVariablesRefs,
             bool collectionAuthRefs,
             bool gitLinksRefs,
+            bool collectionDefaultsRefs,
           })
         > {
   $$CollectionsTableTableManager(_$AppDatabase db, $CollectionsTable table)
@@ -7514,6 +8710,7 @@ class $$CollectionsTableTableManager
                 collectionVariablesRefs = false,
                 collectionAuthRefs = false,
                 gitLinksRefs = false,
+                collectionDefaultsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -7523,6 +8720,7 @@ class $$CollectionsTableTableManager
                     if (collectionVariablesRefs) db.collectionVariables,
                     if (collectionAuthRefs) db.collectionAuth,
                     if (gitLinksRefs) db.gitLinks,
+                    if (collectionDefaultsRefs) db.collectionDefaults,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -7632,6 +8830,27 @@ class $$CollectionsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (collectionDefaultsRefs)
+                        await $_getPrefetchedData<
+                          Collection,
+                          $CollectionsTable,
+                          CollectionDefault
+                        >(
+                          currentTable: table,
+                          referencedTable: $$CollectionsTableReferences
+                              ._collectionDefaultsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$CollectionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).collectionDefaultsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.collectionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -7658,6 +8877,7 @@ typedef $$CollectionsTableProcessedTableManager =
         bool collectionVariablesRefs,
         bool collectionAuthRefs,
         bool gitLinksRefs,
+        bool collectionDefaultsRefs,
       })
     >;
 typedef $$FoldersTableCreateCompanionBuilder =
@@ -7729,6 +8949,24 @@ final class $$FoldersTableReferences
     ).filter((f) => f.folderId.id.sqlEquals($_itemColumn<int>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_requestsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$FolderDefaultsTable, List<FolderDefault>>
+  _folderDefaultsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.folderDefaults,
+    aliasName: 'folders__id__folder_defaults__folder_id',
+  );
+
+  $$FolderDefaultsTableProcessedTableManager get folderDefaultsRefs {
+    final manager = $$FolderDefaultsTableTableManager(
+      $_db,
+      $_db.folderDefaults,
+    ).filter((f) => f.folderId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_folderDefaultsRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -7821,6 +9059,31 @@ class $$FoldersTableFilterComposer
           }) => $$RequestsTableFilterComposer(
             $db: $db,
             $table: $db.requests,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> folderDefaultsRefs(
+    Expression<bool> Function($$FolderDefaultsTableFilterComposer f) f,
+  ) {
+    final $$FolderDefaultsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.folderDefaults,
+      getReferencedColumn: (t) => t.folderId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FolderDefaultsTableFilterComposer(
+            $db: $db,
+            $table: $db.folderDefaults,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -7992,6 +9255,31 @@ class $$FoldersTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> folderDefaultsRefs<T extends Object>(
+    Expression<T> Function($$FolderDefaultsTableAnnotationComposer a) f,
+  ) {
+    final $$FolderDefaultsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.folderDefaults,
+      getReferencedColumn: (t) => t.folderId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FolderDefaultsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.folderDefaults,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$FoldersTableTableManager
@@ -8011,6 +9299,7 @@ class $$FoldersTableTableManager
             bool collectionId,
             bool parentFolderId,
             bool requestsRefs,
+            bool folderDefaultsRefs,
           })
         > {
   $$FoldersTableTableManager(_$AppDatabase db, $FoldersTable table)
@@ -8065,10 +9354,14 @@ class $$FoldersTableTableManager
                 collectionId = false,
                 parentFolderId = false,
                 requestsRefs = false,
+                folderDefaultsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
-                  explicitlyWatchedTables: [if (requestsRefs) db.requests],
+                  explicitlyWatchedTables: [
+                    if (requestsRefs) db.requests,
+                    if (folderDefaultsRefs) db.folderDefaults,
+                  ],
                   addJoins:
                       <
                         T extends TableManagerState<
@@ -8137,6 +9430,27 @@ class $$FoldersTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (folderDefaultsRefs)
+                        await $_getPrefetchedData<
+                          Folder,
+                          $FoldersTable,
+                          FolderDefault
+                        >(
+                          currentTable: table,
+                          referencedTable: $$FoldersTableReferences
+                              ._folderDefaultsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$FoldersTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).folderDefaultsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.folderId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -8161,6 +9475,7 @@ typedef $$FoldersTableProcessedTableManager =
         bool collectionId,
         bool parentFolderId,
         bool requestsRefs,
+        bool folderDefaultsRefs,
       })
     >;
 typedef $$RequestsTableCreateCompanionBuilder =
@@ -9808,6 +11123,35 @@ typedef $$HistoryEntriesTableUpdateCompanionBuilder =
       Value<DateTime> sentAt,
     });
 
+final class $$HistoryEntriesTableReferences
+    extends BaseReferences<_$AppDatabase, $HistoryEntriesTable, HistoryEntry> {
+  $$HistoryEntriesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static MultiTypedResultKey<$HistoryPayloadsTable, List<HistoryPayload>>
+  _historyPayloadsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.historyPayloads,
+    aliasName: 'history_entries__id__history_payloads__history_id',
+  );
+
+  $$HistoryPayloadsTableProcessedTableManager get historyPayloadsRefs {
+    final manager = $$HistoryPayloadsTableTableManager(
+      $_db,
+      $_db.historyPayloads,
+    ).filter((f) => f.historyId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _historyPayloadsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
 class $$HistoryEntriesTableFilterComposer
     extends Composer<_$AppDatabase, $HistoryEntriesTable> {
   $$HistoryEntriesTableFilterComposer({
@@ -9861,6 +11205,31 @@ class $$HistoryEntriesTableFilterComposer
     column: $table.sentAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> historyPayloadsRefs(
+    Expression<bool> Function($$HistoryPayloadsTableFilterComposer f) f,
+  ) {
+    final $$HistoryPayloadsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.historyPayloads,
+      getReferencedColumn: (t) => t.historyId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HistoryPayloadsTableFilterComposer(
+            $db: $db,
+            $table: $db.historyPayloads,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$HistoryEntriesTableOrderingComposer
@@ -9961,6 +11330,31 @@ class $$HistoryEntriesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get sentAt =>
       $composableBuilder(column: $table.sentAt, builder: (column) => column);
+
+  Expression<T> historyPayloadsRefs<T extends Object>(
+    Expression<T> Function($$HistoryPayloadsTableAnnotationComposer a) f,
+  ) {
+    final $$HistoryPayloadsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.historyPayloads,
+      getReferencedColumn: (t) => t.historyId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HistoryPayloadsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.historyPayloads,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$HistoryEntriesTableTableManager
@@ -9974,12 +11368,9 @@ class $$HistoryEntriesTableTableManager
           $$HistoryEntriesTableAnnotationComposer,
           $$HistoryEntriesTableCreateCompanionBuilder,
           $$HistoryEntriesTableUpdateCompanionBuilder,
-          (
-            HistoryEntry,
-            BaseReferences<_$AppDatabase, $HistoryEntriesTable, HistoryEntry>,
-          ),
+          (HistoryEntry, $$HistoryEntriesTableReferences),
           HistoryEntry,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool historyPayloadsRefs})
         > {
   $$HistoryEntriesTableTableManager(
     _$AppDatabase db,
@@ -10039,9 +11430,45 @@ class $$HistoryEntriesTableTableManager
                 sentAt: sentAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$HistoryEntriesTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({historyPayloadsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (historyPayloadsRefs) db.historyPayloads,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (historyPayloadsRefs)
+                    await $_getPrefetchedData<
+                      HistoryEntry,
+                      $HistoryEntriesTable,
+                      HistoryPayload
+                    >(
+                      currentTable: table,
+                      referencedTable: $$HistoryEntriesTableReferences
+                          ._historyPayloadsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$HistoryEntriesTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).historyPayloadsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.historyId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -10056,12 +11483,9 @@ typedef $$HistoryEntriesTableProcessedTableManager =
       $$HistoryEntriesTableAnnotationComposer,
       $$HistoryEntriesTableCreateCompanionBuilder,
       $$HistoryEntriesTableUpdateCompanionBuilder,
-      (
-        HistoryEntry,
-        BaseReferences<_$AppDatabase, $HistoryEntriesTable, HistoryEntry>,
-      ),
+      (HistoryEntry, $$HistoryEntriesTableReferences),
       HistoryEntry,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool historyPayloadsRefs})
     >;
 typedef $$GlobalVariablesTableCreateCompanionBuilder =
     GlobalVariablesCompanion Function({
@@ -13233,6 +14657,974 @@ typedef $$EntityTagsTableProcessedTableManager =
       EntityTag,
       PrefetchHooks Function()
     >;
+typedef $$FolderDefaultsTableCreateCompanionBuilder =
+    FolderDefaultsCompanion Function({
+      Value<int> folderId,
+      Value<String> headersJson,
+      Value<String> variablesJson,
+      Value<String> authJson,
+      Value<String> scriptsJson,
+    });
+typedef $$FolderDefaultsTableUpdateCompanionBuilder =
+    FolderDefaultsCompanion Function({
+      Value<int> folderId,
+      Value<String> headersJson,
+      Value<String> variablesJson,
+      Value<String> authJson,
+      Value<String> scriptsJson,
+    });
+
+final class $$FolderDefaultsTableReferences
+    extends BaseReferences<_$AppDatabase, $FolderDefaultsTable, FolderDefault> {
+  $$FolderDefaultsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $FoldersTable _folderIdTable(_$AppDatabase db) =>
+      db.folders.createAlias('folder_defaults__folder_id__folders__id');
+
+  $$FoldersTableProcessedTableManager get folderId {
+    final $_column = $_itemColumn<int>('folder_id')!;
+
+    final manager = $$FoldersTableTableManager(
+      $_db,
+      $_db.folders,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_folderIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$FolderDefaultsTableFilterComposer
+    extends Composer<_$AppDatabase, $FolderDefaultsTable> {
+  $$FolderDefaultsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get headersJson => $composableBuilder(
+    column: $table.headersJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get variablesJson => $composableBuilder(
+    column: $table.variablesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authJson => $composableBuilder(
+    column: $table.authJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scriptsJson => $composableBuilder(
+    column: $table.scriptsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$FoldersTableFilterComposer get folderId {
+    final $$FoldersTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.folderId,
+      referencedTable: $db.folders,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FoldersTableFilterComposer(
+            $db: $db,
+            $table: $db.folders,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FolderDefaultsTableOrderingComposer
+    extends Composer<_$AppDatabase, $FolderDefaultsTable> {
+  $$FolderDefaultsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get headersJson => $composableBuilder(
+    column: $table.headersJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get variablesJson => $composableBuilder(
+    column: $table.variablesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authJson => $composableBuilder(
+    column: $table.authJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get scriptsJson => $composableBuilder(
+    column: $table.scriptsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$FoldersTableOrderingComposer get folderId {
+    final $$FoldersTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.folderId,
+      referencedTable: $db.folders,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FoldersTableOrderingComposer(
+            $db: $db,
+            $table: $db.folders,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FolderDefaultsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FolderDefaultsTable> {
+  $$FolderDefaultsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get headersJson => $composableBuilder(
+    column: $table.headersJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get variablesJson => $composableBuilder(
+    column: $table.variablesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get authJson =>
+      $composableBuilder(column: $table.authJson, builder: (column) => column);
+
+  GeneratedColumn<String> get scriptsJson => $composableBuilder(
+    column: $table.scriptsJson,
+    builder: (column) => column,
+  );
+
+  $$FoldersTableAnnotationComposer get folderId {
+    final $$FoldersTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.folderId,
+      referencedTable: $db.folders,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FoldersTableAnnotationComposer(
+            $db: $db,
+            $table: $db.folders,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FolderDefaultsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FolderDefaultsTable,
+          FolderDefault,
+          $$FolderDefaultsTableFilterComposer,
+          $$FolderDefaultsTableOrderingComposer,
+          $$FolderDefaultsTableAnnotationComposer,
+          $$FolderDefaultsTableCreateCompanionBuilder,
+          $$FolderDefaultsTableUpdateCompanionBuilder,
+          (FolderDefault, $$FolderDefaultsTableReferences),
+          FolderDefault,
+          PrefetchHooks Function({bool folderId})
+        > {
+  $$FolderDefaultsTableTableManager(
+    _$AppDatabase db,
+    $FolderDefaultsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FolderDefaultsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FolderDefaultsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FolderDefaultsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> folderId = const Value.absent(),
+                Value<String> headersJson = const Value.absent(),
+                Value<String> variablesJson = const Value.absent(),
+                Value<String> authJson = const Value.absent(),
+                Value<String> scriptsJson = const Value.absent(),
+              }) => FolderDefaultsCompanion(
+                folderId: folderId,
+                headersJson: headersJson,
+                variablesJson: variablesJson,
+                authJson: authJson,
+                scriptsJson: scriptsJson,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> folderId = const Value.absent(),
+                Value<String> headersJson = const Value.absent(),
+                Value<String> variablesJson = const Value.absent(),
+                Value<String> authJson = const Value.absent(),
+                Value<String> scriptsJson = const Value.absent(),
+              }) => FolderDefaultsCompanion.insert(
+                folderId: folderId,
+                headersJson: headersJson,
+                variablesJson: variablesJson,
+                authJson: authJson,
+                scriptsJson: scriptsJson,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$FolderDefaultsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({folderId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (folderId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.folderId,
+                                referencedTable: $$FolderDefaultsTableReferences
+                                    ._folderIdTable(db),
+                                referencedColumn:
+                                    $$FolderDefaultsTableReferences
+                                        ._folderIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$FolderDefaultsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FolderDefaultsTable,
+      FolderDefault,
+      $$FolderDefaultsTableFilterComposer,
+      $$FolderDefaultsTableOrderingComposer,
+      $$FolderDefaultsTableAnnotationComposer,
+      $$FolderDefaultsTableCreateCompanionBuilder,
+      $$FolderDefaultsTableUpdateCompanionBuilder,
+      (FolderDefault, $$FolderDefaultsTableReferences),
+      FolderDefault,
+      PrefetchHooks Function({bool folderId})
+    >;
+typedef $$CollectionDefaultsTableCreateCompanionBuilder =
+    CollectionDefaultsCompanion Function({
+      Value<int> collectionId,
+      Value<String> headersJson,
+      Value<String> scriptsJson,
+    });
+typedef $$CollectionDefaultsTableUpdateCompanionBuilder =
+    CollectionDefaultsCompanion Function({
+      Value<int> collectionId,
+      Value<String> headersJson,
+      Value<String> scriptsJson,
+    });
+
+final class $$CollectionDefaultsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $CollectionDefaultsTable,
+          CollectionDefault
+        > {
+  $$CollectionDefaultsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $CollectionsTable _collectionIdTable(_$AppDatabase db) => db
+      .collections
+      .createAlias('collection_defaults__collection_id__collections__id');
+
+  $$CollectionsTableProcessedTableManager get collectionId {
+    final $_column = $_itemColumn<int>('collection_id')!;
+
+    final manager = $$CollectionsTableTableManager(
+      $_db,
+      $_db.collections,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$CollectionDefaultsTableFilterComposer
+    extends Composer<_$AppDatabase, $CollectionDefaultsTable> {
+  $$CollectionDefaultsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get headersJson => $composableBuilder(
+    column: $table.headersJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scriptsJson => $composableBuilder(
+    column: $table.scriptsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$CollectionsTableFilterComposer get collectionId {
+    final $$CollectionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.collections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CollectionsTableFilterComposer(
+            $db: $db,
+            $table: $db.collections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$CollectionDefaultsTableOrderingComposer
+    extends Composer<_$AppDatabase, $CollectionDefaultsTable> {
+  $$CollectionDefaultsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get headersJson => $composableBuilder(
+    column: $table.headersJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get scriptsJson => $composableBuilder(
+    column: $table.scriptsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$CollectionsTableOrderingComposer get collectionId {
+    final $$CollectionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.collections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CollectionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.collections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$CollectionDefaultsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CollectionDefaultsTable> {
+  $$CollectionDefaultsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get headersJson => $composableBuilder(
+    column: $table.headersJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get scriptsJson => $composableBuilder(
+    column: $table.scriptsJson,
+    builder: (column) => column,
+  );
+
+  $$CollectionsTableAnnotationComposer get collectionId {
+    final $$CollectionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.collections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CollectionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.collections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$CollectionDefaultsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $CollectionDefaultsTable,
+          CollectionDefault,
+          $$CollectionDefaultsTableFilterComposer,
+          $$CollectionDefaultsTableOrderingComposer,
+          $$CollectionDefaultsTableAnnotationComposer,
+          $$CollectionDefaultsTableCreateCompanionBuilder,
+          $$CollectionDefaultsTableUpdateCompanionBuilder,
+          (CollectionDefault, $$CollectionDefaultsTableReferences),
+          CollectionDefault,
+          PrefetchHooks Function({bool collectionId})
+        > {
+  $$CollectionDefaultsTableTableManager(
+    _$AppDatabase db,
+    $CollectionDefaultsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CollectionDefaultsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CollectionDefaultsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CollectionDefaultsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> collectionId = const Value.absent(),
+                Value<String> headersJson = const Value.absent(),
+                Value<String> scriptsJson = const Value.absent(),
+              }) => CollectionDefaultsCompanion(
+                collectionId: collectionId,
+                headersJson: headersJson,
+                scriptsJson: scriptsJson,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> collectionId = const Value.absent(),
+                Value<String> headersJson = const Value.absent(),
+                Value<String> scriptsJson = const Value.absent(),
+              }) => CollectionDefaultsCompanion.insert(
+                collectionId: collectionId,
+                headersJson: headersJson,
+                scriptsJson: scriptsJson,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$CollectionDefaultsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({collectionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (collectionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.collectionId,
+                                referencedTable:
+                                    $$CollectionDefaultsTableReferences
+                                        ._collectionIdTable(db),
+                                referencedColumn:
+                                    $$CollectionDefaultsTableReferences
+                                        ._collectionIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$CollectionDefaultsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $CollectionDefaultsTable,
+      CollectionDefault,
+      $$CollectionDefaultsTableFilterComposer,
+      $$CollectionDefaultsTableOrderingComposer,
+      $$CollectionDefaultsTableAnnotationComposer,
+      $$CollectionDefaultsTableCreateCompanionBuilder,
+      $$CollectionDefaultsTableUpdateCompanionBuilder,
+      (CollectionDefault, $$CollectionDefaultsTableReferences),
+      CollectionDefault,
+      PrefetchHooks Function({bool collectionId})
+    >;
+typedef $$HistoryPayloadsTableCreateCompanionBuilder =
+    HistoryPayloadsCompanion Function({
+      Value<int> historyId,
+      Value<String> requestJson,
+      Value<String?> responseText,
+      Value<String?> responseContentType,
+      Value<bool> responseTruncated,
+      Value<String> searchText,
+    });
+typedef $$HistoryPayloadsTableUpdateCompanionBuilder =
+    HistoryPayloadsCompanion Function({
+      Value<int> historyId,
+      Value<String> requestJson,
+      Value<String?> responseText,
+      Value<String?> responseContentType,
+      Value<bool> responseTruncated,
+      Value<String> searchText,
+    });
+
+final class $$HistoryPayloadsTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $HistoryPayloadsTable, HistoryPayload> {
+  $$HistoryPayloadsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $HistoryEntriesTable _historyIdTable(_$AppDatabase db) => db
+      .historyEntries
+      .createAlias('history_payloads__history_id__history_entries__id');
+
+  $$HistoryEntriesTableProcessedTableManager get historyId {
+    final $_column = $_itemColumn<int>('history_id')!;
+
+    final manager = $$HistoryEntriesTableTableManager(
+      $_db,
+      $_db.historyEntries,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_historyIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$HistoryPayloadsTableFilterComposer
+    extends Composer<_$AppDatabase, $HistoryPayloadsTable> {
+  $$HistoryPayloadsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get requestJson => $composableBuilder(
+    column: $table.requestJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get responseText => $composableBuilder(
+    column: $table.responseText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get responseContentType => $composableBuilder(
+    column: $table.responseContentType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get responseTruncated => $composableBuilder(
+    column: $table.responseTruncated,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get searchText => $composableBuilder(
+    column: $table.searchText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$HistoryEntriesTableFilterComposer get historyId {
+    final $$HistoryEntriesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.historyId,
+      referencedTable: $db.historyEntries,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HistoryEntriesTableFilterComposer(
+            $db: $db,
+            $table: $db.historyEntries,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$HistoryPayloadsTableOrderingComposer
+    extends Composer<_$AppDatabase, $HistoryPayloadsTable> {
+  $$HistoryPayloadsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get requestJson => $composableBuilder(
+    column: $table.requestJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get responseText => $composableBuilder(
+    column: $table.responseText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get responseContentType => $composableBuilder(
+    column: $table.responseContentType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get responseTruncated => $composableBuilder(
+    column: $table.responseTruncated,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get searchText => $composableBuilder(
+    column: $table.searchText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$HistoryEntriesTableOrderingComposer get historyId {
+    final $$HistoryEntriesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.historyId,
+      referencedTable: $db.historyEntries,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HistoryEntriesTableOrderingComposer(
+            $db: $db,
+            $table: $db.historyEntries,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$HistoryPayloadsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $HistoryPayloadsTable> {
+  $$HistoryPayloadsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get requestJson => $composableBuilder(
+    column: $table.requestJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get responseText => $composableBuilder(
+    column: $table.responseText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get responseContentType => $composableBuilder(
+    column: $table.responseContentType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get responseTruncated => $composableBuilder(
+    column: $table.responseTruncated,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get searchText => $composableBuilder(
+    column: $table.searchText,
+    builder: (column) => column,
+  );
+
+  $$HistoryEntriesTableAnnotationComposer get historyId {
+    final $$HistoryEntriesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.historyId,
+      referencedTable: $db.historyEntries,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$HistoryEntriesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.historyEntries,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$HistoryPayloadsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $HistoryPayloadsTable,
+          HistoryPayload,
+          $$HistoryPayloadsTableFilterComposer,
+          $$HistoryPayloadsTableOrderingComposer,
+          $$HistoryPayloadsTableAnnotationComposer,
+          $$HistoryPayloadsTableCreateCompanionBuilder,
+          $$HistoryPayloadsTableUpdateCompanionBuilder,
+          (HistoryPayload, $$HistoryPayloadsTableReferences),
+          HistoryPayload,
+          PrefetchHooks Function({bool historyId})
+        > {
+  $$HistoryPayloadsTableTableManager(
+    _$AppDatabase db,
+    $HistoryPayloadsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$HistoryPayloadsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$HistoryPayloadsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$HistoryPayloadsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> historyId = const Value.absent(),
+                Value<String> requestJson = const Value.absent(),
+                Value<String?> responseText = const Value.absent(),
+                Value<String?> responseContentType = const Value.absent(),
+                Value<bool> responseTruncated = const Value.absent(),
+                Value<String> searchText = const Value.absent(),
+              }) => HistoryPayloadsCompanion(
+                historyId: historyId,
+                requestJson: requestJson,
+                responseText: responseText,
+                responseContentType: responseContentType,
+                responseTruncated: responseTruncated,
+                searchText: searchText,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> historyId = const Value.absent(),
+                Value<String> requestJson = const Value.absent(),
+                Value<String?> responseText = const Value.absent(),
+                Value<String?> responseContentType = const Value.absent(),
+                Value<bool> responseTruncated = const Value.absent(),
+                Value<String> searchText = const Value.absent(),
+              }) => HistoryPayloadsCompanion.insert(
+                historyId: historyId,
+                requestJson: requestJson,
+                responseText: responseText,
+                responseContentType: responseContentType,
+                responseTruncated: responseTruncated,
+                searchText: searchText,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$HistoryPayloadsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({historyId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (historyId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.historyId,
+                                referencedTable:
+                                    $$HistoryPayloadsTableReferences
+                                        ._historyIdTable(db),
+                                referencedColumn:
+                                    $$HistoryPayloadsTableReferences
+                                        ._historyIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$HistoryPayloadsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $HistoryPayloadsTable,
+      HistoryPayload,
+      $$HistoryPayloadsTableFilterComposer,
+      $$HistoryPayloadsTableOrderingComposer,
+      $$HistoryPayloadsTableAnnotationComposer,
+      $$HistoryPayloadsTableCreateCompanionBuilder,
+      $$HistoryPayloadsTableUpdateCompanionBuilder,
+      (HistoryPayload, $$HistoryPayloadsTableReferences),
+      HistoryPayload,
+      PrefetchHooks Function({bool historyId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -13273,4 +15665,10 @@ class $AppDatabaseManager {
       $$EntityDocsTableTableManager(_db, _db.entityDocs);
   $$EntityTagsTableTableManager get entityTags =>
       $$EntityTagsTableTableManager(_db, _db.entityTags);
+  $$FolderDefaultsTableTableManager get folderDefaults =>
+      $$FolderDefaultsTableTableManager(_db, _db.folderDefaults);
+  $$CollectionDefaultsTableTableManager get collectionDefaults =>
+      $$CollectionDefaultsTableTableManager(_db, _db.collectionDefaults);
+  $$HistoryPayloadsTableTableManager get historyPayloads =>
+      $$HistoryPayloadsTableTableManager(_db, _db.historyPayloads);
 }

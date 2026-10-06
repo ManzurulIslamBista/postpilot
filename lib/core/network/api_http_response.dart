@@ -4,9 +4,15 @@ import '../constants/app_constants.dart';
 final class ApiHttpResponse {
   final int statusCode;
   final String statusMessage;
+  /// Every header with its values joined by `, ` (RFC 9110 §5.3). `Set-Cookie`
+  /// is the one header that does not survive that: a cookie's `Expires` holds a
+  /// comma of its own, so the cookies are also kept apart in [setCookies].
   final Map<String, String> headers;
   final List<int> bodyBytes;
   final Duration duration;
+
+  /// The `Set-Cookie` header lines of the response, one cookie each.
+  final List<String> setCookies;
 
   /// True when the body was cut off at [ApiRequestOptions.maxResponseBytes];
   /// [bodyBytes] then holds only the first part.
@@ -19,6 +25,7 @@ final class ApiHttpResponse {
     required this.bodyBytes,
     required this.duration,
     this.truncated = false,
+    this.setCookies = const [],
   });
 
   int get sizeBytes => bodyBytes.length;

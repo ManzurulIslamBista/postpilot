@@ -463,7 +463,17 @@ void main() {
       });
 
       test('a column reaches the assertions and extractors that follow the send, above the environment', () async {
-        final harness = _Harness([createUser()], environment: {'host': 'api.test', 'id': 'from-environment'});
+        final harness = _Harness(
+          [createUser()],
+          environment: {
+            'host': 'api.test',
+            'id': 'from-environment',
+            'tenant': 'acme',
+            'greeting': 'hello',
+            'page': '1',
+            'name': 'Ada',
+          },
+        );
         harness.client.bodyFor = (spec) => jsonEncode({
               'echo': {'id': spec.headers['X-Row']},
             });
@@ -486,13 +496,33 @@ void main() {
       });
 
       test('without a data row the tokens are left to the ordinary scopes', () async {
-        final harness = _Harness([createUser()], environment: {'host': 'api.test', 'id': 'from-environment'});
+        final harness = _Harness(
+          [createUser()],
+          environment: {
+            'host': 'api.test',
+            'id': 'from-environment',
+            'tenant': 'acme',
+            'greeting': 'hello',
+            'page': '1',
+            'name': 'Ada',
+          },
+        );
 
         await _runAll(harness);
 
-        expect(harness.client.sent.single.url, 'https://api.test/users/from-environment?page=%7B%7Bpage%7D%7D');
+        expect(harness.client.sent.single.url, 'https://api.test/users/from-environment?page=1');
         expect(harness.client.sent.single.headers['X-Row'], 'from-environment');
-        expect(harness.client.sent.single.headers, contains('X-{{tenant}}'));
+        expect(harness.client.sent.single.headers, contains('X-acme'));
+      });
+
+      test('a column that the row lacks and no scope holds is an undefined variable, by name, and nothing is sent', () async {
+        final harness = _Harness([createUser()], environment: {'host': 'api.test', 'id': 'from-environment'});
+
+        final results = await _runAll(harness);
+
+        expect(results.single.passed, isFalse);
+        expect(results.single.error, allOf(contains('{{tenant}}'), contains('{{page}}'), contains('{{name}}'), contains('{{greeting}}')));
+        expect(harness.client.sent, isEmpty);
       });
     });
 
@@ -575,6 +605,53 @@ void main() {
         expect(result.error, isNot(contains('t0psecret')));
       }
       expect(results.first.error, contains('page=2'));
+    });
+
+    test('a network failure is reported by the one-line summary of its cause, not the library text', () async {
+      final harness = _Harness([_request(1, 'https://api.test/a')]);
+      harness.client.failWith = const NetworkException(
+        'The connection errored: Failed host lookup This indicates an error which most likely cannot be solved by the library.',
+        kind: NetworkErrorKind.connectionError,
+        summary: 'Cannot find the server "api.test" - check the spelling of the host name.',
+      );
+
+      final results = await _runAll(harness);
+
+      expect(results.single.error, 'Cannot find the server "api.test" - check the spelling of the host name.');
+    });
+
+    test('a network failure with no summary is reported by its message, secrets masked', () async {
+      final harness = _Harness([_request(1, 'https://api.test/a')]);
+      harness.client.failWith = const NetworkException('failed for https://api.test/a?api_key=s3cret-key&page=2');
+
+      final results = await _runAll(harness);
+
+      expect(results.single.error, contains('failed for https://api.test/a?api_key='));
+      expect(results.single.error, contains('page=2'));
+      expect(results.single.error, isNot(contains('s3cret-key')));
+    });
+
+    test('an undefined variable fails only its request, by name, and the run carries on', () async {
+      final harness = _Harness([
+        _request(1, 'https://api.test/{{userId}}'),
+        _request(2, 'https://api.test/b'),
+      ]);
+
+      final results = await _runAll(harness);
+
+      expect(results.first.error, contains('{{userId}} (used in the URL) is not defined'));
+      expect(results.first.passed, isFalse);
+      expect(results.last.passed, isTrue);
+      expect(harness.sentUrls, ['https://api.test/b'], reason: 'the broken request never left the app');
+    });
+
+    test('a data row defines what the environment does not', () async {
+      final harness = _Harness([_request(1, 'https://api.test/{{userId}}')]);
+
+      final results = await _runAll(harness, options: const CollectionRunOptions(dataRows: [{'userId': '7'}]));
+
+      expect(results.single.error, isNull);
+      expect(harness.sentUrls, ['https://api.test/7']);
     });
 
     test('a request deleted mid-run is skipped', () async {
@@ -1125,12 +1202,17 @@ final class _FakeApiClient implements ApiClient {
   int Function(ApiRequestSpec spec) statusFor = (_) => 200;
   String Function(ApiRequestSpec spec) bodyFor = (_) => '{"ok":true}';
 
+  /// Thrown by the next sends instead of answering.
+  Object? failWith;
+
   /// While set, a send waits on it (or on its cancel token) before answering.
   Completer<void>? gate;
 
   @override
   Future<ApiHttpResponse> send(ApiRequestSpec spec) async {
     sent.add(spec);
+    final failure = failWith;
+    if (failure != null) throw failure;
     final gate = this.gate;
     if (gate != null) {
       final token = spec.cancelToken;

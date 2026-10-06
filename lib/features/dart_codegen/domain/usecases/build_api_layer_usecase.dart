@@ -1,7 +1,9 @@
+import '../../../../core/enums/auth_type.dart';
 import '../../../../core/enums/body_type.dart';
 import '../../../collections/domain/entities/collection_entity.dart';
 import '../../../import_export/domain/services/collection_loader.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
+import '../../../request_builder/domain/entities/request_auth.dart';
 import '../../../request_builder/domain/repositories/response_example_repository.dart';
 import '../services/api_layer_generator.dart';
 
@@ -17,12 +19,12 @@ final class BuildApiLayerUseCase {
     final loaded = await _loader.load(collectionId);
     final requests = <ApiSpecRequest>[];
     for (final request in loaded.requests) {
-      requests.add(await _spec(request, loaded.folders));
+      requests.add(await _spec(request, loaded.folders, loaded.auth));
     }
     return const ApiLayerGenerator().generate(loaded.collection.name, requests, options: options);
   }
 
-  Future<ApiSpecRequest> _spec(ApiRequestEntity r, List<FolderEntity> folders) async {
+  Future<ApiSpecRequest> _spec(ApiRequestEntity r, List<FolderEntity> folders, RequestAuth? collectionAuth) async {
     final body = r.body;
     final kind = switch (body.type) {
       BodyType.none => ApiBodyKind.none,
@@ -31,12 +33,26 @@ final class BuildApiLayerUseCase {
       BodyType.urlEncoded => ApiBodyKind.urlEncoded,
       BodyType.graphql => ApiBodyKind.graphql,
     };
+    // Auth the request inherits is the collection's. An API key is just a header or a query
+    // parameter; a bearer token is the generated interceptor's job; the rest cannot be generated.
+    final auth = r.auth.resolveInherited(collectionAuth);
+    final apiKey = auth.type == AuthType.apiKey && auth.apiKeyName.isNotEmpty ? (auth.apiKeyName, auth.apiKeyValue) : null;
     return ApiSpecRequest(
       name: r.name,
       method: r.method.label,
       url: r.url,
-      query: [for (final p in r.queryParams) if (p.enabled && p.key.isNotEmpty) (p.key, p.value)],
-      headers: [for (final h in r.headers) if (h.enabled && h.key.isNotEmpty) (h.key, h.value)],
+      query: [
+        for (final p in r.queryParams) if (p.enabled && p.key.isNotEmpty) (p.key, p.value),
+        if (apiKey != null && auth.apiKeyLocation == ApiKeyLocation.query) apiKey,
+      ],
+      headers: [
+        for (final h in r.headers) if (h.enabled && h.key.isNotEmpty) (h.key, h.value),
+        if (apiKey != null && auth.apiKeyLocation == ApiKeyLocation.header) apiKey,
+      ],
+      unsupportedAuth: switch (auth.type) {
+        AuthType.basic || AuthType.digest || AuthType.awsSignatureV4 || AuthType.jwtBearer || AuthType.oauth2 => auth.type.label,
+        _ => null,
+      },
       bodyKind: kind,
       bodyText: body.type == BodyType.graphql ? body.graphqlQuery : body.rawText,
       exampleResponse: await _example(r.id),

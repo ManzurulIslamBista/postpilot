@@ -65,7 +65,11 @@ final class ApiDocsRequest {
 final class ApiDocsField {
   final String key;
   final String value;
-  const ApiDocsField(this.key, this.value);
+
+  /// Where a header the request inherits was set (`folder "Auth"`, `collection "Shop"`); empty for
+  /// the request's own rows.
+  final String origin;
+  const ApiDocsField(this.key, this.value, {this.origin = ''});
 }
 
 /// [typeLabel] is what the reader sees ("JSON", "Form Data"); a body holds

@@ -13,6 +13,11 @@ final class FileWorkplaceStorage implements WorkplaceStorage {
   static const registryFileName = 'workplaces_registry.json';
   static const workspaceFileName = 'workspace.json';
   static const localSecretsFileName = 'workspace.local.json';
+  static const gitIgnoreFileName = '.gitignore';
+
+  /// What the folder's `.gitignore` must list so a `git add .` never takes the secrets.
+  static const _ignoredFiles = [localSecretsFileName, '$localSecretsFileName.tmp'];
+  static const _ignoreHeading = '# PostPilot: secret values of this workspace, never commit them';
 
   final Directory? _registryDirectory;
   final String? _defaultWorkplacesDirectory;
@@ -43,6 +48,25 @@ final class FileWorkplaceStorage implements WorkplaceStorage {
   Future<void> writeRegistry(String json) async {
     final file = await _registry();
     await _writeAtomically(file, json);
+  }
+
+  @override
+  Future<String?> backupRegistry(String json) async {
+    try {
+      final registry = await _registry();
+      final now = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final stamp = '${now.year}${two(now.month)}${two(now.day)}T${two(now.hour)}${two(now.minute)}${two(now.second)}';
+      // The stamp keeps copies apart; a counter handles two failures in the same second.
+      var copy = File('${registry.path}.$stamp.bak');
+      for (var i = 2; copy.existsSync(); i++) {
+        copy = File('${registry.path}.$stamp-$i.bak');
+      }
+      await copy.writeAsString(json, flush: true);
+      return copy.path;
+    } on FileSystemException {
+      return null;
+    }
   }
 
   @override
@@ -77,9 +101,68 @@ final class FileWorkplaceStorage implements WorkplaceStorage {
     try {
       await Directory(folderPath).create(recursive: true);
       await _writeAtomically(file, json);
-    } on FileSystemException {
-      // The secrets file is a convenience: failing to write it must not stop the workspace from saving.
+    } on FileSystemException catch (e) {
+      // Not swallowed: with the secrets gone from workspace.json, losing this file loses them.
+      final reason = e.osError?.message.trim();
+      throw WorkplaceException(
+        'Could not write the secrets file $localSecretsFileName in "$folderPath"${reason == null || reason.isEmpty ? '' : ': $reason'}. '
+        'Check that the folder is writable and the disk is not full.',
+      );
     }
+    await _ignoreSecretsInGit(folderPath);
+  }
+
+  /// Adds [_ignoredFiles] to the folder's `.gitignore` (created when missing), once:
+  /// the lines the user already has are never changed or removed. Best effort: a
+  /// `.gitignore` that cannot be written must not stop the workspace from saving.
+  Future<void> _ignoreSecretsInGit(String folderPath) async {
+    final file = File(p.join(folderPath, gitIgnoreFileName));
+    try {
+      final existing = await file.exists() ? await file.readAsString() : '';
+      final listed = {for (final line in existing.split(RegExp(r'\r?\n'))) line.trim()};
+      final missing = [
+        for (final name in _ignoredFiles)
+          if (!listed.contains(name) && !listed.contains('/$name')) name,
+      ];
+      if (missing.isEmpty) return;
+      final newline = existing.contains('\r\n') ? '\r\n' : '\n';
+      final separator = existing.isEmpty || existing.endsWith('\n') ? '' : newline;
+      final heading = listed.contains(_ignoreHeading) ? '' : '$_ignoreHeading$newline';
+      await file.writeAsString('$existing$separator$heading${missing.join(newline)}$newline', flush: true);
+    } on FileSystemException {
+      // see above
+    }
+  }
+
+  @override
+  Future<bool> isDirty(String folderPath) async => (await _dirtyMarker(folderPath)).exists();
+
+  @override
+  Future<void> setDirty(String folderPath, bool dirty) async {
+    final marker = await _dirtyMarker(folderPath);
+    try {
+      if (dirty) {
+        await marker.parent.create(recursive: true);
+        await marker.writeAsString(folderPath, flush: true);
+      } else if (await marker.exists()) {
+        await marker.delete();
+      }
+    } on FileSystemException catch (e) {
+      final reason = e.osError?.message.trim();
+      throw WorkplaceException('Could not update the save marker${reason == null || reason.isEmpty ? '' : ': $reason'}.');
+    }
+  }
+
+  /// One marker file per workplace folder, in the application-support directory (not in the
+  /// workplace folder, which a sync client may share with other devices).
+  Future<File> _dirtyMarker(String folderPath) async {
+    final registry = await _registry();
+    // FNV-1a over the normalised path: a stable file name (String.hashCode is not stable between runs).
+    var hash = 0x811c9dc5;
+    for (final unit in p.normalize(folderPath.trim()).toLowerCase().codeUnits) {
+      hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+    }
+    return File(p.join(registry.parent.path, 'unsaved', hash.toRadixString(16).padLeft(8, '0')));
   }
 
   @override

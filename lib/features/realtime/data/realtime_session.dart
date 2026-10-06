@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../../../core/network/api_http_response.dart';
 import '../domain/services/sse_parser.dart';
 import 'ws_connect_stub.dart' if (dart.library.io) 'ws_connect_io.dart' as ws;
 
@@ -32,21 +34,52 @@ abstract interface class RealtimeSession {
 /// (custom headers only where the platform allows them: not in a browser);
 /// Server-Sent Events are read as a streamed HTTP response.
 final class RealtimeConnector {
-  const RealtimeConnector();
+  /// Whether a Server-Sent Events stream can be read as it arrives. In a browser
+  /// the request layer (XMLHttpRequest through Dio) only hands over a response
+  /// when it has ended, and an event stream never does, so no event would show up.
+  final bool supportsLiveSse;
 
-  Future<RealtimeSession> connectWebSocket(Uri uri, {Map<String, String> headers = const {}, List<String> protocols = const []}) async {
-    final channel = ws.connect(uri, headers: headers, protocols: protocols);
+  const RealtimeConnector({this.supportsLiveSse = !kIsWeb});
+
+  static const sseUnsupportedMessage = 'Server-Sent Events cannot be streamed live in the browser build: the browser only hands '
+      'over a response once it has ended, and an event stream does not end. Use the desktop or mobile app for SSE.';
+
+  /// [cancel] abandons the attempt while it is still connecting.
+  Future<RealtimeSession> connectWebSocket(
+    Uri uri, {
+    Map<String, String> headers = const {},
+    List<String> protocols = const [],
+    ApiCancelToken? cancel,
+  }) async {
+    final (:channel, :abort) = ws.connect(uri, headers: headers, protocols: protocols);
+    unawaited(cancel?.whenCancelled.then((_) async {
+      abort();
+      try {
+        await channel.sink.close();
+      } catch (_) {
+        // Nothing to close if the attempt had already failed.
+      }
+    }));
     await channel.ready;
     return _WebSocketSession(channel);
   }
 
-  Future<RealtimeSession> connectSse(Uri uri, {Map<String, String> headers = const {}, String method = 'GET', String? body, Dio? dio}) async {
-    final cancel = CancelToken();
+  Future<RealtimeSession> connectSse(
+    Uri uri, {
+    Map<String, String> headers = const {},
+    String method = 'GET',
+    String? body,
+    Dio? dio,
+    ApiCancelToken? cancel,
+  }) async {
+    if (!supportsLiveSse) throw UnsupportedError(sseUnsupportedMessage);
+    final dioCancel = CancelToken();
+    unawaited(cancel?.whenCancelled.then((_) => dioCancel.cancel('cancelled by the user')));
     final client = dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 20), receiveTimeout: null, validateStatus: (_) => true));
     final response = await client.request<ResponseBody>(
       uri.toString(),
       data: body,
-      cancelToken: cancel,
+      cancelToken: dioCancel,
       options: Options(
         method: method,
         responseType: ResponseType.stream,
@@ -56,10 +89,10 @@ final class RealtimeConnector {
     );
     final status = response.statusCode ?? 0;
     if (status < 200 || status >= 300) {
-      cancel.cancel();
+      dioCancel.cancel();
       throw StateError('The server answered $status ${response.statusMessage ?? ''}'.trim());
     }
-    return _SseSession(response.data!, cancel, response.headers.value('content-type'));
+    return _SseSession(response.data!, dioCancel, response.headers.value('content-type'));
   }
 }
 

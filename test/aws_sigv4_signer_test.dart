@@ -132,5 +132,174 @@ void main() {
       final withBody = signer.sign(method: 'POST', uri: uri, headers: const {}, body: 'hello'.codeUnits, now: fixedNow);
       expect(empty['Authorization'], isNot(withBody['Authorization']));
     });
+
+    group('canonical headers and the path of a service other than S3', () {
+      const amzDate = '20150830T123600Z';
+
+      test('a path is URI-encoded twice: the %20 the wire carries becomes %2520', () {
+        final canonical = signer
+            .canonicalRequest(method: 'GET', uri: Uri.parse('https://example.amazonaws.com/example space/'), headers: const {}, body: const [], amzDate: amzDate)
+            .request;
+
+        expect(canonical.split('\n')[1], '/example%2520space/');
+        // Computed independently with python hmac/hashlib over the canonical request above.
+        final signed = signer.sign(
+          method: 'GET',
+          uri: Uri.parse('https://example.amazonaws.com/example space/'),
+          headers: const {},
+          body: const [],
+          now: fixedNow,
+        );
+        expect(signed['Authorization'], endsWith('Signature=09a854f8ec075a831e1014e970f8ee8d93c858eac7a09dd7c067f3782499cfb1'));
+      });
+
+      test('a character Dart leaves unencoded in a path is encoded as AWS wants, then again', () {
+        final signed = signer.sign(
+          method: 'GET',
+          uri: Uri.parse('https://example.amazonaws.com/items/a:b'),
+          headers: const {},
+          body: const [],
+          now: fixedNow,
+        );
+
+        // `a:b` -> `a%3Ab` -> `a%253Ab`
+        expect(signed['Authorization'], endsWith('Signature=3c21b5410ed4bc8bfa0be9cb2f08ed8f976d7982cba65e4572e9c5893d3230d6'));
+      });
+
+      test('no x-amz-content-sha256 header is added or signed', () {
+        final signed = signer.sign(method: 'GET', uri: uri, headers: const {}, body: const [], now: fixedNow);
+
+        expect(signed.keys, isNot(contains('X-Amz-Content-Sha256')));
+        expect(signed['Authorization'], contains('SignedHeaders=host;x-amz-date,'));
+      });
+
+      test('a run of spaces in a header value is folded into one and the ends are trimmed', () {
+        final signed = signer.sign(
+          method: 'GET',
+          uri: uri,
+          headers: {'X-Test': '  a   b \t c '},
+          body: const [],
+          now: fixedNow,
+        );
+
+        expect(signed['Authorization'], contains('SignedHeaders=host;x-amz-date;x-test,'));
+        expect(signed['Authorization'], endsWith('Signature=2b817e0f638792d21e89450fee9f41ea4f8d412e31d5729cc797bee8428c53a6'));
+      });
+    });
+
+    // The four worked examples of "Signature Calculations for the Authorization
+    // Header" in the Amazon S3 API reference (access key AKIAIOSFODNN7EXAMPLE,
+    // bucket examplebucket, 2013-05-24). The expected signatures are the ones
+    // printed there, and were reproduced independently with python hmac/hashlib.
+    group('Amazon S3 documented examples', () {
+      const s3 = AwsSigV4Signer(
+        accessKey: 'AKIAIOSFODNN7EXAMPLE',
+        secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+        region: 'us-east-1',
+        service: 's3',
+      );
+      final date = DateTime.utc(2013, 5, 24);
+      const host = 'https://examplebucket.s3.amazonaws.com';
+
+      test('GET Object with a Range header', () {
+        final signed = s3.sign(
+          method: 'GET',
+          uri: Uri.parse('$host/test.txt'),
+          headers: {'Range': 'bytes=0-9'},
+          body: const [],
+          now: date,
+        );
+
+        expect(signed['X-Amz-Content-Sha256'], emptyBodySha256);
+        expect(
+          signed['Authorization'],
+          'AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, '
+          'SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, '
+          'Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41',
+        );
+      });
+
+      test(r'PUT Object: the $ in the key is encoded once, to %24', () {
+        final uri = Uri.parse('$host/test\$file.text');
+        final body = 'Welcome to Amazon S3.'.codeUnits;
+        final headers = {'Date': 'Fri, 24 May 2013 00:00:00 GMT', 'x-amz-storage-class': 'REDUCED_REDUNDANCY'};
+
+        final signed = s3.sign(method: 'PUT', uri: uri, headers: headers, body: body, now: date);
+        final canonical = s3.canonicalRequest(method: 'PUT', uri: uri, headers: headers, body: body, amzDate: '20130524T000000Z');
+
+        expect(canonical.request.split('\n')[1], '/test%24file.text');
+        expect(signed['X-Amz-Content-Sha256'], '44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072');
+        expect(
+          signed['Authorization'],
+          'AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, '
+          'SignedHeaders=date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class, '
+          'Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd',
+        );
+      });
+
+      test('GET Bucket lifecycle (a query parameter without a value)', () {
+        final signed = s3.sign(method: 'GET', uri: Uri.parse('$host/?lifecycle'), headers: const {}, body: const [], now: date);
+
+        expect(
+          signed['Authorization'],
+          endsWith(
+            'SignedHeaders=host;x-amz-content-sha256;x-amz-date, '
+            'Signature=fea454ca298b7da1c68078a5d1bdbfbbe0d65c699e0f91ac7a200a0136783543',
+          ),
+        );
+      });
+
+      test('GET Bucket (list objects) with two query parameters', () {
+        final signed = s3.sign(
+          method: 'GET',
+          uri: Uri.parse('$host/?max-keys=2&prefix=J'),
+          headers: const {},
+          body: const [],
+          now: date,
+        );
+
+        expect(signed['Authorization'], endsWith('Signature=34b48302e7b5fa45bde8084f4b7868a86f0a534bc59db6670ed5711ef69dc6f7'));
+      });
+
+      test('a path the wire already carries encoded stays singly encoded', () {
+        final signed = s3.sign(method: 'GET', uri: Uri.parse('$host/a%20b/c'), headers: const {}, body: const [], now: date);
+        final canonical = s3.canonicalRequest(
+          method: 'GET',
+          uri: Uri.parse('$host/a%20b/c'),
+          headers: const {},
+          body: const [],
+          amzDate: '20130524T000000Z',
+        );
+
+        expect(canonical.request.split('\n')[1], '/a%20b/c');
+        expect(signed['Authorization'], endsWith('Signature=eb957281a2d99bc3ba98405e621dd6d7ad4b330ad04c784ea9f43664f7129d61'));
+      });
+
+      test('an x-amz-content-sha256 the request sets itself is signed as it is, and not added a second time', () {
+        final signed = s3.sign(
+          method: 'GET',
+          uri: Uri.parse('$host/test.txt'),
+          headers: {'x-amz-content-sha256': 'UNSIGNED-PAYLOAD'},
+          body: const [],
+          now: date,
+        );
+
+        expect(signed.keys.map((k) => k.toLowerCase()), isNot(contains('x-amz-content-sha256')));
+        expect(signed['Authorization'], endsWith('Signature=5c0d4ff29e72b8f94c5b6720369921e587e39bf7a64e456887dec4b43a2d1b77'));
+      });
+
+      test('the service name is matched without regard to case or padding', () {
+        const shouting = AwsSigV4Signer(
+          accessKey: 'AKIAIOSFODNN7EXAMPLE',
+          secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+          region: 'us-east-1',
+          service: ' S3 ',
+        );
+
+        final signed = shouting.sign(method: 'GET', uri: Uri.parse('$host/test.txt'), headers: const {}, body: const [], now: date);
+
+        expect(signed['X-Amz-Content-Sha256'], emptyBodySha256);
+      });
+    });
   });
 }

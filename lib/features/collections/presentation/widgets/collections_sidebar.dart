@@ -96,7 +96,10 @@ class CollectionsSidebar extends StatelessWidget {
           const TagFilterBar(),
           Expanded(
             child: vm.collections.isEmpty
-                ? Center(child: Text('No collections yet — tap + to create one', style: _emptyStyle(context)))
+                ? NoCollectionsPrompt(
+                    onCreate: () => _createCollection(context, vm),
+                    onImport: () => ImportAnyDialog.show(context),
+                  )
                 : vm.isFiltering && visibleCollections.isEmpty
                 ? Center(child: Text('Nothing matches', style: _emptyStyle(context)))
                 : ListView(
@@ -124,6 +127,35 @@ class CollectionsSidebar extends StatelessWidget {
 }
 
 TextStyle _emptyStyle(BuildContext context) => context.textStyles.caption.copyWith(color: context.colors.secondaryText);
+
+/// The sidebar of a fresh install: one button that does the first thing anyone needs, not a hint about a "+".
+class NoCollectionsPrompt extends StatelessWidget {
+  final VoidCallback onCreate;
+  final VoidCallback onImport;
+  const NoCollectionsPrompt({super.key, required this.onCreate, required this.onImport});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('No collections yet', style: _emptyStyle(context)),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+              label: const Text('New collection'),
+            ),
+            TextButton(onPressed: onImport, child: const Text('or import one')),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 void _showSnack(BuildContext context, String message) =>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));

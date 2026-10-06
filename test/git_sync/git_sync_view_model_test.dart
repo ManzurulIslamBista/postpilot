@@ -612,7 +612,33 @@ void main() {
 
         await h.vm.commitPush();
 
-        expect(h.commit.calls.single.message, 'Update Users API');
+        // The default is written from what changed (before, it was only "Update <collection>").
+        expect(h.commit.calls.single.message, 'Change 1 request in Users API\n\n- List users');
+      });
+
+      test('the default message follows the changes until the person edits it', () async {
+        final h = _Harness();
+        h.changes = const [_listUsers];
+        h.commit.handler = (_) async => _pushed;
+        await h.load();
+        expect(h.vm.commitMessage, 'Change 1 request in Users API\n\n- List users');
+
+        h.changes = const [_listUsers, _newFolder, _deleteUser];
+        await h.vm.refresh();
+        expect(
+          h.vm.commitMessage,
+          'Add 1 folder, change 1 request, remove 1 request in Users API\n\n- List users\n- Admin\n- Delete user',
+          reason: 'untouched, so it keeps up with the changes',
+        );
+
+        h.vm.commitMessage = 'Point users at v2';
+        h.changes = const [_listUsers];
+        await h.vm.refresh();
+        expect(h.vm.commitMessage, 'Point users at v2', reason: 'what the person wrote is theirs');
+
+        h.vm.commitMessage = '';
+        await h.vm.commitPush();
+        expect(h.commit.calls.single.message, 'Change 1 request in Users API\n\n- List users', reason: 'cleared: back to the default');
       });
 
       test('cannot commit without changes, without write access or while busy', () async {
@@ -1329,7 +1355,11 @@ void main() {
       expect(find.text('Admin'), findsOneWidget);
       expect(find.text('Added'), findsOneWidget);
       expect(find.text('Deleted'), findsOneWidget);
-      expect(find.widgetWithText(TextField, 'Update Users API'), findsOneWidget);
+      // The prefilled commit message is written from the changes shown above it.
+      expect(
+        find.widgetWithText(TextField, 'Add 1 folder, change 1 request, remove 1 request in Users API\n\n- List users\n- Admin\n- Delete user'),
+        findsOneWidget,
+      );
       expect(_button(tester, 'Commit & push').onPressed, isNotNull);
       expect(_button(tester, 'Discard changes').onPressed, isNotNull);
       expect(find.textContaining('read-only access'), findsNothing);
@@ -1391,7 +1421,7 @@ void main() {
       await tester.runAsync(h.load);
       await _pumpSync(tester, h.vm);
 
-      await tester.enterText(find.widgetWithText(TextField, 'Update Users API'), 'Point users at v2');
+      await tester.enterText(find.widgetWithText(TextField, 'Change 1 request in Users API\n\n- List users'), 'Point users at v2');
       await tester.pump();
       await tester.tap(find.text('Commit & push'));
       await tester.pumpAndSettle();

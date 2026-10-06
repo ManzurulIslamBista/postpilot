@@ -147,14 +147,18 @@ final class ApiDocsHtmlWriter {
     return '<span class="badge${_methodClasses.contains(kind) ? ' $kind' : ''}">${_e(method)}</span>';
   }
 
+  /// A third column says where an inherited row (a header a folder or the collection passes down) was set.
   String _fieldTable(List<String> header, List<ApiDocsField> rows) {
+    final withOrigin = rows.any((r) => r.origin.isNotEmpty);
     final out = StringBuffer('<table>\n<thead><tr>');
-    for (final title in header) {
+    for (final title in [...header, if (withOrigin) 'Inherited from']) {
       out.write('<th>${_e(title)}</th>');
     }
     out.write('</tr></thead>\n<tbody>\n');
     for (final row in rows) {
-      out.writeln('<tr><td>${_cell(row.key)}</td><td>${_cell(row.value)}</td></tr>');
+      out.writeln(
+        '<tr><td>${_cell(row.key)}</td><td>${_cell(row.value)}</td>${withOrigin ? '<td>${_e(row.origin)}</td>' : ''}</tr>',
+      );
     }
     out.write('</tbody>\n</table>');
     return out.toString();

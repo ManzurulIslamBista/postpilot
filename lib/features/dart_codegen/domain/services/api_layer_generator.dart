@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../../git_sync/domain/services/secret_names.dart';
 import '../entities/generated_file.dart';
 import 'dart_model_generator.dart';
 import 'dart_names.dart';
@@ -22,6 +23,11 @@ final class ApiSpecRequest {
   /// Folder names from the collection root to this request.
   final List<String> folders;
 
+  /// The name of an authentication the generated client cannot perform on its own
+  /// (`Basic Auth`, `OAuth 2.0`...), so the generated code can say it was left out.
+  /// Bearer tokens are not listed here: they go through `tokenProvider`.
+  final String? unsupportedAuth;
+
   const ApiSpecRequest({
     required this.name,
     required this.method,
@@ -32,6 +38,7 @@ final class ApiSpecRequest {
     this.bodyText = '',
     this.exampleResponse,
     this.folders = const [],
+    this.unsupportedAuth,
   });
 }
 
@@ -69,16 +76,37 @@ final class ApiLayerGenerator {
 
   static final _variable = RegExp(r'\{\{\s*([^{}\s]+)\s*\}\}');
 
+  /// A `{{variable}}` or a `/:param` inside a path.
+  static final _pathToken = RegExp(r'\{\{\s*([^{}\s]+)\s*\}\}|/:([A-Za-z_]\w*)');
+
+  static final _bearer = RegExp(r'^bearer\s', caseSensitive: false);
+
+  /// Names the data sources see from Dio (and from this layer itself), which a DTO
+  /// class must not take: `Options` is the call's options, not a `{"options": {}}` object.
+  static const _importedTypes = {
+    'Dio', 'Options', 'FormData', 'Headers', 'Response', 'BaseOptions', 'RequestOptions', 'Interceptor',
+    'InterceptorsWrapper', 'ResponseType', 'CancelToken', 'DioException', 'MultipartFile', 'Transformer',
+    'UseCase', 'NoParams', 'GetIt',
+  };
+
+  /// Headers the HTTP client sets itself; copying them would break the request.
+  static const _managedHeaders = {
+    'content-length', 'host', 'connection', 'transfer-encoding', 'expect', 'keep-alive', 'upgrade', 'te', 'trailer',
+  };
+
   ApiLayerResult generate(String collectionName, List<ApiSpecRequest> requests, {ApiLayerOptions options = const ApiLayerOptions()}) {
     final notes = <String>[];
     final feature = DartNames.snake(collectionName, fallback: 'api');
-    final pkg = options.packageName;
+    // A package name is a lowercase identifier; anything else would break every import line.
+    final pkg = DartNames.snake(options.packageName, fallback: 'app');
     final files = <GeneratedFile>[];
     if (requests.isEmpty) return const ApiLayerResult([], ['The collection has no requests.']);
 
     final base = _commonBase(requests);
-    files.add(GeneratedFile('lib/core/network/api_client.dart', _apiClient(base)));
-    if (options.domainLayer) files.add(const GeneratedFile('lib/core/usecases/usecase.dart', _useCaseBase));
+    // These two are shared by every generated feature (and by a project's own code), so a
+    // writer must never replace a copy that already exists.
+    files.add(GeneratedFile('lib/core/network/api_client.dart', _apiClient(base), shared: true));
+    if (options.domainLayer) files.add(const GeneratedFile('lib/core/usecases/usecase.dart', _useCaseBase, shared: true));
 
     // One data source / repository per top-level folder; loose requests share one named after the collection.
     final groups = <String, List<_Operation>>{};
@@ -91,6 +119,7 @@ final class ApiLayerGenerator {
       final op = _operation(request, taken, options, modelFiles, feature, notes);
       groups.putIfAbsent(group, () => []).add(op);
     }
+    _nameUseCases(groups);
 
     for (final file in modelFiles.values) {
       files.add(file);
@@ -112,7 +141,7 @@ final class ApiLayerGenerator {
         registrations
             .add('    ..registerLazySingleton<${group}Repository>(() => ${group}RepositoryImpl(sl<${group}RemoteDataSource>()))');
         for (final op in ops) {
-          files.add(GeneratedFile('lib/features/$feature/domain/usecases/${DartNames.snake(op.methodName)}_usecase.dart',
+          files.add(GeneratedFile('lib/features/$feature/domain/usecases/${op.useCaseFile}',
               _useCase(group, op, feature, snake, modelImports(ops), pkg)));
           registrations.add('    ..registerLazySingleton<${op.useCaseName}>(() => ${op.useCaseName}(sl<${group}Repository>()))');
         }
@@ -128,13 +157,63 @@ final class ApiLayerGenerator {
     if (base.variable != null) {
       notes.add('Base URL is the variable {{${base.variable}}}: set it in lib/core/network/api_client.dart (or pass --dart-define=API_BASE_URL).');
     }
+    if (base.templated != null) {
+      notes.add('The base URL ${base.templated} contains variables, so no default was written: set the real one in '
+          'lib/core/network/api_client.dart (or pass --dart-define=API_BASE_URL).');
+    }
+    _noteUntranslated(groups, notes);
     notes.add('Add `dio` to pubspec.yaml${options.modelStyle == DartModelStyle.plain ? '' : ' (and the model style packages, then run build_runner)'}.');
     return ApiLayerResult(files, notes);
   }
 
+  /// A use case's class and file name must be unique across the whole collection,
+  /// but a method name is only unique inside its group: folders "Users" and
+  /// "Orders" can each hold a "Get all". A name more than one group uses gets its
+  /// group as a prefix (`UsersGetAll`, `OrdersGetAll`).
+  void _nameUseCases(Map<String, List<_Operation>> groups) {
+    final counts = <String, int>{};
+    for (final ops in groups.values) {
+      for (final op in ops) {
+        counts.update(DartNames.pascal(op.methodName), (n) => n + 1, ifAbsent: () => 1);
+      }
+    }
+    final usedNames = <String>{};
+    final usedFiles = <String>{};
+    groups.forEach((group, ops) {
+      for (final op in ops) {
+        final plain = DartNames.pascal(op.methodName);
+        final stem = counts[plain]! > 1 ? '$group$plain' : plain;
+        var name = stem;
+        var n = 2;
+        while (!usedNames.add(name) || !usedFiles.add(DartNames.snake(name))) {
+          name = '$stem$n';
+          n++;
+        }
+        op.useCaseStem = name;
+      }
+    });
+  }
+
+  /// Everything a request had that could not be turned into code is said so in
+  /// the generated method's comment; this lists the distinct reasons once.
+  void _noteUntranslated(Map<String, List<_Operation>> groups, List<String> notes) {
+    final byReason = <String, List<String>>{};
+    for (final ops in groups.values) {
+      for (final op in ops) {
+        for (final reason in op.untranslated) {
+          byReason.putIfAbsent(reason, () => []).add(op.title);
+        }
+      }
+    }
+    byReason.forEach((reason, titles) {
+      final more = titles.length > 3 ? ' and ${titles.length - 3} more' : '';
+      notes.add('Not translated: $reason (${titles.take(3).join(', ')}$more).');
+    });
+  }
+
   // --- reading a request -------------------------------------------------------
 
-  ({String? origin, String? variable}) _commonBase(List<ApiSpecRequest> requests) {
+  ({String? origin, String? variable, String? templated}) _commonBase(List<ApiSpecRequest> requests) {
     final counts = <String, int>{};
     for (final r in requests) {
       final b = _split(r.url).base;
@@ -142,8 +221,10 @@ final class ApiLayerGenerator {
     }
     final best = counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
     final v = _variable.firstMatch(best);
-    if (v != null && best.trim() == v[0]) return (origin: null, variable: v[1]);
-    return (origin: best.isEmpty ? null : best, variable: null);
+    if (v != null && best.trim() == v[0]) return (origin: null, variable: v[1], templated: null);
+    // `https://{{host}}` is not an address anyone can call, so it is not written as the default.
+    if (v != null) return (origin: null, variable: null, templated: best);
+    return (origin: best.isEmpty ? null : best, variable: null, templated: null);
   }
 
   /// `{{baseUrl}}/users/:id?x=1` becomes base `{{baseUrl}}`, path `/users/:id`, query `x=1`.
@@ -180,7 +261,8 @@ final class ApiLayerGenerator {
 
     final parts = _split(r.url);
     final params = <_Param>[];
-    final names = <String>{};
+    // `response` is the local the generated method reads the answer into.
+    final names = <String>{'response'};
     String unique(String n0) {
       var name = n0;
       var i = 2;
@@ -191,19 +273,39 @@ final class ApiLayerGenerator {
       return name;
     }
 
-    // Path: {{var}} and :var become required String parameters.
-    var path = parts.path;
-    path = path.replaceAllMapped(_variable, (m) {
-      final name = unique(DartNames.camel(m[1]!));
-      params.add(_Param(name, 'String', required: true, doc: 'Path variable {{${m[1]}}}'));
-      return '\${$name}';
-    });
-    path = path.replaceAllMapped(RegExp(r'/:([A-Za-z_]\w*)'), (m) {
-      final name = unique(DartNames.camel(m[1]!));
-      params.add(_Param(name, 'String', required: true, doc: 'Path parameter :${m[1]}'));
-      return '/\${$name}';
-    });
-    path = path.replaceAll("'", r"\'");
+    final untranslated = <String>[];
+
+    // Path: {{var}} and :var become required String parameters, URL-encoded where they
+    // are used. The rest is literal text, so a `$`, `'` or `\` in it (`/odata/$metadata`)
+    // is escaped and cannot start an interpolation.
+    final pathCode = StringBuffer();
+    final pathDoc = StringBuffer();
+    final pathNames = <String, String>{};
+    var last = 0;
+    for (final m in _pathToken.allMatches(parts.path)) {
+      final literal = parts.path.substring(last, m.start);
+      pathCode.write(DartNames.escape(literal));
+      pathDoc.write(literal);
+      final isVariable = m[1] != null;
+      final raw = (isVariable ? m[1] : m[2])!;
+      // The same variable twice in one path is one argument.
+      var name = pathNames[raw];
+      if (name == null) {
+        name = unique(DartNames.camel(raw));
+        pathNames[raw] = name;
+        params.add(_Param(name, 'String', required: true, doc: isVariable ? 'Path variable {{$raw}}' : 'Path parameter :$raw'));
+      }
+      if (!isVariable) {
+        pathCode.write('/');
+        pathDoc.write('/');
+      }
+      pathCode.write('\${Uri.encodeComponent($name)}');
+      pathDoc.write('{$name}');
+      last = m.end;
+    }
+    final tail = parts.path.substring(last);
+    pathCode.write(DartNames.escape(tail));
+    pathDoc.write(tail);
 
     // Query: request params plus whatever was written after '?' in the URL.
     final queryPairs = [...r.query];
@@ -212,26 +314,79 @@ final class ApiLayerGenerator {
       final eq = piece.indexOf('=');
       queryPairs.add(eq < 0 ? (piece, '') : (piece.substring(0, eq), piece.substring(eq + 1)));
     }
-    final queryEntries = <(String key, String name, bool nullable)>[];
+    final queryEntries = <(String key, String expr, String? onlyIfSet)>[];
     for (final (key, value) in queryPairs) {
       if (key.isEmpty) continue;
       final v = _variable.firstMatch(value);
       final whole = v != null && v[0] == value.trim();
+      if (v != null && !whole) {
+        // `q={{term}}*`: the value is built from the arguments, there is no single one to pass.
+        final expr = _interpolate(value, (variable) {
+          final name = unique(DartNames.camel(variable));
+          params.add(_Param(name, 'String', required: true, doc: 'Part of query "$key" ({{$variable}})'));
+          return name;
+        });
+        queryEntries.add((key, expr, null));
+        continue;
+      }
       final name = unique(DartNames.camel(whole ? v[1]! : key));
-      final fixed = whole || value.isEmpty ? null : value;
-      params.add(_Param(name, 'String', required: false, defaultValue: fixed, doc: 'Query "$key"'));
-      queryEntries.add((key, name, fixed == null));
+      // An API key saved in the request is not copied into source code.
+      final secret = !whole && value.isNotEmpty && SecretNames.isSecretQuery(key) && SecretNames.hasLiteralSecret(value);
+      final fixed = whole || value.isEmpty || secret ? null : value;
+      params.add(_Param(
+        name,
+        'String',
+        required: false,
+        defaultValue: fixed,
+        doc: secret ? 'Query "$key" (the value saved in the request is not copied into generated code)' : 'Query "$key"',
+      ));
+      queryEntries.add((key, name, fixed == null ? name : null));
     }
 
-    // Headers that carry a variable (an API key, a tenant) become parameters too.
-    final headerEntries = <(String key, String name)>[];
-    for (final (key, value) in r.headers) {
-      final v = _variable.firstMatch(value);
-      if (key.isEmpty || v == null || v[0] != value.trim()) continue;
-      if (key.toLowerCase() == 'authorization') continue; // handled by the interceptor
-      final name = unique(DartNames.camel(v[1]!));
-      params.add(_Param(name, 'String', required: true, doc: 'Header "$key"'));
-      headerEntries.add((key, name));
+    // Headers. A value with {{variables}} becomes arguments; a static value is written as it is,
+    // unless it is a credential (that becomes an argument too, the saved secret stays out of the code).
+    final headerEntries = <(String key, String expr)>[];
+    void putHeader(String key, String expr) {
+      headerEntries.removeWhere((e) => e.$1.toLowerCase() == key.toLowerCase());
+      headerEntries.add((key, expr));
+    }
+
+    for (final (rawKey, value) in r.headers) {
+      final key = rawKey.trim();
+      if (key.isEmpty) continue;
+      final lower = key.toLowerCase();
+      if (lower == 'authorization' && _bearer.hasMatch(value.trim())) continue; // the interceptor sends it
+      if (_managedHeaders.contains(lower)) {
+        untranslated.add('the header "$key" is set by the HTTP client itself');
+        continue;
+      }
+      if (lower == 'content-type' && (r.bodyKind == ApiBodyKind.form || r.bodyKind == ApiBodyKind.urlEncoded)) {
+        untranslated.add('the Content-Type of a form body (Dio sets it, with the boundary for multipart)');
+        continue;
+      }
+      if (_variable.hasMatch(value)) {
+        final whole = _variable.firstMatch(value)![0] == value.trim();
+        if (whole) {
+          final name = unique(DartNames.camel(_variable.firstMatch(value)![1]!));
+          params.add(_Param(name, 'String', required: true, doc: 'Header "$key"'));
+          putHeader(key, name);
+        } else {
+          putHeader(key, _interpolate(value, (variable) {
+            final name = unique(DartNames.camel(variable));
+            params.add(_Param(name, 'String', required: true, doc: 'Part of header "$key" ({{$variable}})'));
+            return name;
+          }));
+        }
+      } else if ((SecretNames.isSecretHeader(key) && SecretNames.hasLiteralSecret(value)) || SecretNames.looksLikeCredential(value)) {
+        final name = unique(DartNames.camel(key));
+        params.add(_Param(name, 'String', required: true, doc: 'Header "$key" (the value saved in the request is not copied into generated code)'));
+        putHeader(key, name);
+      } else {
+        putHeader(key, DartNames.quote(value));
+      }
+    }
+    if (r.unsupportedAuth != null) {
+      untranslated.add('${r.unsupportedAuth} authentication: add it to createApiClient, for instance as an interceptor');
     }
 
     // Body.
@@ -241,29 +396,34 @@ final class ApiLayerGenerator {
     switch (r.bodyKind) {
       case ApiBodyKind.json:
         final decoded = _tryJson(_quoteVariables(r.bodyText));
+        final bodyName = unique('body');
         if (decoded is Map<String, dynamic>) {
           final model = _model('${DartNames.pascal(methodName)}Request', [jsonEncode(decoded)], options, modelFiles, feature, imports);
           if (model != null) {
-            params.add(_Param('body', model, required: true, doc: 'Request body'));
-            bodyExpr = 'body.toJson()';
+            params.add(_Param(bodyName, model, required: true, doc: 'Request body'));
+            bodyExpr = '$bodyName.toJson()';
             break;
           }
         }
-        params.add(const _Param('body', 'Map<String, dynamic>', required: true, doc: 'Request body'));
-        bodyExpr = 'body';
+        params.add(_Param(bodyName, decoded is List ? 'List<dynamic>' : 'Map<String, dynamic>', required: true, doc: 'Request body'));
+        bodyExpr = bodyName;
       case ApiBodyKind.text:
-        params.add(const _Param('body', 'String', required: true, doc: 'Raw request body'));
-        bodyExpr = 'body';
+        final bodyName = unique('body');
+        params.add(_Param(bodyName, 'String', required: true, doc: 'Raw request body'));
+        bodyExpr = bodyName;
       case ApiBodyKind.form:
-        params.add(const _Param('fields', 'Map<String, dynamic>', required: true, doc: 'Form fields'));
-        bodyExpr = 'FormData.fromMap(fields)';
+        final fields = unique('fields');
+        params.add(_Param(fields, 'Map<String, dynamic>', required: true, doc: 'Form fields'));
+        bodyExpr = 'FormData.fromMap($fields)';
       case ApiBodyKind.urlEncoded:
-        params.add(const _Param('fields', 'Map<String, dynamic>', required: true, doc: 'Form fields'));
-        bodyExpr = 'fields';
+        final fields = unique('fields');
+        params.add(_Param(fields, 'Map<String, dynamic>', required: true, doc: 'Form fields'));
+        bodyExpr = fields;
         contentType = 'Headers.formUrlEncodedContentType';
       case ApiBodyKind.graphql:
-        params.add(const _Param('variables', 'Map<String, dynamic>', required: false, doc: 'GraphQL variables'));
-        bodyExpr = "{'query': _${methodName}Query, 'variables': variables}";
+        final variables = unique('variables');
+        params.add(_Param(variables, 'Map<String, dynamic>', required: false, doc: 'GraphQL variables'));
+        bodyExpr = "{'query': _${methodName}Query, 'variables': $variables}";
       case ApiBodyKind.none:
         break;
     }
@@ -291,15 +451,17 @@ final class ApiLayerGenerator {
       }
     }
 
-    // Required parameters first, as Dart style prefers.
-    params.sort((a, b) => a.required == b.required ? 0 : (a.required ? -1 : 1));
+    // Required parameters first, as Dart style prefers; each group keeps the order it was added in.
+    final ordered = [...params.where((p) => p.required), ...params.where((p) => !p.required)];
 
+    final path = pathCode.toString();
     return _Operation(
       methodName: methodName,
       title: r.name,
       httpMethod: r.method.toUpperCase(),
       path: path.isEmpty ? '/' : path,
-      params: params,
+      docPath: pathDoc.isEmpty ? '/' : pathDoc.toString(),
+      params: ordered,
       queryEntries: queryEntries,
       headerEntries: headerEntries,
       bodyExpr: bodyExpr,
@@ -308,7 +470,25 @@ final class ApiLayerGenerator {
       responseType: responseType,
       parseExpr: parse,
       modelImports: imports,
+      untranslated: untranslated,
     );
+  }
+
+  /// [text] as a Dart string literal in which every `{{variable}}` is replaced by
+  /// `${name}`, [argument] giving the name of the argument that holds it.
+  String _interpolate(String text, String Function(String variable) argument) {
+    final b = StringBuffer("'");
+    var last = 0;
+    for (final m in _variable.allMatches(text)) {
+      b
+        ..write(DartNames.escape(text.substring(last, m.start)))
+        ..write('\${${argument(m[1]!)}}');
+      last = m.end;
+    }
+    b
+      ..write(DartNames.escape(text.substring(last)))
+      ..write("'");
+    return b.toString();
   }
 
   /// Writes the model file(s) for [samples] and returns the root class name,
@@ -321,18 +501,19 @@ final class ApiLayerGenerator {
     String feature,
     Set<String> imports,
   ) {
-    final modelOptions = DartModelOptions(style: options.modelStyle, allNullable: options.allNullable);
+    final modelOptions = DartModelOptions(style: options.modelStyle, allNullable: options.allNullable, avoidClassNames: _importedTypes);
     final result = const DartModelGenerator().generate(samples, rootName: rootName, options: modelOptions);
     if (result.classCount == 0) return null;
-    var root = DartNames.pascal(rootName);
+    final wanted = DartNames.className(rootName, fallback: 'Root', also: _importedTypes);
+    var root = wanted;
     var path = 'lib/features/$feature/data/models/${DartNames.snake(root)}.dart';
     var n = 2;
     while (modelFiles.containsKey(path)) {
-      root = '${DartNames.pascal(rootName)}$n';
+      root = '$wanted$n';
       path = 'lib/features/$feature/data/models/${DartNames.snake(root)}.dart';
       n++;
     }
-    final renamed = root == DartNames.pascal(rootName)
+    final renamed = root == wanted
         ? result
         : const DartModelGenerator().generate(samples, rootName: root, options: modelOptions);
     modelFiles[path] = GeneratedFile(path, renamed.code);
@@ -356,7 +537,7 @@ final class ApiLayerGenerator {
 
   // --- code emission -------------------------------------------------------------
 
-  String _apiClient(({String? origin, String? variable}) base) {
+  String _apiClient(({String? origin, String? variable, String? templated}) base) {
     final defaultBase = base.origin == null ? "''" : DartNames.quote(base.origin!);
     return '''import 'package:dio/dio.dart';
 
@@ -415,34 +596,43 @@ final class NoParams {
       ..writeln("import 'package:dio/dio.dart';")
       ..writeAll(imports.map((i) => '$i\n'))
       ..writeln()
-      ..writeln('/// Remote calls of "$group". One method per request of the collection.')
+      ..writeln('/// Remote calls of "${_docText(group)}". One method per request of the collection.')
       ..writeln('class ${group}RemoteDataSource {')
       ..writeln('  const ${group}RemoteDataSource(this._dio);')
       ..writeln()
       ..writeln('  final Dio _dio;');
     for (final op in ops) {
       if (op.graphqlQuery != null) {
-        b
-          ..writeln()
-          ..writeln('  static const _${op.methodName}Query = r\'\'\'')
-          ..writeln(op.graphqlQuery!.trim())
-          ..writeln("''';");
+        final query = op.graphqlQuery!.trim();
+        b.writeln();
+        if (query.contains("'''")) {
+          // A raw ''' string cannot hold ''', so this one is an ordinary literal.
+          b.writeln('  static const _${op.methodName}Query = ${DartNames.quote(query)};');
+        } else {
+          b
+            ..writeln('  static const _${op.methodName}Query = r\'\'\'')
+            ..writeln(query)
+            ..writeln("''';");
+        }
       }
       b
         ..writeln()
-        ..writeln('  /// ${op.title}')
+        ..writeln('  /// ${_docText(op.title)}')
         ..writeln('  ///')
-        ..writeln('  /// `${op.httpMethod} ${op.path.replaceAll(r'${', '{')}`');
+        ..writeln('  /// `${op.httpMethod} ${_docText(op.docPath)}`');
       for (final p in op.params) {
-        if (p.doc != null) b.writeln('  /// - [${p.name}]: ${p.doc}');
+        if (p.doc != null) b.writeln('  /// - [${p.name}]: ${_docText(p.doc!)}');
+      }
+      for (final reason in op.untranslated) {
+        b.writeln('  /// NOT TRANSLATED: ${_docText(reason)}.');
       }
       b.writeln('  Future<${op.responseType}> ${op.methodName}(${_signature(op)}) async {');
       final query = op.queryEntries.isEmpty
           ? ''
-          : ',\n      queryParameters: {\n${[for (final (key, name, nullable) in op.queryEntries) "        ${nullable ? 'if ($name != null) ' : ''}${DartNames.quote(key)}: $name,"].join('\n')}\n      }';
+          : ',\n      queryParameters: {\n${[for (final (key, expr, onlyIfSet) in op.queryEntries) "        ${onlyIfSet == null ? '' : 'if ($onlyIfSet != null) '}${DartNames.quote(key)}: $expr,"].join('\n')}\n      }';
       final headers = op.headerEntries.isEmpty
           ? ''
-          : "headers: {${[for (final (key, name) in op.headerEntries) '${DartNames.quote(key)}: $name'].join(', ')}}";
+          : "headers: {${[for (final (key, expr) in op.headerEntries) '${DartNames.quote(key)}: $expr'].join(', ')}}";
       final contentType = op.contentType.isEmpty ? '' : 'contentType: ${op.contentType}';
       final options = [headers, contentType].where((s) => s.isNotEmpty).join(', ');
       final data = op.bodyExpr == null ? '' : ',\n      data: ${op.bodyExpr}';
@@ -452,7 +642,7 @@ final class NoParams {
           b.writeln("    final response = await _dio.${op.httpMethod.toLowerCase()}<dynamic>('${op.path}'$data$query$optionsArg);");
         default:
           final merged = [
-            "method: '${op.httpMethod}'",
+            "method: ${DartNames.quote(op.httpMethod)}",
             if (options.isNotEmpty) options,
           ].join(', ');
           b.writeln("    final response = await _dio.request<dynamic>('${op.path}'$data$query,\n      options: Options($merged));");
@@ -464,6 +654,9 @@ final class NoParams {
     b.writeln('}');
     return b.toString();
   }
+
+  /// Text for a `///` line: one line, and nothing that reads as a comment terminator.
+  String _docText(String text) => text.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' ');
 
   String _repositoryInterface(String group, List<_Operation> ops, List<String> imports, String pkg) {
     final b = StringBuffer()
@@ -504,7 +697,7 @@ final class NoParams {
       ..writeln("import 'package:$pkg/features/$feature/domain/repositories/${snake}_repository.dart';")
       ..writeAll(imports.map((i) => '$i\n'))
       ..writeln();
-    final paramsType = op.params.isEmpty ? 'NoParams' : '${op.useCaseName.replaceFirst('UseCase', '')}Params';
+    final paramsType = op.params.isEmpty ? 'NoParams' : '${op.useCaseStem}Params';
     if (op.params.isNotEmpty) {
       b.writeln('class $paramsType {');
       for (final p in op.params) {
@@ -520,7 +713,7 @@ final class NoParams {
         ..writeln();
     }
     b
-      ..writeln('/// ${op.title}')
+      ..writeln('/// ${_docText(op.title)}')
       ..writeln('final class ${op.useCaseName} implements UseCase<${op.responseType}, $paramsType> {')
       ..writeln('  const ${op.useCaseName}(this._repository);')
       ..writeln()
@@ -545,7 +738,7 @@ final class NoParams {
           ..writeln("import 'package:$pkg/features/$feature/data/repositories/${snake}_repository_impl.dart';")
           ..writeln("import 'package:$pkg/features/$feature/domain/repositories/${snake}_repository.dart';");
         for (final op in ops) {
-          b.writeln("import 'package:$pkg/features/$feature/domain/usecases/${DartNames.snake(op.methodName)}_usecase.dart';");
+          b.writeln("import 'package:$pkg/features/$feature/domain/usecases/${op.useCaseFile}';");
         }
       }
     });
@@ -557,7 +750,7 @@ final class NoParams {
       ..writeAll(registrations.map((r) => '$r\n'))
       ..writeln('  ;')
       ..writeln('}');
-    return b.toString().replaceAll('\n  ;\n', ';\n').replaceFirst('  locator\n', '  locator\n');
+    return b.toString().replaceAll('\n  ;\n', ';\n');
   }
 }
 
@@ -574,9 +767,17 @@ final class _Operation {
   final String methodName;
   final String title;
   final String httpMethod;
+
+  /// The path as Dart string-literal text (escaped, `${...}` for arguments).
   final String path;
+
+  /// The same path for a comment: `/users/{userId}`.
+  final String docPath;
   final List<_Param> params;
-  final List<(String, String, bool)> queryEntries;
+
+  /// Query key, the Dart expression for its value, and the argument that must be
+  /// non-null for it to be sent (null when it always is).
+  final List<(String, String, String?)> queryEntries;
   final List<(String, String)> headerEntries;
   final String? bodyExpr;
   final String contentType;
@@ -585,11 +786,18 @@ final class _Operation {
   final String parseExpr;
   final Set<String> modelImports;
 
-  const _Operation({
+  /// What the request has that the generated method does not do, for its comment.
+  final List<String> untranslated;
+
+  /// Unique over the whole collection, set once every operation is known.
+  String? useCaseStem;
+
+  _Operation({
     required this.methodName,
     required this.title,
     required this.httpMethod,
     required this.path,
+    required this.docPath,
     required this.params,
     required this.queryEntries,
     required this.headerEntries,
@@ -599,7 +807,10 @@ final class _Operation {
     required this.responseType,
     required this.parseExpr,
     required this.modelImports,
+    required this.untranslated,
   });
 
-  String get useCaseName => '${DartNames.pascal(methodName)}UseCase';
+  String get _stem => useCaseStem ?? DartNames.pascal(methodName);
+  String get useCaseName => '${_stem}UseCase';
+  String get useCaseFile => '${DartNames.snake(_stem)}_usecase.dart';
 }

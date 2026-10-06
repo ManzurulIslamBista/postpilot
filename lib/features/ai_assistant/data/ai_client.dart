@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_http_response.dart';
+import '../../settings/domain/repositories/settings_repository.dart';
+import '../../settings/domain/services/tool_request_options.dart';
 import 'ai_settings_store.dart';
 
 /// Something went wrong asking the model, in words a person can act on.
@@ -14,16 +16,21 @@ final class AiException implements Exception {
 }
 
 /// Asks Claude through the Anthropic Messages API with the person's own key.
-/// Goes through the app's [ApiClient], so the proxy and TLS settings apply and
-/// the call shows in the Console like any other.
+/// Goes through the app's [ApiClient] and is sent with the app's proxy, TLS and
+/// timeout settings (when [appSettings] is given), and the call shows in the
+/// Console like any other.
 final class AiClient {
   static const _endpoint = 'https://api.anthropic.com/v1/messages';
   static const _version = '2023-06-01';
 
+  /// An answer can take this long even when the app's request timeout is shorter.
+  static const _minTimeout = Duration(seconds: 90);
+
   final ApiClient _api;
   final AiSettingsStore _settings;
+  final SettingsRepository? _appSettings;
 
-  const AiClient(this._api, this._settings);
+  const AiClient(this._api, this._settings, {this._appSettings});
 
   Future<bool> get hasKey async => (await _settings.apiKey()) != null;
 
@@ -51,7 +58,7 @@ final class AiClient {
             {'role': 'user', 'content': user},
           ],
         })),
-        options: const ApiRequestOptions(timeout: Duration(seconds: 90), maxResponseBytes: 4 * 1024 * 1024),
+        options: ToolRequestOptions.resolve(_appSettings, maxResponseBytes: 4 * 1024 * 1024, minTimeout: _minTimeout),
       ));
     } catch (e) {
       throw AiException("Couldn't reach the Anthropic API. Check your connection. ($e)");

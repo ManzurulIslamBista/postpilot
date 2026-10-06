@@ -124,9 +124,10 @@ class _RealtimeDialogState extends State<RealtimeDialog> {
                     final modePicker = SegmentedButton<RealtimeMode>(
                       showSelectedIcon: false,
                       style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                      segments: const [
-                        ButtonSegment(value: RealtimeMode.webSocket, label: Text('WebSocket')),
-                        ButtonSegment(value: RealtimeMode.sse, label: Text('SSE')),
+                      segments: [
+                        const ButtonSegment(value: RealtimeMode.webSocket, label: Text('WebSocket')),
+                        // A browser cannot read an event stream as it arrives, so the option is off there (see the note below).
+                        ButtonSegment(value: RealtimeMode.sse, label: const Text('SSE'), enabled: _vm.sseSupported),
                       ],
                       selected: {_vm.mode},
                       onSelectionChanged: connected || connecting ? null : (s) => _vm.setMode(s.first),
@@ -142,8 +143,13 @@ class _RealtimeDialogState extends State<RealtimeDialog> {
                       onChanged: (v) => _vm.url = v,
                       onSubmitted: (_) => connected ? null : _vm.connect(),
                     );
+                    // While connecting the same button gives up on the attempt, which is what its label says.
                     final connectButton = connected || connecting
-                        ? OutlinedButton.icon(onPressed: _vm.disconnect, icon: const Icon(Icons.link_off, size: 16), label: const Text('Disconnect'))
+                        ? OutlinedButton.icon(
+                            onPressed: _vm.disconnect,
+                            icon: Icon(connecting ? Icons.close : Icons.link_off, size: 16),
+                            label: Text(connecting ? 'Cancel' : 'Disconnect'),
+                          )
                         : GradientButton(label: 'Connect', icon: Icons.bolt, onPressed: _vm.connect);
                     // Phone width: the mode picker and button share a line (wrapping if even that is too tight) and the URL gets the full width below.
                     if (box.maxWidth < 560) {
@@ -203,6 +209,11 @@ class _RealtimeDialogState extends State<RealtimeDialog> {
                     ],
                   ),
                 ),
+                if (!_vm.sseSupported)
+                  const InfoBanner(
+                    message: RealtimeConnector.sseUnsupportedMessage,
+                    margin: EdgeInsets.only(bottom: 8),
+                  ),
                 if (_vm.error != null) InfoBanner(kind: BannerKind.error, message: _vm.error!, margin: const EdgeInsets.only(bottom: 8)),
                 // Wraps instead of overflowing when the counters and both buttons do not fit on one line.
                 Wrap(

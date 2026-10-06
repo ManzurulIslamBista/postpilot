@@ -3,7 +3,8 @@ import '../entities/workplace_content.dart';
 import '../entities/workplace_entity.dart';
 
 abstract interface class WorkplaceRepository {
-  /// Whether secret values are kept in a device-only file instead of `workspace.json`.
+  /// Whether secret values are kept in `workspace.local.json`, beside the workspace and never
+  /// pushed, instead of in `workspace.json`.
   bool get keepsSecretsLocal;
 
   /// Whether workplace folders are real directories on this device (false on
@@ -76,4 +77,16 @@ abstract interface class WorkplaceRepository {
 
   /// Opens a workplace folder in the system file manager (no-op where unsupported).
   Future<void> revealFolder(String folderPath);
+}
+
+/// What a repository can remember about a workplace beyond its data: whether the database holds
+/// changes that `workspace.json` has not received yet (a write failed, or the app closed before
+/// the autosave ran). Kept apart from [WorkplaceRepository] so that a repository without it, such
+/// as a test double, still works; the view model then simply has no marker.
+///
+/// The marker lives on this device only. At the next start it tells the view model that the
+/// database is newer than the file, so the older file must not replace it.
+abstract interface class WorkplaceDirtyTracking {
+  Future<bool> hasUnsavedChanges(WorkplaceEntity workplace);
+  Future<void> setUnsavedChanges(WorkplaceEntity workplace, bool unsaved);
 }

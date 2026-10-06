@@ -1,9 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/di/injector.dart';
 import '../../../core/shortcuts/app_shortcuts.dart';
 import '../../../core/theme/context_theme_extensions.dart';
+import '../../../core/widgets/busy_label.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/tool_dialog.dart';
+import '../../collections/presentation/view_models/collections_view_model.dart';
+import '../../command_palette/presentation/command_palette_dialog.dart';
+import '../../command_palette/presentation/palette_items.dart';
+import '../../environments/presentation/view_models/environments_view_model.dart';
+import '../../shell/presentation/shell_view_model.dart';
+import '../../templates/domain/starter_templates.dart';
+import '../../templates/domain/usecases/add_starter_template_usecase.dart';
 
 /// Remembers that the welcome tour was shown, so it opens by itself only once.
 class TourPrefs {
@@ -25,20 +35,29 @@ class TourPrefs {
   }
 }
 
+/// What a step offers to do right now, so the tour is something to try and not only something to read.
+enum _StepAction { addSample, openPalette }
+
 class _Step {
   final IconData icon;
   final String title;
   final String body;
   final List<String> points;
-  const _Step(this.icon, this.title, this.body, this.points);
+  final _StepAction? action;
+  const _Step(this.icon, this.title, this.body, this.points, {this.action});
 }
 
 /// A short tour of what makes PostPilot different, shown once and always
 /// reachable from the command palette.
 class TourDialog extends StatefulWidget {
-  const TourDialog({super.key});
+  /// Opens the command palette the way the rest of the app does (with the actions only the shell can perform);
+  /// without it the step's button opens a palette of the tools, requests and environments.
+  final VoidCallback? onOpenPalette;
 
-  static Future<void> show(BuildContext context) => ToolDialog.show(context, (_) => const TourDialog());
+  const TourDialog({super.key, this.onOpenPalette});
+
+  static Future<void> show(BuildContext context, {VoidCallback? onOpenPalette}) =>
+      ToolDialog.show(context, (_) => TourDialog(onOpenPalette: onOpenPalette));
 
   @override
   State<TourDialog> createState() => _TourDialogState();
@@ -47,22 +66,24 @@ class TourDialog extends StatefulWidget {
 class _TourDialogState extends State<TourDialog> {
   final _controller = PageController();
   int _page = 0;
+  bool _addingSample = false;
 
   static final _steps = [
     const _Step(Icons.rocket_launch_outlined, 'Welcome to PostPilot', 'Design, send and test APIs, and keep them in a Git repository with your team.', [
       'Collections hold your requests; folders keep them tidy.',
       'Press New request, import from Postman, Insomnia, OpenAPI or cURL, or add a starter template.',
       'Everything you save is autosaved to your workspace folder.',
-    ]),
+    ], action: _StepAction.addSample),
     const _Step(Icons.send_rounded, 'Send a request', 'Pick a method, type a URL and press Send.', [
       'Paste a cURL command into the URL field: it fills the whole request.',
       'Use {{variables}} anywhere; hover one to see its value.',
       'Params, Headers, Body, Auth and Tests are one click away in the request tabs.',
+      'The Tests tab also holds extractors: copy a value out of the response into a variable, and the next request can use it.',
     ]),
     const _Step(Icons.layers_outlined, 'Environments and safety', 'Switch between Dev, Staging and Production without editing requests.', [
       'An environment named Production turns red and asks before POST, PUT, PATCH or DELETE.',
       'Secret variables stay on your device, never in the workspace file Git carries.',
-      'Chain requests: use a value from one response as a variable in the next.',
+      'Chain requests: an extractor on the Tests tab saves a value from one response as a variable for the next.',
     ]),
     const _Step(Icons.auto_fix_high, 'Do more with a response', 'The wand beside a response opens the response tools.', [
       'Explore the JSON as a tree and pull values out with one click.',
@@ -73,7 +94,7 @@ class _TourDialogState extends State<TourDialog> {
       'Dart Studio: models and a whole API layer for Flutter.',
       'Odoo Studio, Mock server, Realtime (WebSocket / SSE), GraphQL explorer, Device helper.',
       'Starter templates and an optional AI helper that uses your own key.',
-    ]),
+    ], action: _StepAction.openPalette),
     const _Step(Icons.cloud_sync_outlined, 'Teams with Git', 'Connect a workplace to a GitHub repository and push and pull with your team.', [
       'Before every push you see what changed, and a commit message is written for you.',
       'If a teammate pushed first, you are warned instead of overwriting their work.',
@@ -86,6 +107,60 @@ class _TourDialogState extends State<TourDialog> {
     _controller.dispose();
     super.dispose();
   }
+
+  /// Adds the REST starter collection, opens its first request and closes the tour, so the next thing on screen is
+  /// something to press Send on.
+  Future<void> _addSample() async {
+    setState(() => _addingSample = true);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final collections = context.read<CollectionsViewModel>();
+    final shell = context.read<ShellViewModel>();
+    try {
+      final template = StarterTemplates.all().firstWhere((t) => t.id == 'rest');
+      final added = await locator<AddStarterTemplateUseCase>()(template);
+      collections.expandCollection(added.collectionId);
+      final first = await collections.firstRequestId(added.collectionId);
+      if (first != null) shell.selectRequest(first);
+      if (mounted) navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Added "${template.title}" with ${added.requests} requests. Press Send on the open one to try it.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text("Couldn't add the sample collection: $e")));
+      if (mounted) setState(() => _addingSample = false);
+    }
+  }
+
+  /// Closes the tour and opens the palette; everything is read from before the pop, because the tour's own
+  /// context is gone after it.
+  void _openPalette() {
+    final navigator = Navigator.of(context);
+    final open = widget.onOpenPalette;
+    final environments = open == null ? context.read<EnvironmentsViewModel>() : null;
+    navigator.pop();
+    if (open != null) {
+      open();
+      return;
+    }
+    CommandPaletteDialog.show(
+      navigator.context,
+      items: [...PaletteItems.tools(), ...PaletteItems.environments(environments!)],
+      loadMore: PaletteItems.requests,
+    );
+  }
+
+  Widget _actionButton(_StepAction action) => switch (action) {
+    _StepAction.addSample => OutlinedButton(
+      onPressed: _addingSample ? null : _addSample,
+      child: BusyLabel(busy: _addingSample, icon: Icons.add, label: 'Add the sample collection', busyLabel: 'Adding the sample…'),
+    ),
+    _StepAction.openPalette => OutlinedButton.icon(
+      onPressed: _openPalette,
+      icon: const Icon(Icons.manage_search, size: 18),
+      label: const Text('Open the command palette'),
+    ),
+  };
 
   void _go(int page) => _controller.animateToPage(page, duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
 
@@ -154,6 +229,7 @@ class _TourDialogState extends State<TourDialog> {
                           ],
                         ),
                       ),
+                    if (s.action != null) ...[const SizedBox(height: 8), _actionButton(s.action!)],
                   ],
                 ),
               ),

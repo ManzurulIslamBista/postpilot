@@ -5,7 +5,10 @@
 final class PythonLiteral {
   final String _s;
   int _i = 0;
-  PythonLiteral._(this._s);
+
+  /// When true an unknown name is an error instead of a `{{name}}` placeholder.
+  final bool _strict;
+  PythonLiteral._(this._s, [this._strict = false]);
 
   /// Arguments of the first call to a function named [function] in [source]:
   /// positional values and `name=value` keywords. `null` when the call is not
@@ -39,9 +42,12 @@ final class PythonLiteral {
     }
   }
 
-  /// A single literal, or `null` if [text] is not one.
-  static Object? parse(String text) {
-    final reader = PythonLiteral._(text);
+  /// A single literal, or `null` if [text] is not one. With [strict] a bare
+  /// name (a variable, a call) makes the text "not a literal" instead of turning
+  /// into a `{{name}}` placeholder; use it for text a person typed that may
+  /// just be a word.
+  static Object? parse(String text, {bool strict = false}) {
+    final reader = PythonLiteral._(text, strict);
     try {
       final v = reader._value();
       reader._skip();
@@ -110,6 +116,7 @@ final class PythonLiteral {
         case 'None':
           return null;
       }
+      if (_strict) throw FormatException('"$w" is not a literal');
       _skip();
       if (_peek == '(') {
         // A call such as datetime.now(): keep it as an expression placeholder.
@@ -187,19 +194,52 @@ final class PythonLiteral {
         return b.toString();
       }
       if (c == '\\' && !raw && _i + 1 < _s.length) {
-        final n = _s[_i + 1];
-        b.write(switch (n) {
-          'n' => '\n',
-          't' => '\t',
-          'r' => '\r',
-          _ => n,
-        });
-        _i += 2;
+        _i = _escape(b, _i + 1);
       } else {
         b.write(c);
         _i++;
       }
     }
     throw const FormatException('Unterminated string');
+  }
+
+  /// Writes what the escape at [at] (the index after the backslash) stands for
+  /// into [b] and returns the index after it. An unknown escape keeps its
+  /// backslash, as Python does: `'\d'` is two characters.
+  int _escape(StringBuffer b, int at) {
+    final n = _s[at];
+    int hex(int digits) {
+      final end = at + 1 + digits;
+      final code = end <= _s.length ? int.tryParse(_s.substring(at + 1, end), radix: 16) : null;
+      if (code == null || code > 0x10FFFF) throw FormatException('Bad \\$n escape');
+      b.writeCharCode(code);
+      return end;
+    }
+
+    switch (n) {
+      case 'n':
+        b.write('\n');
+      case 't':
+        b.write('\t');
+      case 'r':
+        b.write('\r');
+      case '0':
+        b.writeCharCode(0);
+      case '\\' || "'" || '"':
+        b.write(n);
+      case '\n': // a backslash at the end of a line continues the string
+        break;
+      case '\r':
+        return at + 1 < _s.length && _s[at + 1] == '\n' ? at + 2 : at + 1;
+      case 'x':
+        return hex(2);
+      case 'u':
+        return hex(4);
+      case 'U':
+        return hex(8);
+      default:
+        b.write('\\$n');
+    }
+    return at + 1;
   }
 }

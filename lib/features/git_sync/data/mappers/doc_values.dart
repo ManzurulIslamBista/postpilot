@@ -4,6 +4,7 @@ import '../../../../core/enums/auth_type.dart';
 import '../../../request_builder/domain/entities/key_value_item.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
 import '../../domain/services/secret_fields.dart';
+import '../../domain/services/secret_names.dart';
 import '../../domain/services/secret_text.dart';
 
 /// Canonical forms of the values that recur across doc kinds. Each function
@@ -11,8 +12,13 @@ import '../../domain/services/secret_text.dart';
 /// exactly what a database read produces, so equal states give equal docs no
 /// matter who wrote them. A value of the wrong JSON type throws a [TypeError].
 abstract final class DocValues {
-  static Map<String, Object?> notes(Map<String, Object?> data) {
-    final description = data['description'] as String? ?? '';
+  /// The description and tags of [data]. With [keepingSecretsOf] (the local,
+  /// already canonical data) a description whose credentials were blanked gets
+  /// them back, if nothing else in it changed.
+  static Map<String, Object?> notes(Map<String, Object?> data, {Map<String, Object?>? keepingSecretsOf}) {
+    var description = data['description'] as String? ?? '';
+    final localDescription = keepingSecretsOf?['description'];
+    if (localDescription is String) description = SecretText.restoreNote(description, localDescription);
     final tagList = tags(data['tags']);
     return {
       if (description.isNotEmpty) 'description': description,
@@ -63,12 +69,19 @@ abstract final class DocValues {
     return keepingSecretsOf is String ? SecretText.restoreUrl(url, keepingSecretsOf) : url;
   }
 
-  /// A body text that may hold JSON (raw body, GraphQL variables), [fallback]
-  /// when absent. With [keepingSecretsOf] (the local text) blanked secret
-  /// values get their local values back.
+  /// A body text (raw body, GraphQL query or variables), [fallback] when
+  /// absent. With [keepingSecretsOf] (the local text) blanked secret values
+  /// get their local values back.
   static String jsonText(Object? value, {required String fallback, Object? keepingSecretsOf}) {
     final text = value as String? ?? fallback;
-    return keepingSecretsOf is String ? SecretText.restoreJson(text, keepingSecretsOf) : text;
+    return keepingSecretsOf is String ? SecretText.restoreBody(text, keepingSecretsOf) : text;
+  }
+
+  /// A request's assertions. With [keepingSecretsOf] (the local, already
+  /// canonical list) blanked expected values get their local values back.
+  static List<Object?> assertions(Object? value, {Object? keepingSecretsOf}) {
+    final items = jsonList(value);
+    return keepingSecretsOf is List ? SecretFields.restoreAssertions(items, keepingSecretsOf) : items;
   }
 
   static List<KeyValueItem> keyValueItems(Object? canonicalKeyValues) => [
@@ -164,6 +177,82 @@ abstract final class DocValues {
   }
 
   static RequestAuth parseAuth(Object value) => RequestAuth.fromJson(Map<String, dynamic>.from(value as Map));
+
+  /// What a collection or folder passes down to its requests, as the keys its doc holds them under:
+  /// `headers`, `tests` and, on a [folder], `variables` and `auth`; each present only when it holds
+  /// something (a collection's own variables and auth have their own mappers). With [keepingSecretsOf]
+  /// (the local, already canonical data) credentials the target left blank get their local values back.
+  static Map<String, Object?> defaults(
+    Map<String, Object?> data, {
+    Map<String, Object?>? keepingSecretsOf,
+    required bool folder,
+  }) {
+    final headers = keyValues(
+      data['headers'],
+      keepingSecretsOf: keepingSecretsOf?['headers'],
+      isSecret: SecretNames.isSecretHeader,
+    );
+    final variables = folder
+        ? folderVariables(data['variables'], keepingSecretsOf: keepingSecretsOf?['variables'])
+        : const <Map<String, Object?>>[];
+    final auth = folder ? folderAuth(data['auth'], keepingSecretsOf: keepingSecretsOf?['auth']) : null;
+    final tests = defaultTests(data['tests'], keepingSecretsOf: keepingSecretsOf?['tests']);
+    return {
+      if (headers.isNotEmpty) 'headers': headers,
+      if (variables.isNotEmpty) 'variables': variables,
+      'auth': ?auth,
+      'tests': ?tests,
+    };
+  }
+
+  /// A folder's variables, sorted by key like a collection's (ties keep their order), `secret: true`
+  /// only where it is marked. With [keepingSecretsOf] (the local, already canonical list) a secret one
+  /// (marked, or named like a credential) whose value is empty keeps the local value of the same
+  /// name, matching repeated names by occurrence.
+  static List<Map<String, Object?>> folderVariables(Object? value, {Object? keepingSecretsOf}) {
+    final items = [
+      for (final item in (value as List? ?? const []))
+        {
+          'key': (item as Map)['key'] as String,
+          'value': item['value'] as String? ?? '',
+          if (item['secret'] == true) 'secret': true,
+          'enabled': item['enabled'] as bool? ?? true,
+        },
+    ];
+    final order = [for (var i = 0; i < items.length; i++) i]..sort((a, b) {
+        final byKey = (items[a]['key'] as String).compareTo(items[b]['key'] as String);
+        return byKey != 0 ? byKey : a.compareTo(b);
+      });
+    final sorted = [for (final i in order) items[i]];
+    if (keepingSecretsOf is! List) return sorted;
+    final marked = {
+      for (final item in [...sorted, ...keepingSecretsOf.whereType<Map>()])
+        if (item['secret'] == true) item['key'] as String,
+    };
+    return _keepLocalValues(sorted, keepingSecretsOf, (name) => marked.contains(name) || SecretFields.looksSecretKey(name));
+  }
+
+  /// A folder's auth, or null when it sets none (absent, empty, or "inherit"). "No Auth" is a setting
+  /// on a folder (it switches off what is inherited), unlike on a collection, where it is the same as none.
+  static Map<String, Object?>? folderAuth(Object? value, {Object? keepingSecretsOf}) {
+    if (value == null || (value is Map && value.isEmpty)) return null;
+    final auth = parseAuth(value);
+    return auth.type == AuthType.inherit ? null : _authMap(auth, keepingSecretsOf);
+  }
+
+  /// The tests a collection or folder passes down (`{assertions, extractors}`), null when there are none.
+  /// With [keepingSecretsOf] (the local, already canonical tests) blanked expected values get their
+  /// local values back.
+  static Map<String, Object?>? defaultTests(Object? value, {Object? keepingSecretsOf}) {
+    final tests = value is Map ? value : const <String, Object?>{};
+    final assertionList = assertions(
+      tests['assertions'],
+      keepingSecretsOf: keepingSecretsOf is Map ? keepingSecretsOf['assertions'] : null,
+    );
+    final extractorList = jsonList(tests['extractors']);
+    if (assertionList.isEmpty && extractorList.isEmpty) return null;
+    return {'assertions': assertionList, 'extractors': extractorList};
+  }
 
   /// Credentials that the target leaves empty keep their local value.
   static Map<String, Object?> _authMap(RequestAuth auth, Object? local) {

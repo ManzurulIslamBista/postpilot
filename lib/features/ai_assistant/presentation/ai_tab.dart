@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../core/di/injector.dart';
-import '../../../core/enums/body_type.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../../core/widgets/busy_label.dart';
 import '../../../core/widgets/code_block.dart';
@@ -50,17 +49,18 @@ class _AiTabState extends State<AiTab> {
   String get _input {
     final vm = widget.viewModel;
     final r = vm.data.response;
-    final request = vm.request;
+    // The request as it was sent, masked after resolution: what leaves the app is exactly what "Show what is sent" shows.
     return AiTasks.explainInput(
-      method: request?.method.label ?? 'GET',
-      url: request?.url ?? vm.data.requestName,
+      method: vm.requestMethod,
+      url: vm.requestUrl,
       statusCode: r.statusCode,
       statusText: r.statusMessage,
-      requestHeaders: {for (final h in request?.headers ?? const []) if (h.enabled && h.key.isNotEmpty) h.key: h.value},
-      requestBody: request == null ? null : (request.body.type == BodyType.graphql ? request.body.graphqlQuery : request.body.rawText),
+      requestHeaders: vm.requestHeaders,
+      requestBody: vm.requestBodyText,
       responseHeaders: r.headers,
       responseBody: vm.data.bodyText,
       question: _question.text,
+      secretValues: vm.secretValues,
     );
   }
 

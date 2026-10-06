@@ -83,9 +83,13 @@ class _PushPreviewDialogState extends State<PushPreviewDialog> {
           if (p.remoteChanged)
             InfoBanner(
               kind: BannerKind.warning,
-              title: 'The repository has changes you do not have',
-              message: 'Someone else, or another device, pushed since your last sync. Pushing now replaces their version of workspace.json with yours. '
-                  'Pull first to get their work, or tick the box to overwrite it.',
+              title: p.neverSynced ? 'The repository already has a different workspace.json' : 'The repository has changes you do not have',
+              message: p.neverSynced
+                  ? 'This workplace has never synced with this repository, so there is no way to tell whose work is newer. '
+                      'Pushing now replaces the repository copy of workspace.json with yours. '
+                      'Pull first to start from the repository copy, or tick the box to overwrite it.'
+                  : 'Someone else, or another device, pushed since your last sync. Pushing now replaces their version of workspace.json with yours. '
+                      'Pull first to get their work, or tick the box to overwrite it.',
               trailing: null,
             ),
           if (p.remoteChanged)

@@ -136,7 +136,7 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
                             autofocus: true,
                             style: context.textStyles.body.copyWith(fontSize: 15),
                             decoration: const InputDecoration(
-                              hintText: 'Search requests, tools, environments…',
+                              hintText: 'Search requests, tools, environments and actions…',
                               border: InputBorder.none,
                               enabledBorder: InputBorder.none,
                               focusedBorder: InputBorder.none,

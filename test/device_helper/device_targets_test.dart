@@ -27,6 +27,19 @@ void main() {
     expect(DeviceTargets.adbReverse(3001), 'adb reverse tcp:3001 tcp:3001');
   });
 
+  test('knows when an address is plain http, and the note names both platform settings', () {
+    for (final u in ['http://192.168.1.5:3000', 'HTTP://10.0.2.2:8080/x', ' http://localhost ']) {
+      expect(DeviceTargets.usesCleartext(u), isTrue, reason: u);
+    }
+    for (final u in ['https://192.168.1.5', '10.0.2.2:3000', '', '{{baseUrl}}']) {
+      expect(DeviceTargets.usesCleartext(u), isFalse, reason: u);
+    }
+    expect(DeviceTargets.cleartextNote, contains('usesCleartextTraffic'));
+    expect(DeviceTargets.cleartextNote, contains('network security config'));
+    expect(DeviceTargets.cleartextNote, contains('NSAllowsLocalNetworking'));
+    expect(DeviceTargets.cleartextNote, contains('Info.plist'));
+  });
+
   test('lists the emulator aliases', () {
     final hosts = {for (final t in DeviceTargets.forEmulators()) t.name: t.host};
     expect(hosts['Android emulator'], '10.0.2.2');

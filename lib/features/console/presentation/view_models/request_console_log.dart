@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../../core/network/api_http_response.dart';
 import '../../../../core/network/logging_api_client.dart';
+import '../../../documentation/domain/services/secret_masker.dart';
 import '../../domain/entities/console_entry_entity.dart';
 
 /// In-memory record of every request that left the app this session, newest
@@ -45,6 +46,10 @@ final class RequestConsoleLog with ChangeNotifier implements ApiCallObserver {
     notifyListeners();
   }
 
+  /// The URL here is the resolved one, so a `?api_key=` of the query (and a
+  /// `user:password@`) would sit in the list, in what the dialog shows and
+  /// in anything copied or exported from it: both it and an error message
+  /// that quotes it are masked on the way in.
   ConsoleEntryEntity _entryFor(
     ApiRequestSpec spec, {
     required DateTime sentAt,
@@ -55,14 +60,14 @@ final class RequestConsoleLog with ChangeNotifier implements ApiCallObserver {
   }) =>
       ConsoleEntryEntity(
         method: spec.method,
-        url: spec.url,
+        url: SecretMasker.maskUrl(spec.url),
         headersCount: spec.headers.length,
         bodySize: _bodySize(spec.body),
         sentAt: sentAt,
         durationMs: durationMs,
         statusCode: statusCode,
         responseSize: responseSize,
-        errorMessage: errorMessage,
+        errorMessage: errorMessage == null ? null : SecretMasker.maskMessage(errorMessage),
       );
 
   /// Slots [entry] in by send time rather than arrival order, so concurrent

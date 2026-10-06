@@ -12,7 +12,14 @@ enum AppShortcut {
   toggleSidebar(LogicalKeyboardKey.keyB, 'Show or hide the sidebar', browserReserved: true),
   findInResponse(LogicalKeyboardKey.keyF, 'Find in the response', browserReserved: true),
   commandPalette(LogicalKeyboardKey.keyP, 'Command palette: tools, requests, environments', shift: true, browserReserved: true),
-  reopenClosedTab(LogicalKeyboardKey.keyT, 'Reopen the last closed request', shift: true, browserReserved: true);
+  reopenClosedTab(LogicalKeyboardKey.keyT, 'Reopen the last closed request', shift: true, browserReserved: true),
+  focusUrl(LogicalKeyboardKey.keyL, 'Focus the URL bar', browserReserved: true),
+  nextTab(LogicalKeyboardKey.pageDown, 'Next request tab', browserReserved: true),
+  previousTab(LogicalKeyboardKey.pageUp, 'Previous request tab', browserReserved: true),
+  duplicateRequest(LogicalKeyboardKey.keyD, 'Duplicate the current request', browserReserved: true),
+  saveResponseExample(LogicalKeyboardKey.keyS, 'Save the response as an example', shift: true, browserReserved: true),
+  switchEnvironment(LogicalKeyboardKey.keyE, 'Switch environment', shift: true, browserReserved: true),
+  runCollection(LogicalKeyboardKey.keyR, 'Run the current collection', shift: true, browserReserved: true);
 
   const AppShortcut(this.key, this.description, {this.shift = false, this.browserReserved = false});
 
@@ -56,6 +63,13 @@ final class ShortcutHandlers {
   /// Optional so a screen that has no palette (or a test) need not provide one.
   final VoidCallback? openCommandPalette;
   final VoidCallback? reopenClosedTab;
+  final VoidCallback? focusUrl;
+  final VoidCallback? nextTab;
+  final VoidCallback? previousTab;
+  final VoidCallback? duplicateRequest;
+  final VoidCallback? saveResponseExample;
+  final VoidCallback? switchEnvironment;
+  final VoidCallback? runCollection;
 
   const ShortcutHandlers({
     required this.sendRequest,
@@ -67,6 +81,13 @@ final class ShortcutHandlers {
     required this.findInResponse,
     this.openCommandPalette,
     this.reopenClosedTab,
+    this.focusUrl,
+    this.nextTab,
+    this.previousTab,
+    this.duplicateRequest,
+    this.saveResponseExample,
+    this.switchEnvironment,
+    this.runCollection,
   });
 
   VoidCallback handlerFor(AppShortcut shortcut) => switch (shortcut) {
@@ -79,6 +100,13 @@ final class ShortcutHandlers {
     AppShortcut.findInResponse => findInResponse,
     AppShortcut.commandPalette => openCommandPalette ?? () {},
     AppShortcut.reopenClosedTab => reopenClosedTab ?? () {},
+    AppShortcut.focusUrl => focusUrl ?? () {},
+    AppShortcut.nextTab => nextTab ?? () {},
+    AppShortcut.previousTab => previousTab ?? () {},
+    AppShortcut.duplicateRequest => duplicateRequest ?? () {},
+    AppShortcut.saveResponseExample => saveResponseExample ?? () {},
+    AppShortcut.switchEnvironment => switchEnvironment ?? () {},
+    AppShortcut.runCollection => runCollection ?? () {},
   };
 }
 
@@ -111,6 +139,8 @@ class ShortcutsHelpDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Keyboard shortcuts'),
+      // Sixteen rows no longer fit a short window.
+      scrollable: true,
       content: SizedBox(
         width: 360,
         child: Column(

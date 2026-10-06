@@ -20,6 +20,7 @@ Options for run and mcp:
   --env <name>          Environment whose variables are used
   --collection <name>   Only this collection
   --folder <path>       Only this folder (and its sub-folders)
+  --request <name>      Only this request: its name, or Folder/Sub/Name (repeatable)
   --var <name=value>    Set a variable (repeatable); beats everything else
   --bail                Stop at the first failure
   --timeout <seconds>   Per-request timeout (default 30)
@@ -29,6 +30,10 @@ Options for run and mcp:
   --out <file>          Write the junit/json report to a file
   --fail-on-skip        Fail the run when any request was skipped (OAuth 2.0 requests need the app)
   --no-color            Plain output
+
+Requests run in the order the app shows them: folders and requests as arranged in
+the sidebar, a folder's content right after it. --folder and --request only pick
+from that order, they never change it.
 
 Production lock: while the environment looks like production (a name with
 prod, production, prd or live) or a request goes to a production host, requests
@@ -45,7 +50,7 @@ environment variables named POSTPILOT_VAR_<name> (for example POSTPILOT_VAR_odoo
 
 Exit code: 0 all passed, 1 a request or test failed (or nothing was verified:
 every request was skipped, or --fail-on-skip and one was), 2 usage or file error,
-a production lock refusal, or no request matched.
+a production lock refusal, a --request that matches nothing, or no request matched.
 ''';
 
 /// Parses the command line and runs it. Returns the process exit code.
@@ -117,6 +122,7 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
     variables: parsed.variables,
     collection: parsed.options['collection'],
     folder: parsed.options['folder'],
+    requests: parsed.lists['request'] ?? const [],
     bail: parsed.flags.contains('bail'),
     timeout: Duration(seconds: int.tryParse(parsed.options['timeout'] ?? '') ?? 30),
     delay: Duration(milliseconds: int.tryParse(parsed.options['delay'] ?? '') ?? 0),
@@ -146,6 +152,14 @@ Future<int> runCli(List<String> args, {CliSend? sender, IOSink? out, IOSink? err
   }
   final color = !parsed.flags.contains('no-color') && stdoutSink == stdout && stdout.hasTerminal;
   final live = report == 'console' || parsed.options['out'] != null;
+  final unmatched = runner.unmatchedRequestSelectors(options);
+  if (unmatched.isNotEmpty) {
+    stderrSink.writeln(
+      'No request matches ${unmatched.map((s) => '"$s"').join(', ')}. '
+      'Use the request name, or Folder/Sub-folder/Name; "postpilot list $path" shows what is there.',
+    );
+    return 2;
+  }
   try {
     // The production lock refuses the whole run up front: sending half of a
     // collection to production and then stopping is worse than sending none.
@@ -198,13 +212,13 @@ final class _Args {
   final Map<String, String> options = {};
   final Map<String, String> variables = {};
 
-  /// Options that may be given more than once (`--production-host a --production-host b`).
+  /// Options that may be given more than once (`--production-host a --production-host b`, `--request A --request B`).
   final Map<String, List<String>> lists = {};
   final Set<String> flags = {};
   String? error;
 
   static const _valued = {'env', 'collection', 'folder', 'timeout', 'delay', 'report', 'out'};
-  static const _repeatable = {'production-word', 'production-host'};
+  static const _repeatable = {'production-word', 'production-host', 'request'};
   static const _boolean = {'bail', 'insecure', 'no-color', 'allow-production', 'fail-on-skip'};
 
   static _Args parse(List<String> args) {

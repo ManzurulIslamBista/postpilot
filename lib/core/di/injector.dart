@@ -17,6 +17,13 @@ import '../../features/collections/domain/repositories/collection_repository.dar
 import '../../features/collections/domain/repositories/collection_variable_repository.dart';
 import '../../features/collections/presentation/view_models/collection_runner_view_model.dart';
 import '../../features/collections/presentation/view_models/collections_view_model.dart';
+import '../../features/defaults/data/defaults_repository_impl.dart';
+import '../../features/defaults/domain/repositories/defaults_repository.dart';
+import '../../features/defaults/domain/usecases/resolve_request_defaults_usecase.dart';
+import '../../features/defaults/presentation/view_models/defaults_view_model.dart';
+import '../../features/defaults/presentation/view_models/inherited_defaults_view_model.dart';
+import '../../features/request_builder/domain/services/request_spec_builder.dart';
+import '../../features/scripting/domain/evaluator/assertion_evaluator.dart';
 import '../../features/console/presentation/view_models/request_console_log.dart';
 import '../../features/cookies/data/repositories/cookie_repository_impl.dart';
 import '../../features/cookies/domain/repositories/cookie_repository.dart';
@@ -460,6 +467,7 @@ void _registerDocumentation() {
       locator<CollectionAuthRepository>(),
       locator<DocumentationRepository>(),
       locator<TagRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<TagFilterViewModel>(
@@ -490,6 +498,7 @@ void _registerImportExport() {
       locator<RequestRepository>(),
       locator<CollectionVariableRepository>(),
       locator<CollectionAuthRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<BackupService>(
@@ -507,6 +516,7 @@ void _registerImportExport() {
       locator<DocumentationRepository>(),
       locator<TagRepository>(),
       locator<GitStateStore>(),
+      locator<DefaultsRepository>(),
     ),
   );
 
@@ -517,6 +527,7 @@ void _registerImportExport() {
       locator<CollectionVariableRepository>(),
       locator<CollectionAuthRepository>(),
       locator<RequestScriptsRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<ImportPostmanEnvironmentUseCase>(
@@ -528,6 +539,7 @@ void _registerImportExport() {
       locator<RequestRepository>(),
       locator<CollectionVariableRepository>(),
       locator<CollectionAuthRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<ImportCurlUseCase>(() => ImportCurlUseCase(locator<RequestRepository>()));

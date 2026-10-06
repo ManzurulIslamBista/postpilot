@@ -9,6 +9,7 @@ import '../defaults/domain/entities/inherited_defaults.dart';
 import '../defaults/domain/services/defaults_resolver.dart';
 import '../documentation/domain/services/secret_masker.dart';
 import '../import_export/domain/services/backup_codec.dart';
+import '../import_export/domain/services/backup_order.dart';
 import '../request_builder/domain/entities/api_request_entity.dart';
 import '../request_builder/domain/entities/api_response_entity.dart';
 import '../request_builder/domain/entities/request_auth.dart';
@@ -61,6 +62,10 @@ final class RunOptions {
   final Map<String, String> agentVariables;
   final String? collection;
   final String? folder;
+
+  /// `--request` (repeatable): only the requests with this name, or this `folder/path/name`. Together with
+  /// [folder] a request must match both. They still run in the collection's order, not in the order given.
+  final List<String> requests;
   final bool bail;
   final Duration timeout;
   final bool verifySsl;
@@ -78,6 +83,7 @@ final class RunOptions {
     this.agentVariables = const {},
     this.collection,
     this.folder,
+    this.requests = const [],
     this.bail = false,
     this.timeout = const Duration(seconds: 30),
     this.verifySsl = true,
@@ -239,10 +245,11 @@ final class WorkspaceRunner {
   List<String> get environmentNames => [for (final e in snapshot.environments) e.name];
   List<String> get collectionNames => [for (final c in snapshot.collections) c.name];
 
+  /// The requests in the order a run sends them (the collection's canonical order, the sidebar's).
   List<RequestRef> listRequests({String? collection}) => [
         for (final c in snapshot.collections)
           if (collection == null || c.name == collection)
-            for (final r in c.requests) RequestRef(c.name, _folderPath(c, r.request.folderId), r.request.name, r.request.method.label, r.request.url),
+            for (final r in c.orderedRequests) RequestRef(c.name, _folderPath(c, r.request.folderId), r.request.name, r.request.method.label, r.request.url),
       ];
 
   String _folderPath(BackupCollection c, int? folderId) {
@@ -258,19 +265,38 @@ final class WorkspaceRunner {
     return names.join('/');
   }
 
-  /// The requests [options] select (collection and folder filters), in file order.
+  /// The requests [options] select (collection, folder and request filters), in the collection's canonical order:
+  /// depth-first, folders and requests interleaved by their position, the same order the app's runner uses.
   Iterable<(BackupCollection, BackupRequest)> _selected(RunOptions options) sync* {
     for (final collection in snapshot.collections) {
       if (options.collection != null && collection.name != options.collection) continue;
-      for (final item in collection.requests) {
+      for (final item in collection.orderedRequests) {
         final folder = _folderPath(collection, item.request.folderId);
         if (options.folder != null && folder != options.folder && !folder.startsWith('${options.folder}/')) continue;
+        if (options.requests.isNotEmpty && !options.requests.any((s) => _matchesRequest(s, folder, item.request.name))) continue;
         yield (collection, item);
       }
     }
   }
 
-  /// Runs every selected request in file order. [onResult] is called as each finishes.
+  /// A `--request` selector names a request alone (`Login`) or with its folder (`Auth/Login`).
+  static bool _matchesRequest(String selector, String folder, String name) =>
+      selector == name || selector == (folder.isEmpty ? name : '$folder/$name');
+
+  /// The `--request` selectors of [options] that match no request of the selected collections and folder, so a typo
+  /// stops the run before anything is sent instead of quietly running less than was asked for.
+  List<String> unmatchedRequestSelectors(RunOptions options) {
+    final unfiltered = RunOptions(collection: options.collection, folder: options.folder);
+    final candidates = [
+      for (final (collection, item) in _selected(unfiltered)) (_folderPath(collection, item.request.folderId), item.request.name),
+    ];
+    return [
+      for (final selector in options.requests)
+        if (!candidates.any((c) => _matchesRequest(selector, c.$1, c.$2))) selector,
+    ];
+  }
+
+  /// Runs every selected request in the collection's canonical order. [onResult] is called as each finishes.
   /// The production lock is checked per request as it is sent; call
   /// [productionBlocks] first to refuse a whole run before anything leaves.
   Future<RunSummary> run(RunOptions options, {void Function(RequestOutcome outcome)? onResult, Map<String, String> processVariables = const {}}) async {

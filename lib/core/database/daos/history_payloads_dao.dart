@@ -13,6 +13,26 @@ class HistoryPayloadsDao extends DatabaseAccessor<AppDatabase> with _$HistoryPay
 
   Future<void> upsert(HistoryPayloadsCompanion row) => into(historyPayloads).insertOnConflictUpdate(row);
 
+  /// `request_json` of the given entries, by history id: what the list reads to learn where each
+  /// entry came from. Entries without a payload row are simply absent.
+  Future<Map<int, String>> requestJsonFor(Iterable<int> historyIds) async {
+    final ids = historyIds.toList();
+    final out = <int, String>{};
+    // SQLite caps the number of bound variables of one statement.
+    for (var start = 0; start < ids.length; start += 400) {
+      final chunk = ids.sublist(start, start + 400 > ids.length ? ids.length : start + 400);
+      final query = selectOnly(historyPayloads)
+        ..addColumns([historyPayloads.historyId, historyPayloads.requestJson])
+        ..where(historyPayloads.historyId.isIn(chunk));
+      for (final row in await query.get()) {
+        out[row.read(historyPayloads.historyId)!] = row.read(historyPayloads.requestJson)!;
+      }
+    }
+    return out;
+  }
+
+  Future<void> deleteAll() => delete(historyPayloads).go();
+
   /// History ids whose [HistoryPayload.searchText] contains [needle] (already lower-cased).
   Future<List<int>> idsMatching(String needle) async {
     final escaped = needle.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');

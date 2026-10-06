@@ -67,7 +67,9 @@ void main() {
       expect((shop['variables'] as List).map((v) => (v as Map)['enabled']), [true, false]);
       expect((shop['auth'] as Map)['type'], 'bearer');
       final requests = (shop['requests'] as List).cast<Map<String, dynamic>>();
-      expect(requests.map((r) => r['name']), ['List orders', 'Create order', 'Old order', 'Ping', 'Login', 'Plain']);
+      // In run order, the order the sidebar shows: Orders (its folder Archive first: folders win the tie with
+      // requests), then Users, then the requests at the top.
+      expect(requests.map((r) => r['name']), ['Old order', 'List orders', 'Create order', 'Login', 'Ping', 'Plain']);
       final oldOrder = requests.singleWhere((r) => r['name'] == 'Old order');
       expect((oldOrder['scripts'] as Map)['assertions'], jsonDecode(shopAssertions));
       expect((oldOrder['examples'] as List), hasLength(2));
@@ -325,8 +327,8 @@ void main() {
 
     test('no version', () => expectRejected('{"format":"postpilot-backup"}', contains('version')));
 
-    // Version 3 (Git-linked collections) is readable; the first one this app does not know is newer.
-    test('a version from a newer app', () => expectRejected(_backupOf({'version': BackupCodec.gitVersion + 1}), contains('newer')));
+    // Versions 3 (Git-linked collections) and 4 (defaults of collections and folders) are readable; the first one this app does not know is newer.
+    test('a version from a newer app', () => expectRejected(_backupOf({'version': BackupCodec.maxVersion + 1}), contains('newer')));
 
     test('a field of the wrong type', () => expectRejected(_backupOf({'collections': [{'name': 'X', 'auth': {'bearerToken': 5}}]}), contains('damaged')));
   });

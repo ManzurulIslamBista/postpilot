@@ -5,11 +5,14 @@ import '../../../environments/domain/entities/environment_entity.dart';
 import '../../../environments/domain/entities/global_variable_entity.dart';
 import '../../../environments/domain/repositories/environment_repository.dart';
 import '../../../environments/domain/repositories/global_variable_repository.dart';
+import '../../../defaults/domain/entities/inherited_defaults.dart';
+import '../../../defaults/domain/usecases/resolve_request_defaults_usecase.dart';
 import '../../../git_sync/domain/services/secret_fields.dart';
 import '../../../request_builder/domain/entities/api_response_entity.dart';
 import '../../../request_builder/domain/repositories/request_scripts_repository.dart';
 import '../../../request_builder/domain/usecases/build_variable_resolver_usecase.dart';
 import '../../data/models/scripts_json_codec.dart';
+import '../entities/assertion_result.dart';
 import '../entities/extractor_entity.dart';
 import '../entities/script_run_result.dart';
 import '../evaluator/assertion_evaluator.dart';
@@ -28,25 +31,33 @@ final class RunRequestScriptsParams {
   /// request itself was sent with.
   final Map<String, String> dataVariables;
 
+  /// The folder the request was in when it was sent; where its inherited tests
+  /// and folder variables come from. The stored request wins if it has moved since.
+  final int? folderId;
+
   const RunRequestScriptsParams({
     required this.requestId,
     required this.collectionId,
     required this.response,
     this.dataVariables = const {},
+    this.folderId,
   });
 }
 
 /// Post-send hook: evaluates the request's saved assertions (whose expected
 /// values, paths and header names may use `{{key}}`) and writes its extractors
 /// (whose paths may use `{{key}}` too) into environment/global variables so the
-/// next request can chain on `{{key}}`. Never throws for missing or malformed
-/// scripts.
+/// next request can chain on `{{key}}`. The tests of the collection and of the
+/// folders above the request run first, outermost level first, then the
+/// request's own; each result of an inherited one says where it comes from.
+/// Never throws for missing or malformed scripts.
 final class RunRequestScriptsUseCase implements UseCase<ScriptRunResult, RunRequestScriptsParams> {
   final RequestScriptsRepository _scriptsRepository;
   final BuildVariableResolverUseCase _buildVariableResolverUseCase;
   final EnvironmentRepository _environmentRepository;
   final GlobalVariableRepository _globalVariableRepository;
   final AssertionEvaluator _evaluator;
+  final ResolveRequestDefaultsUseCase? _defaults;
 
   const RunRequestScriptsUseCase(
     this._scriptsRepository,
@@ -54,23 +65,44 @@ final class RunRequestScriptsUseCase implements UseCase<ScriptRunResult, RunRequ
     this._environmentRepository,
     this._globalVariableRepository, [
     this._evaluator = const AssertionEvaluator(),
+    this._defaults,
   ]);
 
   @override
   Future<ScriptRunResult> call(RunRequestScriptsParams params) async {
     final scripts = await _scriptsRepository.get(params.requestId);
-    if (scripts == null) return ScriptRunResult.empty;
-
-    final resolver = await _buildVariableResolverUseCase(params.collectionId, dataVariables: params.dataVariables);
-    final assertions = _evaluator.evaluate(
-      params.response,
-      ScriptsJsonCodec.decodeAssertions(scripts.assertionsJson),
-      resolver,
+    final inherited = await _defaults?.forRequest(
+      requestId: params.requestId,
+      collectionId: params.collectionId,
+      folderId: params.folderId,
     );
+    final levels = inherited?.tests ?? const <InheritedTests>[];
+    if (scripts == null && levels.isEmpty) return ScriptRunResult.empty;
+
+    final resolver = await _buildVariableResolverUseCase(
+      params.collectionId,
+      dataVariables: params.dataVariables,
+      folderId: params.folderId,
+      inherited: inherited,
+    );
+    final assertions = <AssertionResult>[
+      for (final level in levels)
+        for (final result in _evaluator.evaluate(params.response, level.assertions, resolver))
+          result.fromOrigin(level.origin.label),
+      if (scripts != null)
+        ..._evaluator.evaluate(params.response, ScriptsJsonCodec.decodeAssertions(scripts.assertionsJson), resolver),
+    ];
     final reader = ResponseReader(params.response);
     final extracted = <ExtractionResult>[];
-    for (final extractor in ScriptsJsonCodec.decodeExtractors(scripts.extractorsJson)) {
-      extracted.add(await _extract(reader, extractor, resolver));
+    for (final level in levels) {
+      for (final extractor in level.extractors) {
+        extracted.add((await _extract(reader, extractor, resolver)).fromOrigin(level.origin.label));
+      }
+    }
+    if (scripts != null) {
+      for (final extractor in ScriptsJsonCodec.decodeExtractors(scripts.extractorsJson)) {
+        extracted.add(await _extract(reader, extractor, resolver));
+      }
     }
     return ScriptRunResult(assertions: assertions, extracted: extracted);
   }

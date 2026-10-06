@@ -97,6 +97,10 @@ abstract final class WorkspaceDiff {
         if (_sig(ca['variables']) != _sig(cb['variables']) || _sig(ca['auth']) != _sig(cb['auth'])) {
           changes.add(WorkspaceChange(WorkspaceChangeKind.changed, 'Collection', '$name (variables or auth)'));
         }
+        // What the collection and its folders pass down to their requests: headers, tests, folder variables and auth.
+        if (_defaults(ca) != _defaults(cb)) {
+          changes.add(WorkspaceChange(WorkspaceChangeKind.changed, 'Collection', '$name (defaults)'));
+        }
       }
     }
 
@@ -193,6 +197,36 @@ abstract final class WorkspaceDiff {
       out[n == 1 ? base : '$base#$n'] = jsonEncode(copy);
     }
     return out;
+  }
+
+  /// What [collection] and each of its folders (by `folder/path`) pass down to their requests, as one
+  /// signature that ignores database ids and the order the folders are listed in.
+  static String _defaults(Map<String, dynamic> collection) {
+    final folders = <Object?, Map<String, dynamic>>{
+      for (final f in (collection['folders'] is List ? collection['folders'] as List : const []).whereType<Map<String, dynamic>>()) f['id']: f,
+    };
+    String pathOf(Object? folderId) {
+      final names = <String>[];
+      var current = folderId;
+      var guard = 0;
+      while (current != null && folders[current] != null && guard++ < 50) {
+        names.insert(0, '${folders[current]!['name']}');
+        current = folders[current]!['parentId'];
+      }
+      return names.join('/');
+    }
+
+    final byPath = <String, Object?>{};
+    for (final folder in folders.values) {
+      final own = {for (final key in const ['headers', 'variables', 'auth', 'tests']) if (folder[key] != null) key: folder[key]};
+      if (own.isNotEmpty) byPath[pathOf(folder['id'])] = own;
+    }
+    final paths = byPath.keys.toList()..sort();
+    return jsonEncode({
+      'headers': collection['headers'],
+      'tests': collection['tests'],
+      'folders': {for (final path in paths) path: byPath[path]},
+    });
   }
 
   static Map<String, String> _variables(Object? list) {

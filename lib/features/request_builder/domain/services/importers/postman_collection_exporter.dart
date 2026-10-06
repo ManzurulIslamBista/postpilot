@@ -3,6 +3,11 @@ import '../../../../../core/enums/auth_type.dart';
 import '../../../../../core/enums/body_type.dart';
 import '../../../../collections/domain/entities/collection_entity.dart';
 import '../../../../collections/domain/entities/collection_variable_entity.dart';
+import '../../../../collections/domain/services/collection_order.dart';
+import '../../../../defaults/domain/entities/defaults_chain.dart';
+import '../../../../defaults/domain/entities/level_defaults.dart';
+import '../../../../defaults/domain/services/defaults_resolver.dart';
+import '../../../../defaults/domain/services/header_inheritance.dart';
 import '../../../../git_sync/domain/services/secret_names.dart';
 import '../../../../git_sync/domain/services/secret_text.dart';
 import '../../entities/api_request_entity.dart';
@@ -17,6 +22,13 @@ import '../../entities/request_body.dart';
 /// The file holds every token, password and API key in plain text, so it must be
 /// checked before it is shared. With [redactSecrets] (or [redact] on a finished
 /// file) each of them is replaced by a `{{variable}}` placeholder instead.
+///
+/// What the collection and its folders pass down ([defaults]): a folder's `auth` and `variable`
+/// list are written on the folder, where Postman has them, and a request that inherits writes no
+/// `auth` of its own, so Postman inherits it from the nearest folder just as this app does.
+/// Postman has no header inheritance, so the headers a request inherits are written into each
+/// request, explicitly, after the ones it overrides or switches off are taken out. The default tests
+/// are not written (neither are the requests' own).
 abstract final class PostmanCollectionExporter {
   static String export({
     required String collectionName,
@@ -24,9 +36,10 @@ abstract final class PostmanCollectionExporter {
     required List<ApiRequestEntity> requests,
     List<CollectionVariableEntity> variables = const [],
     RequestAuth? collectionAuth,
+    DefaultsTree? defaults,
     bool redactSecrets = false,
   }) {
-    final tree = _buildTree(null, folders, requests);
+    final tree = _buildTree(null, folders, requests, defaults);
     final auth = collectionAuth == null ? null : _authOf(collectionAuth);
     final json = const JsonEncoder.withIndent('  ').convert({
       'info': {
@@ -61,31 +74,54 @@ abstract final class PostmanCollectionExporter {
     return const JsonEncoder.withIndent('  ').convert(root);
   }
 
+  /// The `item` list of [parentFolderId] (null = top level): its folders and requests interleaved in the
+  /// collection's canonical order (see `CollectionOrder`), so Postman lists them as the sidebar does.
   static List<Map<String, dynamic>> _buildTree(
     int? parentFolderId,
     List<FolderEntity> folders,
     List<ApiRequestEntity> requests,
-  ) {
+    DefaultsTree? defaults, [
+    CollectionOrder? order,
+  ]) {
+    final canonical = order ??
+        CollectionOrder.of(
+          folders: [for (final f in folders) (id: f.id, parentId: f.parentFolderId, orderIndex: f.orderIndex)],
+          requests: [for (final r in requests) (id: r.id, folderId: r.folderId, orderIndex: r.orderIndex)],
+        );
     final items = <Map<String, dynamic>>[];
-    for (final folder in folders.where((f) => f.parentFolderId == parentFolderId)) {
+    for (final entry in canonical.childrenOf(parentFolderId)) {
+      if (!entry.isFolder) {
+        items.add(_requestItem(requests[entry.index], defaults));
+        continue;
+      }
+      final folder = folders[entry.index];
+      final level = defaults?.folderDefaults[folder.id] ?? LevelDefaults.empty;
+      final auth = level.auth == null ? null : _authOf(level.auth!);
       items.add({
         'name': folder.name,
-        'item': _buildTree(folder.id, folders, requests),
+        'auth': ?auth,
+        if (level.variables.isNotEmpty)
+          'variable': [
+            for (final v in level.variables)
+              {'key': v.key, 'value': v.value, if (v.isSecret) 'type': 'secret', 'disabled': !v.enabled},
+          ],
+        'item': _buildTree(folder.id, folders, requests, defaults, canonical),
       });
-    }
-    for (final request in requests.where((r) => r.folderId == parentFolderId)) {
-      items.add(_requestItem(request));
     }
     return items;
   }
 
-  static Map<String, dynamic> _requestItem(ApiRequestEntity request) {
+  static Map<String, dynamic> _requestItem(ApiRequestEntity request, DefaultsTree? defaults) {
     final auth = _authOf(request.auth);
+    final inherited = defaults == null
+        ? const <KeyValueItem>[]
+        : DefaultsResolver.resolve(defaults.chainFor(request.folderId)).headerRows;
+    final headers = HeaderInheritance.materialize(inherited, request.headers);
     return {
       'name': request.name,
       'request': {
         'method': request.method.label,
-        'header': [for (final h in request.headers) {'key': h.key, 'value': h.value, 'disabled': !h.enabled}],
+        'header': [for (final h in headers) {'key': h.key, 'value': h.value, 'disabled': !h.enabled}],
         'url': _urlOf(request),
         'body': _bodyOf(request.body),
         'auth': ?auth,
@@ -266,8 +302,23 @@ final class _SecretRedactor {
     for (final item in items) {
       if (item is! Map) continue;
       _items(item['item']);
+      // A folder carries an `auth` and its own variables, like the collection.
+      _auth(item['auth']);
+      _variables(item['variable']);
       final request = item['request'];
       if (request is Map) _request(request);
+    }
+  }
+
+  /// The values of variables named like credentials, or typed `secret`, are emptied.
+  void _variables(Object? variables) {
+    if (variables is! List) return;
+    for (final variable in variables) {
+      if (variable is! Map) continue;
+      final key = variable['key'];
+      final value = variable['value'];
+      final secret = variable['type'] == 'secret' || (key is String && SecretNames.looksSecretKey(key));
+      if (secret && value is String && SecretNames.hasLiteralSecret(value)) variable['value'] = '';
     }
   }
 

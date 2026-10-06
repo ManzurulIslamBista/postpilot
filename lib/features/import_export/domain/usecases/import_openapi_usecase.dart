@@ -62,15 +62,17 @@ final class ImportOpenApiUseCase implements UseCase<int, String>, SummarizingImp
           enabled: true,
         ));
       }
-      for (final request in parsed.rootRequests) {
-        await _persist(request, collectionId, null);
-      }
+      // Created in the order they should be listed: tag folders first, as the sidebar always showed them, then the
+      // requests without a tag. Each one is appended, which is what fixes its order index.
       for (final folder in parsed.folders) {
         final folderId =
             await _collectionRepository.createFolder(collectionId: collectionId, name: ImportNames.folder(folder.name));
         for (final request in folder.requests) {
           await _persist(request, collectionId, folderId);
         }
+      }
+      for (final request in parsed.rootRequests) {
+        await _persist(request, collectionId, null);
       }
       if (missing.isNotEmpty) {
         environmentName = await _freeEnvironmentName(parsed.name);

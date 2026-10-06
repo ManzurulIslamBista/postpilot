@@ -5,6 +5,8 @@ import 'package:postpilot/features/collections/data/repositories/collection_vari
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
+import 'package:postpilot/features/defaults/data/defaults_repository_impl.dart';
+import 'package:postpilot/features/defaults/domain/repositories/defaults_repository.dart';
 import 'package:postpilot/features/documentation/data/repositories/documentation_repository_impl.dart';
 import 'package:postpilot/features/documentation/data/repositories/tag_repository_impl.dart';
 import 'package:postpilot/features/documentation/domain/repositories/documentation_repository.dart';
@@ -25,9 +27,10 @@ import 'in_memory_import_export_fakes.dart';
 
 /// The real repositories over a real (in-memory SQLite) database, wired the way the
 /// injector wires them. Shared by the tests that need actual rows rather than fakes.
-final class DriftRepos implements RepositoryBundle {
+final class DriftRepos implements RepositoryBundle, DefaultsRepositoryHolder {
   DriftRepos(AppDatabase database)
-      : collectionRepository = CollectionRepositoryImpl(database.collectionsDao),
+      : defaultsRepository = DefaultsRepositoryImpl(database),
+        collectionRepository = CollectionRepositoryImpl(database.collectionsDao),
         requestRepository = RequestRepositoryImpl(database.requestsDao),
         collectionVariableRepository = CollectionVariableRepositoryImpl(database.collectionVariablesDao),
         collectionAuthRepository = CollectionAuthRepositoryImpl(database.collectionAuthDao),
@@ -39,6 +42,8 @@ final class DriftRepos implements RepositoryBundle {
         documentationRepository = DocumentationRepositoryImpl(database.entityDocsDao),
         tagRepository = TagRepositoryImpl(database.entityTagsDao);
 
+  @override
+  final DefaultsRepository defaultsRepository;
   @override
   final CollectionRepository collectionRepository;
   @override

@@ -29,6 +29,7 @@ import 'package:postpilot/features/safety/domain/services/production_guard.dart'
 import 'package:postpilot/features/templates/domain/usecases/add_starter_template_usecase.dart';
 import 'package:postpilot/features/tour/presentation/tour_dialog.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
+import 'package:postpilot/features/collections/domain/repositories/collection_order_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
 import 'package:postpilot/features/collections/presentation/view_models/collection_runner_view_model.dart';
@@ -74,6 +75,7 @@ import 'package:postpilot/features/git_sync/presentation/view_models/git_sync_vi
 import 'package:postpilot/features/git_sync/presentation/view_models/linked_collections_view_model.dart';
 import 'package:postpilot/features/history/domain/repositories/history_repository.dart';
 import 'package:postpilot/features/history/presentation/view_models/history_view_model.dart';
+import 'package:postpilot/features/settings/data/history_prefs.dart';
 import 'package:postpilot/features/import_export/domain/repositories/git_state_store.dart';
 import 'package:postpilot/features/import_export/domain/services/backup_service.dart';
 import 'package:postpilot/features/import_export/domain/services/collection_loader.dart';
@@ -108,6 +110,10 @@ import 'package:postpilot/features/request_builder/domain/usecases/send_request_
 import 'package:postpilot/features/request_builder/presentation/view_models/request_builder_view_model.dart';
 import 'package:postpilot/features/request_builder/presentation/view_models/request_oauth2_view_model.dart';
 import 'package:postpilot/features/request_builder/presentation/view_models/response_examples_view_model.dart';
+import 'package:postpilot/features/defaults/domain/repositories/defaults_repository.dart';
+import 'package:postpilot/features/defaults/domain/usecases/resolve_request_defaults_usecase.dart';
+import 'package:postpilot/features/defaults/presentation/view_models/defaults_view_model.dart';
+import 'package:postpilot/features/defaults/presentation/view_models/inherited_defaults_view_model.dart';
 import 'package:postpilot/features/scripting/domain/usecases/run_request_scripts_usecase.dart';
 import 'package:postpilot/features/scripting/presentation/view_models/request_scripts_view_model.dart';
 import 'package:postpilot/features/settings/domain/entities/app_settings.dart';
@@ -136,6 +142,7 @@ final _wirings = <_Wiring>[
   _wire<ApiClient>(),
   // collections
   _wire<CollectionRepository>(),
+  _wire<CollectionOrderRepository>(),
   _wire<CollectionVariableRepository>(),
   _wire<CollectionAuthRepository>(),
   _wire<CollectionsViewModel>(),
@@ -157,10 +164,16 @@ final _wirings = <_Wiring>[
   // scripting
   _wire<RunRequestScriptsUseCase>(),
   _wire<RequestScriptsViewModel>(),
+  // defaults of collections and folders
+  _wire<DefaultsRepository>(),
+  _wire<ResolveRequestDefaultsUseCase>(),
+  _wire<InheritedDefaultsViewModel>(),
+  _wire<DefaultsViewModel>(),
   // environments, history, cookies, shell
   _wire<EnvironmentRepository>(),
   _wire<GlobalVariableRepository>(),
   _wire<EnvironmentsViewModel>(),
+  _wire<HistoryPrefs>(),
   _wire<HistoryRepository>(),
   _wire<HistoryViewModel>(),
   _wire<CookieRepository>(),

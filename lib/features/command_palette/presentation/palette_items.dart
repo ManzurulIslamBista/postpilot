@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
 import '../../../core/shortcuts/app_shortcuts.dart';
 import '../../console/presentation/widgets/console_dialog.dart';
+import '../../defaults/presentation/defaults_dialog.dart';
 import '../../cookies/presentation/widgets/cookies_dialog.dart';
 import '../../ai_assistant/presentation/ai_request_dialog.dart';
 import '../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
@@ -157,8 +158,9 @@ abstract final class PaletteItems {
       [
         PaletteItem(id: 'app.new', title: 'New request', icon: Icons.add_rounded, category: PaletteCategory.app, shortcut: AppShortcut.newRequest.keyLabel, run: (_) => newRequest()),
         PaletteItem(id: 'app.import', title: 'Import…', subtitle: 'Postman, OpenAPI, Insomnia, HAR, cURL', icon: Icons.file_download_outlined, category: PaletteCategory.app, keywords: const ['curl', 'swagger', 'openapi', 'postman'], run: (_) => openImport()),
+        PaletteItem(id: 'app.collection-defaults', title: 'Collection defaults', subtitle: 'Headers, auth, variables and tests every request in the collection inherits', icon: Icons.tune, category: PaletteCategory.app, keywords: const ['headers', 'inherit', 'inheritance', 'folder', 'default', 'auth', 'variables', 'tests', 'collection'], run: (c) => showCurrentCollectionDefaults(c)),
         PaletteItem(id: 'app.sidebar', title: 'Show or hide the sidebar', icon: Icons.menu_open, category: PaletteCategory.app, shortcut: AppShortcut.toggleSidebar.keyLabel, run: (_) => toggleSidebar()),
-        PaletteItem(id: 'app.history', title: 'History', subtitle: 'Recently sent requests', icon: Icons.history, category: PaletteCategory.app, shortcut: AppShortcut.openHistory.keyLabel, run: (c) => HistoryDialog.show(c)),
+        PaletteItem(id: 'app.history', title: 'History', subtitle: 'Search what you sent, send it again, export as HAR', icon: Icons.history, category: PaletteCategory.app, keywords: const ['sent', 'requests', 'resend', 'har', 'compare', 'search'], shortcut: AppShortcut.openHistory.keyLabel, run: (c) => HistoryDialog.show(c)),
         PaletteItem(id: 'app.console', title: 'Console', subtitle: 'Every request and response PostPilot sent', icon: Icons.terminal, category: PaletteCategory.app, run: (c) => ConsoleDialog.show(c)),
         PaletteItem(id: 'app.cookies', title: 'Cookies', icon: Icons.cookie_outlined, category: PaletteCategory.app, run: (c) => CookiesDialog.show(c)),
         PaletteItem(id: 'app.backup', title: 'Backup and restore', icon: Icons.backup_outlined, category: PaletteCategory.app, run: (c) => BackupDialog.show(c)),

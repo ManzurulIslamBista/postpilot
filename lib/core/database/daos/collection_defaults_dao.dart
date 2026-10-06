@@ -18,4 +18,11 @@ class CollectionDefaultsDao extends DatabaseAccessor<AppDatabase> with _$Collect
 
   Future<void> deleteForCollection(int collectionId) =>
       (delete(collectionDefaults)..where((t) => t.collectionId.equals(collectionId))).go();
+
+  /// Copies [fromCollectionId]'s defaults, if it has any, onto [toCollectionId]. Used to carry
+  /// them along when a collection is duplicated.
+  Future<void> duplicateDefaults({required int fromCollectionId, required int toCollectionId}) async {
+    final original = await findByCollection(fromCollectionId);
+    if (original != null) await upsert(original.toCompanion(true).copyWith(collectionId: Value(toCollectionId)));
+  }
 }

@@ -167,7 +167,7 @@ void main() {
     });
 
     test('a file from a newer app is refused instead of read with its links dropped', () {
-      final text = jsonEncode({'format': 'postpilot-backup', 'version': 4, 'collections': []});
+      final text = jsonEncode({'format': 'postpilot-backup', 'version': BackupCodec.maxVersion + 1, 'collections': []});
 
       expect(() => BackupCodec.decode(text), throwsA(anything));
     });

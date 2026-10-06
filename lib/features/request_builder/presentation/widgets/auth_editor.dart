@@ -23,12 +23,17 @@ class AuthEditor extends StatelessWidget {
   /// collection's variables (plus environment and globals).
   final int? collectionId;
 
+  /// The folder the auth belongs to (a folder's own auth, or the folder of the request): its variables,
+  /// and those of the folders above it, resolve in OAuth 2.0 token requests too.
+  final int? folderId;
+
   const AuthEditor({
     super.key,
     required this.auth,
     required this.onChanged,
     this.allowInherit = true,
     this.collectionId,
+    this.folderId,
   });
 
   @override
@@ -60,7 +65,7 @@ class AuthEditor extends StatelessWidget {
               AuthType.oauth2 => [
                 ChangeNotifierProvider<RequestOAuth2ViewModel>(
                   create: (_) => locator<RequestOAuth2ViewModel>(),
-                  child: _OAuth2Fields(auth: auth, onChanged: onChanged, collectionId: collectionId),
+                  child: _OAuth2Fields(auth: auth, onChanged: onChanged, collectionId: collectionId, folderId: folderId),
                 ),
               ],
               AuthType.none || AuthType.inherit => const [],
@@ -183,8 +188,9 @@ class _OAuth2Fields extends StatefulWidget {
   final RequestAuth auth;
   final ValueChanged<RequestAuth> onChanged;
   final int? collectionId;
+  final int? folderId;
 
-  const _OAuth2Fields({required this.auth, required this.onChanged, required this.collectionId});
+  const _OAuth2Fields({required this.auth, required this.onChanged, required this.collectionId, this.folderId});
 
   @override
   State<_OAuth2Fields> createState() => _OAuth2FieldsState();
@@ -204,7 +210,7 @@ class _OAuth2FieldsState extends State<_OAuth2Fields> {
     final auth = widget.auth;
     final onChanged = widget.onChanged;
     final collectionId = widget.collectionId;
-    final vm = context.watch<RequestOAuth2ViewModel>();
+    final vm = context.watch<RequestOAuth2ViewModel>()..folderId = widget.folderId;
     final grant = auth.oauth2GrantType;
     final isPkce = grant == OAuth2GrantType.authorizationCodePkce;
 

@@ -4,6 +4,8 @@ import '../../../collections/domain/entities/collection_variable_entity.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
 import '../../../collections/domain/repositories/collection_repository.dart';
 import '../../../collections/domain/repositories/collection_variable_repository.dart';
+import '../../../defaults/domain/entities/level_defaults.dart';
+import '../../../defaults/domain/repositories/defaults_repository.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/entities/request_scripts_entity.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
@@ -17,7 +19,12 @@ import 'summarizing_importer.dart';
 
 /// Recreates an entire Postman collection export (folders, requests,
 /// collection variables, collection auth and the test scripts that translate
-/// to assertions and extractors) inside a brand-new local collection. Returns
+/// to assertions and extractors) inside a brand-new local collection. What
+/// Postman lets a folder or the collection pass down (a folder's `auth`,
+/// `variable`s and `test` scripts, the collection's `test` scripts) becomes the
+/// folder's or collection's defaults, so requests inherit it as they do in
+/// Postman; without a [DefaultsRepository] those are left out and the summary
+/// says so. Returns
 /// the new collection's id, or with [importWithSummary] a summary that also
 /// lists what the export held that PostPilot could not take over. If saving
 /// fails midway the half-built collection is deleted again, so a retry doesn't
@@ -28,14 +35,16 @@ final class ImportPostmanCollectionUseCase implements UseCase<int, String>, Summ
   final CollectionVariableRepository _collectionVariableRepository;
   final CollectionAuthRepository _collectionAuthRepository;
   final RequestScriptsRepository _scriptsRepository;
+  final DefaultsRepository? _defaults;
 
   const ImportPostmanCollectionUseCase(
     this._collectionRepository,
     this._requestRepository,
     this._collectionVariableRepository,
     this._collectionAuthRepository,
-    this._scriptsRepository,
-  );
+    this._scriptsRepository, [
+    this._defaults,
+  ]);
 
   @override
   Future<int> call(String json) async => (await importWithSummary(json)).collectionIds.single;
@@ -59,6 +68,10 @@ final class ImportPostmanCollectionUseCase implements UseCase<int, String>, Summ
           enabled: variable.enabled,
         ));
       }
+      await _defaults?.saveCollection(
+        collectionId,
+        LevelDefaults(assertions: parsed.assertions, extractors: parsed.extractors),
+      );
       for (final item in parsed.items) {
         await _persist(item, collectionId, null);
       }
@@ -82,13 +95,16 @@ final class ImportPostmanCollectionUseCase implements UseCase<int, String>, Summ
   }
 
   /// What the dialog lists: a line on the converted scripts, then what was left out, then what changed.
-  static List<String> _notesOf(ParsedPostmanCollection parsed) {
+  List<String> _notesOf(ParsedPostmanCollection parsed) {
     final checks = parsed.assertionCount;
     final extractors = parsed.extractorCount;
     return [
       if (checks + extractors > 0)
         'Test scripts were converted to ${_plural(checks, 'check')} and ${_plural(extractors, 'variable extractor')} '
-            'on the requests\' Tests tab.',
+            'on the Tests tab of the requests, folders and collection they were on.',
+      if (_defaults == null && parsed.hasDefaults)
+        'The auth, variables and tests the folders and the collection pass down to their requests were not imported '
+            '(this build cannot store them).',
       for (final note in parsed.notes)
         if (note.skipped) note.message,
       for (final note in parsed.notes)
@@ -103,6 +119,15 @@ final class ImportPostmanCollectionUseCase implements UseCase<int, String>, Summ
       case PostmanFolderItem():
         final newFolderId =
             await _collectionRepository.createFolder(collectionId: collectionId, parentFolderId: folderId, name: ImportNames.folder(item.name));
+        await _defaults?.saveFolder(
+          newFolderId,
+          LevelDefaults(
+            variables: item.variables,
+            auth: item.auth,
+            assertions: item.assertions,
+            extractors: item.extractors,
+          ),
+        );
         for (final child in item.children) {
           await _persist(child, collectionId, newFolderId);
         }

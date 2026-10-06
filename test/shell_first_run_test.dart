@@ -201,9 +201,10 @@ void main() {
     }
 
     group('History', () {
-      testWidgets('opening an entry on a fresh install makes "My collection" instead of refusing', (tester) async {
-        final history = HistoryViewModel(_OneEntryHistory());
-        addTearDown(history.dispose);
+      Future<void> openHistory(WidgetTester tester, HistoryViewModel history) async {
+        tester.view.physicalSize = const Size(1200, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
         await tester.pumpWidget(
           host(
             history: history,
@@ -212,9 +213,18 @@ void main() {
         );
         await tester.tap(find.text('open'));
         await tester.pumpAndSettle();
-
+        // A tap on a row shows the entry; "Open as new request" is what makes a request of it.
         await tester.tap(find.text('https://api.test/users'));
         await tester.pumpAndSettle();
+        await tester.tap(find.text('Open as new request'));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('opening an entry on a fresh install makes "My collection" instead of refusing', (tester) async {
+        final history = HistoryViewModel(_OneEntryHistory());
+        addTearDown(history.dispose);
+
+        await openHistory(tester, history);
 
         expect(names(), ['My collection']);
         final request = memory.requests.single;
@@ -224,24 +234,28 @@ void main() {
         expect(find.text('Create a collection first'), findsNothing);
       });
 
-      testWidgets('with a collection already there it uses it and creates no second one', (tester) async {
+      testWidgets('with a collection already there it asks which one instead of picking the first, and creates no second one', (tester) async {
         final shop = await memory.collectionRepository.createCollection('Shop');
+        await memory.collectionRepository.createCollection('Blog');
+        // The in-memory repository answers once, so the sidebar's model is made after the collections exist.
+        collections.dispose();
+        collections = CollectionsViewModel(memory.collectionRepository, locator<RequestRepository>());
         final history = HistoryViewModel(_OneEntryHistory());
         addTearDown(history.dispose);
-        await tester.pumpWidget(
-          host(
-            history: history,
-            opener: (context) => TextButton(onPressed: () => HistoryDialog.show(context), child: const Text('open')),
-          ),
-        );
-        await tester.tap(find.text('open'));
+
+        await openHistory(tester, history);
+
+        // The entry kept no collection, and there are two to choose from: nothing is chosen silently.
+        expect(find.text('Open in which collection?'), findsOneWidget);
+        expect(memory.requests, isEmpty);
+        await tester.tap(find.text('Shop'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Open here'));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('https://api.test/users'));
-        await tester.pumpAndSettle();
-
-        expect(names(), ['Shop']);
+        expect(names(), ['Shop', 'Blog']);
         expect(memory.requests.single.collectionId, shop);
+        expect(shell.selectedRequestId, memory.requests.single.id);
       });
     });
 

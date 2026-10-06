@@ -26,4 +26,11 @@ class FolderDefaultsDao extends DatabaseAccessor<AppDatabase> with _$FolderDefau
 
   Future<void> deleteForFolder(int folderId) =>
       (delete(folderDefaults)..where((t) => t.folderId.equals(folderId))).go();
+
+  /// Copies [fromFolderId]'s defaults, if it has any, onto [toFolderId]. Used to carry them along
+  /// when a folder (or the collection it is in) is duplicated.
+  Future<void> duplicateDefaults({required int fromFolderId, required int toFolderId}) async {
+    final original = await findByFolder(fromFolderId);
+    if (original != null) await upsert(original.toCompanion(true).copyWith(folderId: Value(toFolderId)));
+  }
 }

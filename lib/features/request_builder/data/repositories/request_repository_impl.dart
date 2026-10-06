@@ -20,6 +20,7 @@ final class RequestRepositoryImpl implements RequestRepository {
                   folderId: r.folderId,
                   name: r.name,
                   method: HttpMethod.fromString(r.method),
+                  orderIndex: r.orderIndex,
                 ))
             .toList(),
       );
@@ -87,5 +88,6 @@ final class RequestRepositoryImpl implements RequestRepository {
           graphqlVariables: r.graphqlVariables,
         ),
         auth: RequestJsonCodec.decodeAuth(r.authType, r.authConfigJson),
+        orderIndex: r.orderIndex,
       );
 }

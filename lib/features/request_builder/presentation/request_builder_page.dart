@@ -1,5 +1,7 @@
 import 'widgets/variables/variable_text_form_field.dart';
 import 'view_models/variable_scope.dart';
+import '../../defaults/presentation/view_models/inherited_defaults_view_model.dart';
+import '../../defaults/presentation/widgets/request_inherited_sections.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
@@ -35,6 +37,9 @@ class RequestBuilderPage extends StatefulWidget {
 class _RequestBuilderPageState extends State<RequestBuilderPage> {
   late final RequestBuilderViewModel _viewModel;
   late final VariableScope _variableScope;
+
+  /// What the request inherits from its collection and folders, shown read-only in the Headers, Auth and Tests tabs.
+  late final InheritedDefaultsViewModel _inherited;
   final _responseFind = ResponseFindController();
 
   /// Ctrl/Cmd+L puts the cursor here.
@@ -46,6 +51,7 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
     super.initState();
     _viewModel = locator<RequestBuilderViewModel>();
     _variableScope = locator<VariableScope>();
+    _inherited = locator<InheritedDefaultsViewModel>();
     // Variables are layered per collection, which is known once the request has loaded.
     _viewModel.addListener(_bindVariableScope);
     _viewModel.confirmSend = _confirmSend;
@@ -85,7 +91,12 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
 
   void _bindVariableScope() {
     final request = _viewModel.request;
-    if (request != null) _variableScope.bindCollection(request.collectionId);
+    if (request != null) {
+      // Variables, headers, auth and tests are inherited from the request's folders and collection, so both bind to
+      // the folder it is in now: a request moved to another folder follows it.
+      _variableScope.bindCollection(request.collectionId, folderId: request.folderId);
+      _inherited.bind(request.collectionId, folderId: request.folderId);
+    }
     // A script that just ran may have saved variables. The repositories' own
     // change streams say so too; this just makes the editors not wait for them.
     final scripts = _viewModel.lastScriptResult;
@@ -106,6 +117,7 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
     _viewModel.removeListener(_bindVariableScope);
     _viewModel.dispose();
     _variableScope.dispose();
+    _inherited.dispose();
     super.dispose();
   }
 
@@ -115,6 +127,7 @@ class _RequestBuilderPageState extends State<RequestBuilderPage> {
       providers: [
         ChangeNotifierProvider<RequestBuilderViewModel>.value(value: _viewModel),
         ChangeNotifierProvider<VariableScope>.value(value: _variableScope),
+        ChangeNotifierProvider<InheritedDefaultsViewModel>.value(value: _inherited),
         Provider<ResponseFindController>.value(value: _responseFind),
       ],
       child: Consumer<RequestBuilderViewModel>(
@@ -419,10 +432,30 @@ class _RequestPane extends StatelessWidget {
             child: TabBarView(
               children: [
                 _scrollable(KeyValueEditor(items: request.queryParams, onChanged: vm.updateQueryParams)),
-                _scrollable(KeyValueEditor(items: request.headers, onChanged: vm.updateHeaders)),
+                _scrollable(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // What the collection and its folders pass down, with "override" and "turn off" for this request.
+                      RequestInheritedHeaders(requestHeaders: request.headers, onChanged: vm.updateHeaders),
+                      KeyValueEditor(items: request.headers, onChanged: vm.updateHeaders),
+                    ],
+                  ),
+                ),
                 _padded(BodyEditor(body: request.body, onChanged: vm.updateBody)),
                 _scrollable(
-                  AuthEditor(auth: request.auth, collectionId: request.collectionId, onChanged: vm.updateAuth),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      RequestInheritedAuth(auth: request.auth, onOverride: vm.updateAuth),
+                      AuthEditor(
+                        auth: request.auth,
+                        collectionId: request.collectionId,
+                        folderId: request.folderId,
+                        onChanged: vm.updateAuth,
+                      ),
+                    ],
+                  ),
                 ),
                 _scrollable(RequestTestsTab(requestId: request.id)),
                 _scrollable(RequestSettingsTab(requestId: request.id)),

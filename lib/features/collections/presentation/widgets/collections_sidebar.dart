@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
 import '../../../../core/widgets/method_badge.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
+import '../../../defaults/presentation/defaults_dialog.dart';
 import '../../../documentation/domain/entities/entity_kind.dart';
 import '../../../documentation/presentation/widgets/collection_docs_dialog.dart';
 import '../../../documentation/presentation/widgets/entity_description_dialog.dart';
@@ -21,13 +23,32 @@ import '../../../shell/presentation/shell_view_model.dart';
 import '../../../workplace/presentation/view_models/workplace_view_model.dart';
 import '../../../workplace/presentation/widgets/workplace_sidebar_header.dart';
 import '../../domain/entities/collection_entity.dart';
+import '../../domain/services/collection_order.dart';
 import '../view_models/collections_view_model.dart';
 import 'collection_auth_dialog.dart';
 import 'collection_runner_dialog.dart';
 import 'collection_variables_dialog.dart';
+import 'move_to_dialog.dart';
+import 'sidebar_drag_drop.dart';
 
-class CollectionsSidebar extends StatelessWidget {
+class CollectionsSidebar extends StatefulWidget {
   const CollectionsSidebar({super.key});
+
+  @override
+  State<CollectionsSidebar> createState() => _CollectionsSidebarState();
+}
+
+class _CollectionsSidebarState extends State<CollectionsSidebar> {
+  final _scroll = ScrollController();
+  final _listKey = GlobalKey();
+  late final _drag = SidebarDragState(scroll: _scroll, viewportKey: _listKey);
+
+  @override
+  void dispose() {
+    _drag.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,8 +123,13 @@ class CollectionsSidebar extends StatelessWidget {
                   )
                 : vm.isFiltering && visibleCollections.isEmpty
                 ? Center(child: Text('Nothing matches', style: _emptyStyle(context)))
-                : ListView(
-                    children: [for (final collection in visibleCollections) _CollectionTile(collection: collection)],
+                : Provider<SidebarDragState>.value(
+                    value: _drag,
+                    child: ListView(
+                      key: _listKey,
+                      controller: _scroll,
+                      children: [for (final collection in visibleCollections) _CollectionTile(collection: collection)],
+                    ),
                   ),
           ),
         ],
@@ -125,6 +151,15 @@ class CollectionsSidebar extends StatelessWidget {
     _showSnack(context, 'Collection cloned');
   }
 }
+
+/// A 28 px "more" button. Its size is the button's: PopupMenuButton.constraints sizes the opened menu, and a menu
+/// held to 28 px is a sliver nobody can read.
+final _compactIconButton = IconButton.styleFrom(
+  minimumSize: const Size(28, 28),
+  maximumSize: const Size(28, 28),
+  padding: EdgeInsets.zero,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
 
 TextStyle _emptyStyle(BuildContext context) => context.textStyles.caption.copyWith(color: context.colors.secondaryText);
 
@@ -167,6 +202,133 @@ void _openRequest(BuildContext context, int id) {
   Scaffold.maybeOf(context)?.closeDrawer();
 }
 
+// ---- moving and reordering ----
+
+/// A dragged folder cannot be dropped on, beside or inside anything that is inside it.
+bool _insideDraggedFolder(CollectionsViewModel vm, SidebarDragItem dragged, int collectionId, int? folderId) {
+  if (!dragged.ref.isFolder || folderId == null || dragged.collectionId != collectionId) return false;
+  return vm.orderOf(collectionId).folderSubtree(dragged.ref.id).contains(folderId);
+}
+
+OrderRef? _nextSibling(CollectionOrder order, OrderRef ref) {
+  final siblings = order.siblingsOf(ref);
+  final at = siblings.indexWhere((e) => e.ref == ref);
+  return at >= 0 && at + 1 < siblings.length ? siblings[at + 1].ref : null;
+}
+
+/// The name of a place for a message: the folder, or the collection at its top level.
+String _placeName(CollectionsViewModel vm, int collectionId, int? folderId) {
+  if (folderId != null) {
+    final folder = vm.foldersByCollection[collectionId]?.where((f) => f.id == folderId).firstOrNull;
+    if (folder != null) return folder.name;
+  }
+  return vm.collections.where((c) => c.id == collectionId).firstOrNull?.name ?? 'the collection';
+}
+
+/// Moves what was dropped (or picked in "Move to…") to [spot] and says what happened, with a way back.
+Future<void> _moveTo(BuildContext context, CollectionsViewModel vm, SidebarDragItem item, DropSpot spot) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final workplace = context.read<WorkplaceViewModel>();
+  final outcome = item.ref.isFolder
+      ? await vm.moveFolder(
+          item.ref.id,
+          collectionId: spot.collectionId,
+          parentFolderId: spot.parentFolderId,
+          before: spot.before,
+        )
+      : await vm.moveRequest(
+          item.ref.id,
+          collectionId: spot.collectionId,
+          folderId: spot.parentFolderId,
+          before: spot.before,
+        );
+  final receipt = outcome.receipt;
+  if (receipt == null) {
+    messenger.showSnackBar(SnackBar(content: Text(outcome.error ?? "Couldn't move it.")));
+    return;
+  }
+  if (receipt.isNoop) return;
+
+  final sameLevel = item.collectionId == spot.collectionId && item.parentFolderId == spot.parentFolderId;
+  final destination = _placeName(vm, spot.collectionId, spot.parentFolderId);
+  final collection = _placeName(vm, spot.collectionId, null);
+  final message = StringBuffer('Moved "${item.name}"')
+    ..write(sameLevel ? '.' : ' to "$destination".')
+    ..write(
+      receipt.changedCollection
+          ? ' What it inherits (variables, auth) now comes from "$collection".'
+          : '',
+    );
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(message.toString()),
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            final undone = await vm.undoMove(receipt);
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(
+                  undone ? 'Move undone.' : "Couldn't undo the move: the collection has changed since.",
+                ),
+              ),
+            );
+            workplace.saveCurrentWorkplace();
+          },
+        ),
+      ),
+    );
+  workplace.saveCurrentWorkplace();
+}
+
+/// One step up or down among its siblings (the menu and screen-reader way to reorder).
+Future<void> _step(BuildContext context, CollectionsViewModel vm, SidebarDragItem item, int delta) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final workplace = context.read<WorkplaceViewModel>();
+  final outcome = await vm.moveStep(item.ref, collectionId: item.collectionId, delta: delta);
+  if (outcome.error != null) messenger.showSnackBar(SnackBar(content: Text(outcome.error!)));
+  workplace.saveCurrentWorkplace();
+}
+
+/// "Move to…": the user picks a collection or folder from a list and the item goes to the end of it.
+Future<void> _chooseDestination(BuildContext context, CollectionsViewModel vm, SidebarDragItem item) async {
+  final destination = await showMoveToDialog(context, viewModel: vm, moving: item.ref, name: item.name);
+  if (destination == null || !context.mounted) return;
+  await _moveTo(context, vm, item, DropSpot(destination.collectionId, destination.folderId));
+}
+
+/// The menu entries that move something. Disabled when there is no sibling to swap with in that direction.
+List<PopupMenuEntry<String>> _moveMenuItems(CollectionsViewModel vm, OrderRef ref, int collectionId) => [
+  const PopupMenuDivider(),
+  PopupMenuItem(
+    value: 'move_up',
+    enabled: vm.canStep(ref, collectionId: collectionId, delta: -1),
+    child: const Text('Move up'),
+  ),
+  PopupMenuItem(
+    value: 'move_down',
+    enabled: vm.canStep(ref, collectionId: collectionId, delta: 1),
+    child: const Text('Move down'),
+  ),
+  const PopupMenuItem(value: 'move_to', child: Text('Move to…')),
+  const PopupMenuDivider(),
+];
+
+/// Screen-reader actions on a row, the same two steps as the menu.
+Map<CustomSemanticsAction, VoidCallback> _moveActions(
+  BuildContext context,
+  CollectionsViewModel vm,
+  SidebarDragItem item,
+) => {
+  if (vm.canStep(item.ref, collectionId: item.collectionId, delta: -1))
+    const CustomSemanticsAction(label: 'Move up'): () => _step(context, vm, item, -1),
+  if (vm.canStep(item.ref, collectionId: item.collectionId, delta: 1))
+    const CustomSemanticsAction(label: 'Move down'): () => _step(context, vm, item, 1),
+};
+
 class _CollectionTile extends StatelessWidget {
   final CollectionEntity collection;
   const _CollectionTile({required this.collection});
@@ -175,59 +337,60 @@ class _CollectionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = context.watch<CollectionsViewModel>();
     final expanded = vm.isCollectionExpanded(collection);
-    final folders = vm.foldersByCollection[collection.id] ?? const [];
-    final requests = vm.requestsByCollection[collection.id] ?? const [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          dense: true,
-          leading: Icon(expanded ? Icons.expand_more : Icons.chevron_right),
-          title: Row(
-            children: [
-              Expanded(child: Text(collection.name, overflow: TextOverflow.ellipsis)),
-              GitLinkBadge(collection.id),
-            ],
-          ),
-          onTap: () => vm.toggleExpand(collection.id),
-          trailing: PopupMenuButton<String>(
-            onSelected: (action) => _handleAction(context, vm, action),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'add_request', child: Text('Add request')),
-              PopupMenuItem(value: 'add_folder', child: Text('Add folder')),
-              PopupMenuItem(value: 'import_curl', child: Text('Import cURL')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'run', child: Text('Run collection')),
-              PopupMenuItem(value: 'variables', child: Text('Variables')),
-              PopupMenuItem(value: 'auth', child: Text('Collection auth')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'describe', child: Text('Description & tags…')),
-              PopupMenuItem(value: 'docs', child: Text('Documentation…')),
-              PopupMenuItem(value: 'git_sync', child: Text('Git sync…')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'openapi_refresh', child: Text('Update from OpenAPI…')),
-              PopupMenuItem(value: 'dart_api', child: Text('Generate Dart API layer…')),
-              PopupMenuItem(value: 'mock_server', child: Text('Mock server…')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'export', child: Text('Export as Postman JSON')),
-              PopupMenuItem(value: 'export_openapi', child: Text('Export as OpenAPI')),
-              PopupMenuItem(value: 'export_curl', child: Text('Export cURL script')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'rename', child: Text('Rename')),
-              PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-              PopupMenuItem(value: 'delete', child: Text('Delete')),
-            ],
+        SidebarDndRow(
+          enabled: vm.canMove && !vm.isFiltering,
+          layout: DropLayout.container,
+          drag: context.read<SidebarDragState>(),
+          accepts: (_) => true,
+          spotFor: (_) => DropSpot(collection.id, null),
+          onHoverOpen: expanded ? null : () => vm.expandCollection(collection.id),
+          onDrop: (item, spot) => _moveTo(context, vm, item, spot),
+          child: ListTile(
+            dense: true,
+            leading: Icon(expanded ? Icons.expand_more : Icons.chevron_right),
+            title: Row(
+              children: [
+                Expanded(child: Text(collection.name, overflow: TextOverflow.ellipsis)),
+                GitLinkBadge(collection.id),
+              ],
+            ),
+            onTap: () => vm.toggleExpand(collection.id),
+            trailing: PopupMenuButton<String>(
+              onSelected: (action) => _handleAction(context, vm, action),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'add_request', child: Text('Add request')),
+                PopupMenuItem(value: 'add_folder', child: Text('Add folder')),
+                PopupMenuItem(value: 'import_curl', child: Text('Import cURL')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'run', child: Text('Run collection')),
+                PopupMenuItem(value: 'variables', child: Text('Variables')),
+                PopupMenuItem(value: 'auth', child: Text('Collection auth')),
+                PopupMenuItem(value: 'defaults', child: Text('Defaults (headers, tests)…')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'describe', child: Text('Description & tags…')),
+                PopupMenuItem(value: 'docs', child: Text('Documentation…')),
+                PopupMenuItem(value: 'git_sync', child: Text('Git sync…')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'openapi_refresh', child: Text('Update from OpenAPI…')),
+                PopupMenuItem(value: 'dart_api', child: Text('Generate Dart API layer…')),
+                PopupMenuItem(value: 'mock_server', child: Text('Mock server…')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'export', child: Text('Export as Postman JSON')),
+                PopupMenuItem(value: 'export_openapi', child: Text('Export as OpenAPI')),
+                PopupMenuItem(value: 'export_curl', child: Text('Export cURL script')),
+                PopupMenuDivider(),
+                PopupMenuItem(value: 'rename', child: Text('Rename')),
+                PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
           ),
         ),
-        if (expanded)
-          _FolderChildren(
-            collectionId: collection.id,
-            parentFolderId: null,
-            allFolders: folders,
-            allRequests: requests,
-            depth: 1,
-          ),
+        if (expanded) _FolderChildren(collectionId: collection.id, parentFolderId: null, depth: 1),
       ],
     );
   }
@@ -258,6 +421,8 @@ class _CollectionTile extends StatelessWidget {
         await CollectionVariablesDialog.show(context, collectionId: collection.id, collectionName: collection.name);
       case 'auth':
         await CollectionAuthDialog.show(context, collectionId: collection.id);
+      case 'defaults':
+        await showDefaultsDialog(context, collectionId: collection.id);
       case 'describe':
         await EntityDescriptionDialog.show(context, EntityKind.collection, collection.id, collection.name);
       case 'docs':
@@ -298,149 +463,182 @@ class _CollectionTile extends StatelessWidget {
 }
 
 /// Renders the folders and requests that live directly under [parentFolderId]
-/// (null = the collection's top level), recursing into `_FolderTile` for
-/// each sub-folder so folders can nest arbitrarily deep.
+/// (null = the collection's top level) in the collection's canonical order, folders and requests interleaved as
+/// arranged, recursing into `_FolderTile` for each sub-folder so folders can nest arbitrarily deep.
 class _FolderChildren extends StatelessWidget {
   final int collectionId;
   final int? parentFolderId;
-  final List<FolderEntity> allFolders;
-  final List<RequestSummaryEntity> allRequests;
   final double depth;
 
-  const _FolderChildren({
-    required this.collectionId,
-    required this.parentFolderId,
-    required this.allFolders,
-    required this.allRequests,
-    required this.depth,
-  });
+  const _FolderChildren({required this.collectionId, required this.parentFolderId, required this.depth});
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<CollectionsViewModel>();
-    final childFolders = allFolders.where(
-      (f) => f.parentFolderId == parentFolderId && vm.isFolderVisible(collectionId, f),
-    );
-    final childRequests = allRequests.where((r) => r.folderId == parentFolderId && vm.isRequestVisible(r));
+    final children = [
+      for (final item in vm.childrenOf(collectionId, parentFolderId))
+        if (item.folder != null
+            ? vm.isFolderVisible(collectionId, item.folder!)
+            : vm.isRequestVisible(item.request!))
+          item,
+    ];
 
-    if (childFolders.isEmpty && childRequests.isEmpty) {
-      return Padding(
-        padding: EdgeInsets.only(left: 16.0 * depth + 8, top: 4, bottom: 4),
-        child: Text('No requests here yet', style: _emptyStyle(context)),
+    if (children.isEmpty) {
+      return SidebarDndRow(
+        enabled: vm.canMove && !vm.isFiltering,
+        layout: DropLayout.container,
+        drag: context.read<SidebarDragState>(),
+        accepts: (dragged) => !_insideDraggedFolder(vm, dragged, collectionId, parentFolderId),
+        spotFor: (_) => DropSpot(collectionId, parentFolderId),
+        onDrop: (item, spot) => _moveTo(context, vm, item, spot),
+        child: Padding(
+          padding: EdgeInsets.only(left: 16.0 * depth + 8, top: 4, bottom: 4),
+          child: Text('No requests here yet', style: _emptyStyle(context)),
+        ),
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final folder in childFolders)
-          _FolderTile(
-            key: ValueKey('folder-${folder.id}'),
-            collectionId: collectionId,
-            folder: folder,
-            allFolders: allFolders,
-            allRequests: allRequests,
-            depth: depth,
-          ),
-        for (final request in childRequests)
-          _RequestTile(key: ValueKey('request-${request.id}'), request: request, indent: 16.0 * depth + 8),
+        for (final item in children)
+          if (item.folder case final folder?)
+            _FolderTile(key: ValueKey('folder-${folder.id}'), collectionId: collectionId, folder: folder, depth: depth)
+          else
+            _RequestTile(
+              key: ValueKey('request-${item.request!.id}'),
+              collectionId: collectionId,
+              request: item.request!,
+              indent: 16.0 * depth + 8,
+            ),
       ],
     );
   }
 }
 
-class _FolderTile extends StatefulWidget {
+class _FolderTile extends StatelessWidget {
   final int collectionId;
   final FolderEntity folder;
-  final List<FolderEntity> allFolders;
-  final List<RequestSummaryEntity> allRequests;
   final double depth;
 
-  const _FolderTile({
-    super.key,
-    required this.collectionId,
-    required this.folder,
-    required this.allFolders,
-    required this.allRequests,
-    required this.depth,
-  });
-
-  @override
-  State<_FolderTile> createState() => _FolderTileState();
-}
-
-class _FolderTileState extends State<_FolderTile> {
-  bool _expanded = true;
+  const _FolderTile({super.key, required this.collectionId, required this.folder, required this.depth});
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.read<CollectionsViewModel>();
+    final vm = context.watch<CollectionsViewModel>();
+    final expanded = vm.isFolderExpanded(folder.id);
+    final ref = OrderRef.folder(folder.id);
+    final item = SidebarDragItem(
+      ref: ref,
+      collectionId: collectionId,
+      parentFolderId: folder.parentFolderId,
+      name: folder.name,
+      icon: Icons.folder,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: 16.0 * widget.depth),
-          child: ListTile(
-            dense: true,
-            leading: Icon(_expanded ? Icons.folder_open : Icons.folder, size: 18),
-            title: Text(widget.folder.name, overflow: TextOverflow.ellipsis),
-            onTap: () => setState(() => _expanded = !_expanded),
-            trailing: PopupMenuButton<String>(
-              onSelected: (action) => _handleAction(context, vm, action),
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'add_request', child: Text('Add request')),
-                PopupMenuItem(value: 'add_folder', child: Text('Add sub-folder')),
-                PopupMenuItem(value: 'describe', child: Text('Description & tags…')),
-                PopupMenuItem(value: 'rename', child: Text('Rename')),
-                PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
+          padding: EdgeInsets.only(left: 16.0 * depth),
+          child: SidebarDndRow(
+            enabled: vm.canMove && !vm.isFiltering,
+            item: item,
+            layout: DropLayout.folder,
+            drag: context.read<SidebarDragState>(),
+            accepts: (dragged) =>
+                dragged.ref != ref && !_insideDraggedFolder(vm, dragged, collectionId, folder.id),
+            spotFor: (zone) => _spotFor(vm, zone),
+            onHoverOpen: expanded ? null : () => vm.expandFolder(folder.id),
+            onDrop: (dragged, spot) => _moveTo(context, vm, dragged, spot),
+            child: Semantics(
+              customSemanticsActions: vm.canMove ? _moveActions(context, vm, item) : null,
+              child: ListTile(
+                dense: true,
+                leading: Icon(expanded ? Icons.folder_open : Icons.folder, size: 18),
+                title: Text(folder.name, overflow: TextOverflow.ellipsis),
+                onTap: () => vm.toggleFolder(folder.id),
+                trailing: PopupMenuButton<String>(
+                  onSelected: (action) => _handleAction(context, vm, item, action),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 'add_request', child: Text('Add request')),
+                    const PopupMenuItem(value: 'add_folder', child: Text('Add sub-folder')),
+                    const PopupMenuItem(value: 'run', child: Text('Run folder')),
+                    const PopupMenuItem(value: 'defaults', child: Text('Folder defaults (headers, auth, tests)…')),
+                    const PopupMenuItem(value: 'describe', child: Text('Description & tags…')),
+                    const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                    const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                    if (vm.canMove) ..._moveMenuItems(vm, ref, collectionId),
+                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
-        if (_expanded)
-          _FolderChildren(
-            collectionId: widget.collectionId,
-            parentFolderId: widget.folder.id,
-            allFolders: widget.allFolders,
-            allRequests: widget.allRequests,
-            depth: widget.depth + 1,
-          ),
+        if (expanded) _FolderChildren(collectionId: collectionId, parentFolderId: folder.id, depth: depth + 1),
       ],
     );
   }
 
-  Future<void> _handleAction(BuildContext context, CollectionsViewModel vm, String action) async {
+  /// In front of it, into it (the end of its content), or behind it. Behind an open folder is the top of its
+  /// content, which is the row just below.
+  DropSpot _spotFor(CollectionsViewModel vm, DropZone zone) {
+    final order = vm.orderOf(collectionId);
+    switch (zone) {
+      case DropZone.before:
+        return DropSpot(collectionId, folder.parentFolderId, OrderRef.folder(folder.id));
+      case DropZone.into:
+        return DropSpot(collectionId, folder.id);
+      case DropZone.after:
+        final content = order.childrenOf(folder.id);
+        if (vm.isFolderExpanded(folder.id) && content.isNotEmpty) {
+          return DropSpot(collectionId, folder.id, content.first.ref);
+        }
+        return DropSpot(collectionId, folder.parentFolderId, _nextSibling(order, OrderRef.folder(folder.id)));
+    }
+  }
+
+  Future<void> _handleAction(BuildContext context, CollectionsViewModel vm, SidebarDragItem item, String action) async {
     switch (action) {
       case 'add_request':
-        final id = await vm.createRequest(widget.collectionId, folderId: widget.folder.id);
+        final id = await vm.createRequest(collectionId, folderId: folder.id);
         if (context.mounted) _openRequest(context, id);
         if (context.mounted) _showSnack(context, 'Request created');
       case 'add_folder':
         final name = await showPromptDialog(context, title: 'New sub-folder');
         if (name != null) {
-          await vm.createFolder(widget.collectionId, name, parentFolderId: widget.folder.id);
+          await vm.createFolder(collectionId, name, parentFolderId: folder.id);
           if (context.mounted) _showSnack(context, 'Folder created');
         }
+      case 'run':
+        await CollectionRunnerDialog.show(context, collectionId: collectionId, folderId: folder.id);
+      case 'defaults':
+        await showDefaultsDialog(context, collectionId: collectionId, folderId: folder.id);
       case 'describe':
-        await EntityDescriptionDialog.show(context, EntityKind.folder, widget.folder.id, widget.folder.name);
+        await EntityDescriptionDialog.show(context, EntityKind.folder, folder.id, folder.name);
       case 'rename':
-        final name = await showPromptDialog(context, title: 'Rename folder', initialValue: widget.folder.name);
+        final name = await showPromptDialog(context, title: 'Rename folder', initialValue: folder.name);
         if (name != null) {
-          await vm.renameFolder(widget.folder.id, name);
+          await vm.renameFolder(folder.id, name);
           if (context.mounted) _showSnack(context, 'Folder renamed');
         }
       case 'duplicate':
-        await vm.duplicateFolder(widget.folder.id);
+        await vm.duplicateFolder(folder.id);
         if (context.mounted) _showSnack(context, 'Folder duplicated');
+      case 'move_up':
+        await _step(context, vm, item, -1);
+      case 'move_down':
+        await _step(context, vm, item, 1);
+      case 'move_to':
+        await _chooseDestination(context, vm, item);
       case 'delete':
         final confirmed = await showConfirmDialog(
           context,
           title: 'Delete folder',
-          message: 'Delete "${widget.folder.name}" and everything inside it?',
+          message: 'Delete "${folder.name}" and everything inside it?',
         );
         if (confirmed) {
-          await vm.deleteFolder(widget.folder.id);
+          await vm.deleteFolder(folder.id);
           if (context.mounted) _showSnack(context, 'Folder deleted');
         }
     }
@@ -449,9 +647,10 @@ class _FolderTileState extends State<_FolderTile> {
 }
 
 class _RequestTile extends StatefulWidget {
+  final int collectionId;
   final RequestSummaryEntity request;
   final double indent;
-  const _RequestTile({super.key, required this.request, required this.indent});
+  const _RequestTile({super.key, required this.collectionId, required this.request, required this.indent});
 
   @override
   State<_RequestTile> createState() => _RequestTileState();
@@ -472,51 +671,75 @@ class _RequestTileState extends State<_RequestTile> {
         : _hovered
         ? colors.hover
         : Colors.transparent;
+    final ref = OrderRef.request(request.id);
+    final item = SidebarDragItem(
+      ref: ref,
+      collectionId: widget.collectionId,
+      parentFolderId: request.folderId,
+      name: request.name,
+      icon: Icons.http,
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(widget.indent, 1, 8, 1),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        child: Material(
-          color: background,
-          borderRadius: BorderRadius.circular(8),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => _openRequest(context, request.id),
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8, right: 2, top: 4, bottom: 4),
-              child: Row(
-                children: [
-                  MethodBadge(method: request.method.label),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      request.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.textStyles.body.copyWith(
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                        color: isSelected ? colors.primaryText : colors.primaryText.withValues(alpha: 0.88),
+        child: SidebarDndRow(
+          enabled: vm.canMove && !vm.isFiltering,
+          item: item,
+          layout: DropLayout.request,
+          drag: context.read<SidebarDragState>(),
+          accepts: (dragged) =>
+              dragged.ref != ref && !_insideDraggedFolder(vm, dragged, widget.collectionId, request.folderId),
+          spotFor: (zone) => zone == DropZone.before
+              ? DropSpot(widget.collectionId, request.folderId, ref)
+              : DropSpot(widget.collectionId, request.folderId, _nextSibling(vm.orderOf(widget.collectionId), ref)),
+          onDrop: (dragged, spot) => _moveTo(context, vm, dragged, spot),
+          child: Semantics(
+            customSemanticsActions: vm.canMove ? _moveActions(context, vm, item) : null,
+            child: Material(
+              color: background,
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _openRequest(context, request.id),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 2, top: 4, bottom: 4),
+                  child: Row(
+                    children: [
+                      MethodBadge(method: request.method.label),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          request.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.textStyles.body.copyWith(
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                            color: isSelected ? colors.primaryText : colors.primaryText.withValues(alpha: 0.88),
+                          ),
+                        ),
                       ),
-                    ),
+                      // Dimmed rather than hidden until hover: a phone has no hover.
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity: _hovered || isSelected ? 1 : 0.4,
+                        child: PopupMenuButton<String>(
+                          tooltip: 'More',
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          style: _compactIconButton,
+                          onSelected: (action) => _handleAction(context, vm, item, action),
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                            const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                            if (vm.canMove) ..._moveMenuItems(vm, ref, widget.collectionId),
+                            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  // Dimmed rather than hidden until hover: a phone has no hover.
-                  AnimatedOpacity(
-                    duration: const Duration(milliseconds: 120),
-                    opacity: _hovered || isSelected ? 1 : 0.4,
-                    child: PopupMenuButton<String>(
-                      tooltip: 'More',
-                      padding: EdgeInsets.zero,
-                      iconSize: 18,
-                      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-                      onSelected: (action) => _handleAction(context, vm, action),
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(value: 'rename', child: Text('Rename')),
-                        PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -525,7 +748,7 @@ class _RequestTileState extends State<_RequestTile> {
     );
   }
 
-  Future<void> _handleAction(BuildContext context, CollectionsViewModel vm, String action) async {
+  Future<void> _handleAction(BuildContext context, CollectionsViewModel vm, SidebarDragItem item, String action) async {
     switch (action) {
       case 'rename':
         final name = await showPromptDialog(context, title: 'Rename request', initialValue: request.name);
@@ -536,6 +759,12 @@ class _RequestTileState extends State<_RequestTile> {
       case 'duplicate':
         await vm.duplicateRequest(request.id);
         if (context.mounted) _showSnack(context, 'Request duplicated');
+      case 'move_up':
+        await _step(context, vm, item, -1);
+      case 'move_down':
+        await _step(context, vm, item, 1);
+      case 'move_to':
+        await _chooseDestination(context, vm, item);
       case 'delete':
         final confirmed = await showConfirmDialog(
           context,

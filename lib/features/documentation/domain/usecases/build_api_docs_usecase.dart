@@ -6,6 +6,10 @@ import '../../../collections/domain/entities/collection_entity.dart' show Folder
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
 import '../../../collections/domain/repositories/collection_repository.dart';
 import '../../../collections/domain/repositories/collection_variable_repository.dart';
+import '../../../defaults/domain/entities/defaults_chain.dart';
+import '../../../defaults/domain/entities/inherited_defaults.dart';
+import '../../../defaults/domain/repositories/defaults_repository.dart';
+import '../../../defaults/domain/services/defaults_resolver.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/entities/key_value_item.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
@@ -30,6 +34,10 @@ final class BuildApiDocsUseCase implements UseCase<ApiDocsModel, int> {
   final DocumentationRepository _docs;
   final TagRepository _tags;
 
+  /// What the collection and its folders pass down: the headers a request inherits are listed with it,
+  /// and its authorization says which folder it comes from. Without it only a request's own are shown.
+  final DefaultsRepository? _defaults;
+
   const BuildApiDocsUseCase(
     this._collections,
     this._requests,
@@ -37,8 +45,9 @@ final class BuildApiDocsUseCase implements UseCase<ApiDocsModel, int> {
     this._variables,
     this._auth,
     this._docs,
-    this._tags,
-  );
+    this._tags, [
+    this._defaults,
+  ]);
 
   @override
   Future<ApiDocsModel> call(int collectionId) async {
@@ -59,6 +68,7 @@ final class BuildApiDocsUseCase implements UseCase<ApiDocsModel, int> {
       collectionAuth: _decodeAuth(await _auth.getAuthJson(collectionId)),
       docs: {for (final kind in EntityKind.values) kind: await _docs.markdownByLocalId(kind)},
       tags: {for (final kind in EntityKind.values) kind: await _tags.tagsByLocalId(kind)},
+      defaults: await _defaults?.loadTree(collectionId),
     );
 
     final folders = _foldersUnder(null, context);
@@ -100,21 +110,40 @@ final class BuildApiDocsUseCase implements UseCase<ApiDocsModel, int> {
     );
   }
 
-  ApiDocsRequest _request(ApiRequestEntity request, _Context context) => ApiDocsRequest(
-        name: request.name,
-        method: request.method.label,
-        url: request.url,
-        description: context.description(EntityKind.request, request.id),
-        tags: context.tagsOf(EntityKind.request, request.id),
-        queryParams: _fields(request.queryParams),
-        headers: _fields(request.headers),
-        body: _body(request.body),
-        authSummary: _authSummary(request.auth, context.collectionAuth),
-        examples: [
-          for (final example in context.examples[request.id] ?? const <ResponseExampleEntity>[])
-            ApiDocsExample(name: example.name, statusCode: example.statusCode, body: example.body),
-        ],
-      );
+  ApiDocsRequest _request(ApiRequestEntity request, _Context context) {
+    final inherited = context.defaults == null
+        ? null
+        : DefaultsResolver.resolve(context.defaults!.chainFor(request.folderId));
+    // A header the request sets itself (or switches off) takes the place of the inherited one.
+    final ownNames = {
+      for (final item in request.headers)
+        if (item.key.trim().isNotEmpty) item.key.trim().toLowerCase(),
+    };
+    return ApiDocsRequest(
+      name: request.name,
+      method: request.method.label,
+      url: request.url,
+      description: context.description(EntityKind.request, request.id),
+      tags: context.tagsOf(EntityKind.request, request.id),
+      queryParams: _fields(request.queryParams),
+      headers: [
+        for (final header in inherited?.headers ?? const <InheritedHeader>[])
+          if (header.item.key.trim().isNotEmpty && !ownNames.contains(header.item.key.trim().toLowerCase()))
+            ApiDocsField(header.item.key, header.item.value, origin: header.origin.label),
+        ..._fields(request.headers),
+      ],
+      body: _body(request.body),
+      authSummary: _authSummary(
+        request.auth,
+        inherited?.auth ?? context.collectionAuth,
+        inheritedFrom: inherited?.authOrigin?.isFolder == true ? inherited!.authOrigin!.label : 'the collection',
+      ),
+      examples: [
+        for (final example in context.examples[request.id] ?? const <ResponseExampleEntity>[])
+          ApiDocsExample(name: example.name, statusCode: example.statusCode, body: example.body),
+      ],
+    );
+  }
 
   static List<ApiDocsField> _fields(List<KeyValueItem> items) => [
         for (final item in items)
@@ -154,13 +183,14 @@ final class BuildApiDocsUseCase implements UseCase<ApiDocsModel, int> {
   }
 
   /// Only the type ever leaves this method. A request that inherits shows what
-  /// it inherits, and nothing when no default is set.
-  static String _authSummary(RequestAuth? auth, RequestAuth? collectionAuth) {
+  /// it inherits and where from ([inheritedFrom]: `the collection`, or `folder "Auth"`),
+  /// and nothing when no default is set.
+  static String _authSummary(RequestAuth? auth, RequestAuth? collectionAuth, {String inheritedFrom = 'the collection'}) {
     if (auth == null) return '';
     final inherited = auth.type == AuthType.inherit;
     final effective = auth.resolveInherited(collectionAuth);
     if (effective.type == AuthType.none || effective.type == AuthType.inherit) return '';
-    return inherited ? '${effective.type.label} (inherited from the collection)' : effective.type.label;
+    return inherited ? '${effective.type.label} (inherited from $inheritedFrom)' : effective.type.label;
   }
 
   /// A corrupt stored value must not stop the docs from being generated.
@@ -180,6 +210,7 @@ final class _Context {
   final RequestAuth? collectionAuth;
   final Map<EntityKind, Map<int, String>> docs;
   final Map<EntityKind, Map<int, List<String>>> tags;
+  final DefaultsTree? defaults;
   final Set<int> visited = {};
   final Set<int> placed = {};
 
@@ -190,6 +221,7 @@ final class _Context {
     required this.collectionAuth,
     required this.docs,
     required this.tags,
+    this.defaults,
   });
 
   String description(EntityKind kind, int id) => docs[kind]?[id] ?? '';

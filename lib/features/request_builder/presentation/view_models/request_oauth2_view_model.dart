@@ -13,6 +13,10 @@ final class RequestOAuth2ViewModel with ChangeNotifier {
 
   RequestOAuth2ViewModel(this._tokenService, this._buildVariableResolverUseCase);
 
+  /// The folder the auth being edited belongs to; its variables (and those of the folders above it)
+  /// resolve in the token request as they do when the auth is used in a send. Set by the editor.
+  int? folderId;
+
   bool isFetching = false;
   String? errorMessage;
 
@@ -121,7 +125,7 @@ final class RequestOAuth2ViewModel with ChangeNotifier {
   /// The unresolved auth is what gets persisted. Without a collection
   /// (a request not yet saved anywhere) only environment + globals apply.
   Future<RequestAuth> _resolved(RequestAuth auth, int? collectionId) async {
-    final resolver = await _buildVariableResolverUseCase(collectionId ?? 0);
+    final resolver = await _buildVariableResolverUseCase(collectionId ?? 0, folderId: folderId);
     return auth.copyWith(
       oauth2AccessTokenUrl: resolver.resolve(auth.oauth2AccessTokenUrl),
       oauth2AuthorizationUrl: resolver.resolve(auth.oauth2AuthorizationUrl),

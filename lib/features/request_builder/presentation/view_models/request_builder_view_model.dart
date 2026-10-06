@@ -97,7 +97,12 @@ final class RequestBuilderViewModel with ChangeNotifier {
       // Apart from the send: a failing script is not a server that could not be reached.
       try {
         lastScriptResult = await _runRequestScriptsUseCase(
-          RunRequestScriptsParams(requestId: current.id, collectionId: current.collectionId, response: sent),
+          RunRequestScriptsParams(
+            requestId: current.id,
+            collectionId: current.collectionId,
+            response: sent,
+            folderId: current.folderId,
+          ),
         );
       } catch (e) {
         if (!cancelToken.isCancelled) {
@@ -209,11 +214,19 @@ final class RequestBuilderViewModel with ChangeNotifier {
   }
 
   /// Every edit re-saves the whole request from this snapshot, so a rename made
-  /// elsewhere (the sidebar) must land here or the next edit would undo it.
+  /// elsewhere (the sidebar) must land here or the next edit would undo it. A
+  /// move to another folder lands too: what the request inherits (headers,
+  /// auth, variables, tests) follows its folder.
   void _mergeExternalName(ApiRequestEntity? latest) {
     final current = request;
-    if (latest == null || current == null || latest.name == current.name) return;
-    request = current.copyWith(name: latest.name);
+    if (latest == null || current == null) return;
+    final renamed = latest.name != current.name;
+    final moved = latest.folderId != current.folderId || latest.collectionId != current.collectionId;
+    if (!renamed && !moved) return;
+    var merged = current;
+    if (renamed) merged = merged.copyWith(name: latest.name);
+    if (moved) merged = merged.inFolder(latest.folderId, collectionId: latest.collectionId);
+    request = merged;
     notifyListeners();
   }
 

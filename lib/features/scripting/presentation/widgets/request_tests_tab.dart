@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../defaults/presentation/widgets/request_inherited_sections.dart';
 import '../view_models/request_scripts_view_model.dart';
 import 'assertions_editor.dart';
 import 'extractors_editor.dart';
@@ -51,6 +52,8 @@ class _RequestTestsTabState extends State<RequestTestsTab> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // The tests of the folders and the collection, which run first (read-only; nothing outside a request).
+              const RequestInheritedTests(),
               Text('Assertions', style: context.textStyles.heading),
               Text(
                 'Checked after every send; results appear under the response. Values, paths and header names can use {{name}}.',

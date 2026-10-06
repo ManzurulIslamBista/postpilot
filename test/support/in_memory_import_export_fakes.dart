@@ -4,6 +4,10 @@ import 'package:postpilot/features/collections/domain/entities/collection_variab
 import 'package:postpilot/features/collections/domain/repositories/collection_auth_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_repository.dart';
 import 'package:postpilot/features/collections/domain/repositories/collection_variable_repository.dart';
+import 'package:postpilot/features/defaults/domain/entities/defaults_chain.dart';
+import 'package:postpilot/features/defaults/domain/entities/level_defaults.dart';
+import 'package:postpilot/features/defaults/domain/repositories/defaults_repository.dart';
+import 'package:postpilot/features/defaults/domain/services/defaults_codec.dart';
 import 'package:postpilot/features/documentation/domain/entities/entity_kind.dart';
 import 'package:postpilot/features/documentation/domain/repositories/documentation_repository.dart';
 import 'package:postpilot/features/documentation/domain/repositories/tag_repository.dart';
@@ -52,8 +56,16 @@ extension ImportExportServices on RepositoryBundle {
     collectionAuthRepository,
   );
 
-  CollectionLoader get loader =>
-      CollectionLoader(collectionRepository, requestRepository, collectionVariableRepository, collectionAuthRepository);
+  /// The defaults of collections and folders, for the bundles that have them (the database-backed one).
+  DefaultsRepository? get _defaults => this is DefaultsRepositoryHolder ? (this as DefaultsRepositoryHolder).defaultsRepository : null;
+
+  CollectionLoader get loader => CollectionLoader(
+    collectionRepository,
+    requestRepository,
+    collectionVariableRepository,
+    collectionAuthRepository,
+    _defaults,
+  );
 
   BackupService get backupService => backupServiceWith(null);
 
@@ -72,13 +84,20 @@ extension ImportExportServices on RepositoryBundle {
     documentationRepository,
     tagRepository,
     gitState,
+    _defaults,
   );
+}
+
+/// A [RepositoryBundle] that also has the defaults repository (an extra interface, so the bundles
+/// that predate defaults stay as they are).
+abstract interface class DefaultsRepositoryHolder {
+  DefaultsRepository get defaultsRepository;
 }
 
 /// All the tables the import/export code touches, in memory, behind the same
 /// repository interfaces the app uses. Deleting a collection cascades like the
 /// real foreign keys do, so rollback behaviour can be tested.
-final class InMemoryDb implements RepositoryBundle {
+final class InMemoryDb implements RepositoryBundle, DefaultsRepositoryHolder {
   int _sequence = 0;
   int nextId() => ++_sequence;
 
@@ -93,6 +112,10 @@ final class InMemoryDb implements RepositoryBundle {
   final environmentVariables = <EnvironmentVariableEntity>[];
   final globals = <GlobalVariableEntity>[];
   final requestSettings = <int, RequestSettings>{};
+
+  /// What collections and folders pass down to their requests (a collection's headers and tests; a folder's everything).
+  final collectionDefaults = <int, LevelDefaults>{};
+  final folderDefaults = <int, LevelDefaults>{};
 
   /// Descriptions and tags, keyed by `kind:id` (the real tables have no foreign key either).
   final descriptions = <String, String>{};
@@ -112,6 +135,10 @@ final class InMemoryDb implements RepositoryBundle {
 
   void deleteCollection(int id) {
     collections.removeWhere((c) => c.id == id);
+    for (final folder in folders.where((f) => f.collectionId == id)) {
+      folderDefaults.remove(folder.id);
+    }
+    collectionDefaults.remove(id);
     folders.removeWhere((f) => f.collectionId == id);
     final removedRequests = requests.where((r) => r.collectionId == id).map((r) => r.id).toSet();
     requests.removeWhere((r) => r.collectionId == id);
@@ -148,6 +175,8 @@ final class InMemoryDb implements RepositoryBundle {
   InMemoryDocumentationRepository get documentationRepository => InMemoryDocumentationRepository(this);
   @override
   InMemoryTagRepository get tagRepository => InMemoryTagRepository(this);
+  @override
+  InMemoryDefaultsRepository get defaultsRepository => InMemoryDefaultsRepository(this);
 
   static String noteKey(EntityKind kind, int id) => '${kind.dbValue}:$id';
 
@@ -245,18 +274,26 @@ final class InMemoryCollectionVariableRepository implements CollectionVariableRe
   Stream<List<CollectionVariableEntity>> watchByCollection(int collectionId) =>
       Stream.value(db.variables.where((v) => v.collectionId == collectionId).toList());
 
+  /// Inserts when [variable.id] is 0 (or unknown), otherwise updates that row, like the real repository.
   @override
   Future<void> upsert(CollectionVariableEntity variable) async {
-    db.variables.add(
-      CollectionVariableEntity(
-        id: db.nextId(),
-        collectionId: variable.collectionId,
-        key: variable.key,
-        value: variable.value,
-        enabled: variable.enabled,
-      ),
+    final index = variable.id == 0 ? -1 : db.variables.indexWhere((v) => v.id == variable.id);
+    final row = CollectionVariableEntity(
+      id: index == -1 ? db.nextId() : variable.id,
+      collectionId: variable.collectionId,
+      key: variable.key,
+      value: variable.value,
+      enabled: variable.enabled,
     );
+    if (index == -1) {
+      db.variables.add(row);
+    } else {
+      db.variables[index] = row;
+    }
   }
+
+  @override
+  Future<void> delete(int id) async => db.variables.removeWhere((v) => v.id == id);
 
   @override
   Future<Map<String, String>> getEnabledMap(int collectionId) async => {
@@ -476,4 +513,63 @@ final class InMemoryTagRepository implements TagRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
+}
+
+/// What collections and folders pass down, kept in the [InMemoryDb] with the rest.
+final class InMemoryDefaultsRepository implements DefaultsRepository {
+  final InMemoryDb db;
+  InMemoryDefaultsRepository(this.db);
+
+  @override
+  Future<DefaultsTree> loadTree(int collectionId) async {
+    final collection = db.collections.where((c) => c.id == collectionId).firstOrNull;
+    if (collection == null) return DefaultsTree(collectionName: '', collectionId: collectionId);
+    final folders = [for (final f in db.folders) if (f.collectionId == collectionId) f];
+    return DefaultsTree(
+      collectionName: collection.name,
+      collectionId: collectionId,
+      collection: (db.collectionDefaults[collectionId] ?? LevelDefaults.empty)
+          .withAuth(DefaultsCodec.decodeAuth(db.collectionAuth[collectionId])),
+      folders: folders,
+      folderDefaults: {
+        for (final f in folders)
+          if (db.folderDefaults[f.id] != null) f.id: db.folderDefaults[f.id]!,
+      },
+    );
+  }
+
+  @override
+  Future<LevelDefaults> getCollection(int collectionId) async => db.collectionDefaults[collectionId] ?? LevelDefaults.empty;
+
+  @override
+  Future<void> saveCollection(int collectionId, LevelDefaults defaults) async {
+    // Only the headers and tests are the collection's own here, as in the database.
+    final own = LevelDefaults(headers: defaults.headers, assertions: defaults.assertions, extractors: defaults.extractors);
+    if (own.isEmpty) {
+      db.collectionDefaults.remove(collectionId);
+    } else {
+      db.collectionDefaults[collectionId] = own;
+    }
+  }
+
+  @override
+  Future<LevelDefaults> getFolder(int folderId) async => db.folderDefaults[folderId] ?? LevelDefaults.empty;
+
+  @override
+  Future<void> saveFolder(int folderId, LevelDefaults defaults) async {
+    if (defaults.isEmpty) {
+      db.folderDefaults.remove(folderId);
+    } else {
+      db.folderDefaults[folderId] = defaults;
+    }
+  }
+
+  @override
+  Future<int?> currentFolderId(int requestId, {int? fallback}) async {
+    final stored = db.requests.where((r) => r.id == requestId).firstOrNull;
+    return stored == null ? fallback : stored.folderId;
+  }
+
+  @override
+  Stream<void> changes(int collectionId) => const Stream.empty();
 }

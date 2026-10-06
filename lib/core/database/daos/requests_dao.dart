@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import '../../../features/collections/domain/services/collection_order.dart';
 import '../app_database.dart';
 import '../tables/requests_table.dart';
 import 'entity_notes_copy.dart';
@@ -9,10 +10,12 @@ part 'requests_dao.g.dart';
 class RequestsDao extends DatabaseAccessor<AppDatabase> with _$RequestsDaoMixin {
   RequestsDao(super.db);
 
+  /// Equal `order_index` values (every row of a workspace made before ordering existed) list by id, the order
+  /// the rows were created in, so the list never depends on how SQLite happens to scan.
   Stream<List<Request>> watchByCollection(int collectionId) =>
       (select(requests)
             ..where((t) => t.collectionId.equals(collectionId))
-            ..orderBy([(t) => OrderingTerm.asc(t.orderIndex)]))
+            ..orderBy([(t) => OrderingTerm.asc(t.orderIndex), (t) => OrderingTerm.asc(t.id)]))
           .watch();
 
   Stream<Request?> watchById(int id) =>
@@ -20,7 +23,18 @@ class RequestsDao extends DatabaseAccessor<AppDatabase> with _$RequestsDaoMixin 
 
   Future<Request?> findById(int id) => (select(requests)..where((t) => t.id.equals(id))).getSingleOrNull();
 
-  Future<int> createRequest(RequestsCompanion entry) => into(requests).insert(entry);
+  /// Appends unless the entry carries an index: the request goes after everything already in its folder
+  /// (folders and requests share one order), not at 0 where it would tie with its siblings.
+  Future<int> createRequest(RequestsCompanion entry) {
+    if (entry.orderIndex.present || !entry.collectionId.present) return into(requests).insert(entry);
+    return transaction(() async {
+      final next = await attachedDatabase.collectionsDao.nextOrderIndex(
+        entry.collectionId.value,
+        entry.folderId.present ? entry.folderId.value : null,
+      );
+      return into(requests).insert(entry.copyWith(orderIndex: Value(next)));
+    });
+  }
 
   Future<void> updateRequest(int id, RequestsCompanion entry) =>
       (update(requests)..where((t) => t.id.equals(id))).write(entry);
@@ -44,6 +58,12 @@ class RequestsDao extends DatabaseAccessor<AppDatabase> with _$RequestsDaoMixin 
           original
               .toCompanion(true)
               .copyWith(id: const Value.absent(), name: Value(name), updatedAt: const Value.absent()),
+        );
+        await attachedDatabase.collectionsDao.placeAfter(
+          original: OrderRef.request(id),
+          copy: OrderRef.request(newId),
+          collectionId: original.collectionId,
+          parentId: original.folderId,
         );
         await _copyExtras(fromRequestId: id, toRequestId: newId);
         return newId;

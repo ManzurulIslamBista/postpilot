@@ -73,10 +73,11 @@ void main() {
       db.collectionVariableRepository,
       db.collectionAuthRepository,
       db.scriptsRepository,
+      db.defaultsRepository,
     );
   });
 
-  test('importWithSummary stores the requests, the translated scripts and the merged variables', () async {
+  test('importWithSummary stores the requests, the translated scripts and the variables, those of a folder on the folder', () async {
     final summary = await useCase.importWithSummary(_shop);
 
     final collectionId = summary.collectionIds.single;
@@ -87,11 +88,12 @@ void main() {
     expect(order.url, '{{baseUrl}}/orders/7');
     expect(order.auth.type, AuthType.none, reason: 'hawk is not supported');
 
-    // The folder variable joined the collection's.
+    // The folder's variable stays on the folder (it is a default of that folder); the collection keeps only its own.
     expect(db.variables.where((v) => v.collectionId == collectionId).map((v) => (v.key, v.value)), [
       ('baseUrl', 'https://shop.test'),
-      ('role', 'admin'),
     ]);
+    final authFolder = db.folders.firstWhere((f) => f.name == 'Auth');
+    expect(db.folderDefaults[authFolder.id]!.variables.map((v) => (v.key, v.value)), [('role', 'admin')]);
 
     final loginAssertions = ScriptsJsonCodec.decodeAssertions(db.scripts[login.id]!.assertionsJson);
     expect(loginAssertions.map((a) => (a.type, a.expected)), [(AssertionType.statusEquals, '200')]);
@@ -113,10 +115,9 @@ void main() {
     expect(summary.description, 'Imported "Shop": 1 folder, 2 requests (2 skipped)');
     expect(summary.notesHeading, 'Imported with 2 skipped items');
     expect(summary.notes, [
-      "Test scripts were converted to 2 checks and 1 variable extractor on the requests' Tests tab.",
+      'Test scripts were converted to 2 checks and 1 variable extractor on the Tests tab of the requests, folders and collection they were on.',
       "Request \"Get order\": test script statement not converted: tests['x'] = true",
       'Request "Get order": "hawk" authentication is not supported, so it was imported without authentication.',
-      'Folder "Auth": 1 variable imported as collection variable (PostPilot has no folder-level variables).',
       'Request "Get order": path variable :id was written into the URL (PostPilot has no :path variables).',
     ]);
   });

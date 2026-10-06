@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
-import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../safety/domain/services/production_guard.dart';
 import '../../../safety/presentation/production_confirm_dialog.dart';
 import '../../../request_builder/domain/services/collection_run_report.dart';
@@ -12,10 +11,15 @@ import '../view_models/collection_runner_view_model.dart';
 
 class CollectionRunnerDialog extends StatefulWidget {
   final int collectionId;
-  const CollectionRunnerDialog({super.key, required this.collectionId});
 
-  static Future<void> show(BuildContext context, {required int collectionId}) =>
-      showDialog(context: context, builder: (_) => CollectionRunnerDialog(collectionId: collectionId));
+  /// Opens with only this folder's requests (and those of the folders under it) ticked; null ticks everything.
+  final int? folderId;
+  const CollectionRunnerDialog({super.key, required this.collectionId, this.folderId});
+
+  static Future<void> show(BuildContext context, {required int collectionId, int? folderId}) => showDialog(
+        context: context,
+        builder: (_) => CollectionRunnerDialog(collectionId: collectionId, folderId: folderId),
+      );
 
   @override
   State<CollectionRunnerDialog> createState() => _CollectionRunnerDialogState();
@@ -32,7 +36,7 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
   void initState() {
     super.initState();
     _viewModel = locator<CollectionRunnerViewModel>();
-    _viewModel.load(widget.collectionId);
+    _viewModel.load(widget.collectionId, folderId: widget.folderId);
   }
 
   @override
@@ -46,9 +50,12 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
 
   Future<void> _run() async {
     if (!_viewModel.canRun) return;
-    // The production lock: a run sends every request, so ask once up front.
+    // The production lock: a run sends every ticked request, so ask once up front about exactly those.
     final guard = locator.isRegistered<ProductionGuard>() ? locator<ProductionGuard>() : null;
-    final warning = await guard?.checkRunRequests(await _viewModel.fullRequests(widget.collectionId), 'this collection');
+    final warning = await guard?.checkRunRequests(
+      await _viewModel.fullRequests(widget.collectionId),
+      _viewModel.allSelected ? 'this collection' : 'the selected requests',
+    );
     if (warning != null) {
       if (!mounted) return;
       final ok = await confirmProductionSend(context, warning, onSilence: () => guard?.silenceForSession(warning.environmentName));
@@ -162,8 +169,9 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
   String _caption(CollectionRunnerViewModel vm) {
     if (_showSetup) {
       if (vm.isLoading) return 'Loading requests...';
+      if (vm.selectionError != null) return 'Nothing is selected, so there is nothing to run.';
       return '${_plural(vm.requests.length, 'request')} x ${_plural(vm.plannedIterations, 'iteration')}: '
-          '${_plural(vm.plannedRequestCount, 'request')} will really be sent, in order, using the active environment.';
+          '${_plural(vm.plannedRequestCount, 'request')} will really be sent, in the order shown, using the active environment.';
     }
     if (vm.isRunning) return 'Running iteration ${vm.currentIteration} of ${vm.totalIterations}...';
     if (vm.runError != null) return 'The run failed: ${vm.runError}';
@@ -184,6 +192,7 @@ class _Setup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rows = vm.treeRows;
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
@@ -195,22 +204,51 @@ class _Setup extends StatelessWidget {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.only(top: 12, bottom: 4),
-            child: Text('Requests', style: context.textStyles.caption.copyWith(fontWeight: FontWeight.bold)),
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              children: [
+                Text('Requests', style: context.textStyles.caption.copyWith(fontWeight: FontWeight.bold)),
+                if (!vm.isLoading) Text('${vm.selectedCount} of ${vm.totalRequestCount} selected', style: context.textStyles.caption),
+                TextButton(
+                  onPressed: vm.isLoading || vm.allSelected ? null : vm.selectAll,
+                  child: const Text('Select all'),
+                ),
+                TextButton(
+                  onPressed: vm.isLoading || vm.selectedCount == 0 ? null : vm.selectNone,
+                  child: const Text('Select none'),
+                ),
+              ],
+            ),
           ),
         ),
         if (vm.isLoading)
           const SliverToBoxAdapter(
             child: Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
           )
-        else if (vm.requests.isEmpty)
+        else if (vm.totalRequestCount == 0)
           const SliverToBoxAdapter(
             child: Center(child: Padding(padding: EdgeInsets.all(16), child: Text('No requests in this collection'))),
           )
-        else
+        else ...[
+          if (vm.selectionError != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  vm.selectionError!,
+                  style: context.textStyles.caption.copyWith(color: context.colors.statusWarning),
+                ),
+              ),
+            ),
           SliverList.builder(
-            itemCount: vm.requests.length,
-            itemBuilder: (context, index) => _PlanTile(request: vm.requests[index]),
+            itemCount: rows.length,
+            itemBuilder: (context, index) => switch (rows[index]) {
+              RunFolderRow row => _PlanFolderTile(vm: vm, row: row),
+              RunRequestRow row => _PlanRequestTile(vm: vm, row: row),
+            },
           ),
+        ],
       ],
     );
   }
@@ -295,27 +333,84 @@ class _Settings extends StatelessWidget {
   }
 }
 
-class _PlanTile extends StatelessWidget {
-  final RequestSummaryEntity request;
-  const _PlanTile({required this.request});
+/// A folder of the checkbox tree: ticks or unticks everything below it, and folds away what is in it.
+class _PlanFolderTile extends StatelessWidget {
+  final CollectionRunnerViewModel vm;
+  final RunFolderRow row;
+  const _PlanFolderTile({required this.vm, required this.row});
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    final folder = row.folder;
+    return CheckboxListTile(
       dense: true,
-      leading: SizedBox(
-        width: 52,
-        child: Text(
-          request.method.label,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: context.colors.forMethod(request.method.label),
-            fontWeight: FontWeight.bold,
-            fontSize: 11,
+      tristate: true,
+      controlAffinity: ListTileControlAffinity.leading,
+      contentPadding: EdgeInsets.only(left: 8.0 + 16 * row.depth, right: 4),
+      value: row.checked,
+      onChanged: (_) => vm.toggleFolderSelection(folder.id),
+      title: Row(
+        children: [
+          Icon(row.expanded ? Icons.folder_open : Icons.folder, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              folder.name,
+              overflow: TextOverflow.ellipsis,
+              style: context.textStyles.body.copyWith(fontWeight: FontWeight.w600),
+            ),
           ),
-        ),
+          Text('${row.selectedCount}/${row.requestCount}', style: context.textStyles.caption),
+        ],
       ),
-      title: Text(request.name, overflow: TextOverflow.ellipsis),
+      secondary: IconButton(
+        icon: Icon(row.expanded ? Icons.expand_less : Icons.expand_more),
+        tooltip: row.expanded ? 'Collapse ${folder.name}' : 'Expand ${folder.name}',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => vm.toggleFolderExpanded(folder.id),
+      ),
+    );
+  }
+}
+
+/// A request of the checkbox tree, with its place in the run once it is ticked.
+class _PlanRequestTile extends StatelessWidget {
+  final CollectionRunnerViewModel vm;
+  final RunRequestRow row;
+  const _PlanRequestTile({required this.vm, required this.row});
+
+  @override
+  Widget build(BuildContext context) {
+    final request = row.request;
+    final number = row.runNumber;
+    return CheckboxListTile(
+      dense: true,
+      controlAffinity: ListTileControlAffinity.leading,
+      contentPadding: EdgeInsets.only(left: 8.0 + 16 * row.depth, right: 12),
+      value: row.checked,
+      onChanged: (_) => vm.toggleRequest(request.id),
+      title: Row(
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(
+              request.method.label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.colors.forMethod(request.method.label),
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          Expanded(child: Text(request.name, overflow: TextOverflow.ellipsis)),
+          if (number != null)
+            Tooltip(
+              message: 'Runs number $number',
+              child: Text('#$number', style: context.textStyles.caption),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -327,8 +422,12 @@ class _Results extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final grouped = vm.totalIterations > 1;
+    // Numbered by the place in the pass, the order the requests ran in.
     final entries = <Object>[
-      for (final iteration in vm.runIterations) ...[if (grouped) iteration, ...iteration.results],
+      for (final iteration in vm.runIterations) ...[
+        if (grouped) iteration,
+        for (final (i, result) in iteration.results.indexed) _NumberedResult(i + 1, result),
+      ],
     ];
     return Column(
       children: [
@@ -341,7 +440,7 @@ class _Results extends StatelessWidget {
                   itemCount: entries.length,
                   itemBuilder: (context, index) => switch (entries[index]) {
                     RunIteration iteration => _IterationHeader(iteration: iteration),
-                    CollectionRunResult result => _ResultTile(result: result),
+                    _NumberedResult numbered => _ResultTile(result: numbered.result, number: numbered.number),
                     _ => const SizedBox.shrink(),
                   },
                 ),
@@ -349,6 +448,12 @@ class _Results extends StatelessWidget {
       ],
     );
   }
+}
+
+class _NumberedResult {
+  final int number;
+  final CollectionRunResult result;
+  const _NumberedResult(this.number, this.result);
 }
 
 class _SummaryStrip extends StatelessWidget {
@@ -441,7 +546,10 @@ class _IterationHeader extends StatelessWidget {
 
 class _ResultTile extends StatelessWidget {
   final CollectionRunResult result;
-  const _ResultTile({required this.result});
+
+  /// Its place in the pass: the order the requests ran in.
+  final int number;
+  const _ResultTile({required this.result, required this.number});
 
   @override
   Widget build(BuildContext context) {
@@ -453,7 +561,14 @@ class _ResultTile extends StatelessWidget {
 
     return ListTile(
       dense: true,
-      leading: Icon(result.passed ? Icons.check_circle_outline : Icons.error_outline, color: passedColor, size: 18),
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(width: 26, child: Text('$number', textAlign: TextAlign.end, style: context.textStyles.caption)),
+          const SizedBox(width: 6),
+          Icon(result.passed ? Icons.check_circle_outline : Icons.error_outline, color: passedColor, size: 18),
+        ],
+      ),
       title: Text(result.request.name, overflow: TextOverflow.ellipsis),
       subtitle: subtitle == null ? null : Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
       trailing: Text(statusText, style: TextStyle(color: statusColor)),
@@ -463,7 +578,8 @@ class _ResultTile extends StatelessWidget {
   String? _testsSummary() {
     final scripts = result.scripts;
     if (scripts == null) return null;
-    final failedTests = scripts.assertions.where((a) => !a.passed).map((a) => a.name);
+    // A test inherited from a folder or the collection says where it was set.
+    final failedTests = scripts.assertions.where((a) => !a.passed).map((a) => a.origin == null ? a.name : '${a.name} (from ${a.origin})');
     final failedSaves = scripts.extracted.where((e) => !e.ok);
     final parts = [
       if (scripts.assertions.isNotEmpty) '${scripts.passedCount}/${scripts.assertions.length} tests passed',

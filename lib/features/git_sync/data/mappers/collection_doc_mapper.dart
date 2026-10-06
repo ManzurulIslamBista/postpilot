@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import '../../../../core/database/app_database.dart' show Collection, CollectionAuthData, CollectionVariable;
+import '../../../defaults/domain/entities/level_defaults.dart';
+import '../../../defaults/domain/services/defaults_codec.dart';
 import '../../../request_builder/data/models/request_json_codec.dart';
 import '../../domain/entities/sync_doc.dart';
 import 'doc_values.dart';
@@ -13,6 +15,7 @@ abstract final class CollectionDocMapper {
     List<String> tags = const [],
     List<CollectionVariable> variables = const [],
     CollectionAuthData? auth,
+    LevelDefaults defaults = LevelDefaults.empty,
   }) =>
       canonical(SyncDoc(
         uid: uid,
@@ -26,6 +29,8 @@ abstract final class CollectionDocMapper {
             for (final v in variables) {'key': v.key, 'value': v.value, 'enabled': v.enabled},
           ],
           'auth': auth == null ? null : jsonDecode(auth.authJson),
+          // The headers and tests every request inherits; the collection's own variables and auth are the two keys above.
+          ...DefaultsCodec.toDoc(defaults, includeVariablesAndAuth: false),
         },
       ));
 
@@ -43,6 +48,7 @@ abstract final class CollectionDocMapper {
         ...DocValues.notes(doc.data, keepingSecretsOf: local?.data),
         if (variables.isNotEmpty) 'variables': variables,
         'auth': ?auth,
+        ...DocValues.defaults(doc.data, keepingSecretsOf: local?.data, folder: false),
       },
     );
   }
@@ -52,4 +58,7 @@ abstract final class CollectionDocMapper {
     final auth = doc.data['auth'];
     return auth == null ? null : RequestJsonCodec.encodeAuth(DocValues.parseAuth(auth));
   }
+
+  /// The headers and tests [doc] makes every request inherit, to write into `collection_defaults`.
+  static LevelDefaults defaults(SyncDoc doc) => DefaultsCodec.fromDoc(doc.data, includeVariablesAndAuth: false);
 }

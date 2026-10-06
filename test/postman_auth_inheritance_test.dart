@@ -79,7 +79,9 @@ void main() {
       expect(_request(parsed.items.single).auth.type, AuthType.inherit);
     });
 
-    test('a folder auth is copied onto the requests below it that set none of their own', () {
+    // A folder's auth stays on the folder (it becomes the folder's default auth): requests below it that set
+    // none of their own stay on "inherit" and take the nearest folder's at send time, as in Postman.
+    test('a folder auth stays on the folder, and the requests below it that set none of their own inherit it', () {
       const json = '''
       {
         "info": {"name": "C"},
@@ -105,13 +107,20 @@ void main() {
       expect(_request(parsed.items[0]).auth.type, AuthType.inherit);
 
       final admin = _folder(parsed.items[1]);
-      expect(_request(admin.children[0]).auth.type, AuthType.apiKey);
-      expect(_request(admin.children[0]).auth.apiKeyName, 'X-Admin');
-      expect(_request(admin.children[1]).auth.type, AuthType.none);
-      expect(_request(_folder(admin.children[2]).children.single).auth.type, AuthType.apiKey);
-      expect(_request(_folder(admin.children[3]).children.single).auth.bearerToken, 'deep2');
+      expect(admin.auth?.type, AuthType.apiKey);
+      expect(admin.auth?.apiKeyName, 'X-Admin');
+      expect(_request(admin.children[0]).auth.type, AuthType.inherit, reason: 'no copy of the folder\'s auth');
+      expect(_request(admin.children[1]).auth.type, AuthType.none, reason: 'a request\'s own noauth is its own');
+      final deep = _folder(admin.children[2]);
+      expect(deep.auth, isNull, reason: 'a folder without an auth block inherits from the folder above');
+      expect(_request(deep.children.single).auth.type, AuthType.inherit);
+      final deep2 = _folder(admin.children[3]);
+      expect(deep2.auth?.bearerToken, 'deep2');
+      expect(_request(deep2.children.single).auth.type, AuthType.inherit);
 
-      expect(_request(_folder(parsed.items[2]).children.single).auth.type, AuthType.inherit);
+      final plain = _folder(parsed.items[2]);
+      expect(plain.auth, isNull);
+      expect(_request(plain.children.single).auth.type, AuthType.inherit);
     });
   });
 

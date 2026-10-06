@@ -4,6 +4,7 @@ import '../../../../core/enums/auth_type.dart';
 import '../../../../core/enums/body_type.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/utils/variable_resolver.dart';
+import '../../../defaults/domain/services/header_inheritance.dart';
 import '../entities/api_request_entity.dart';
 import '../entities/key_value_item.dart';
 import '../entities/request_auth.dart';
@@ -23,17 +24,23 @@ import 'undefined_variables.dart';
 final class RequestSpecBuilder {
   const RequestSpecBuilder();
 
-  /// [inheritedAuth] is the collection's default auth; it only takes effect
-  /// when the request itself is set to [AuthType.inherit]. Header, query,
-  /// urlencoded and form-data rows take `{{variables}}` in their keys as well
-  /// as their values. With [trimKeysAndValues] those keys and values then lose
-  /// their leading and trailing whitespace, and a row whose key is empty by
+  /// [inheritedAuth] is the default auth of the nearest folder that sets one,
+  /// else the collection's; it only takes effect when the request itself is set
+  /// to [AuthType.inherit]. [inheritedHeaders] are the headers the collection
+  /// and its folders pass down (already merged, enabled rows only, see
+  /// `DefaultsResolver`); the request's own rows override or, when disabled,
+  /// switch off an inherited header of the same name (case-insensitive, after
+  /// `{{variables}}` in the name are resolved), see `HeaderInheritance`. Header,
+  /// query, urlencoded and form-data rows take `{{variables}}` in their keys as
+  /// well as their values. With [trimKeysAndValues] those keys and values then
+  /// lose their leading and trailing whitespace, and a row whose key is empty by
   /// then is dropped. With [sendNoCache] a `Cache-Control: no-cache` header is
   /// added, unless the request sets a `Cache-Control` of its own (any case).
   ResolvedRequestSpec build(
     ApiRequestEntity request,
     VariableResolver resolver, {
     RequestAuth? inheritedAuth,
+    List<KeyValueItem> inheritedHeaders = const [],
     bool trimKeysAndValues = false,
     bool sendNoCache = false,
   }) {
@@ -42,7 +49,8 @@ final class RequestSpecBuilder {
     final url = _buildUrl(request, auth, resolver, tidy);
     final uri = Uri.parse(url);
     final body = _buildBody(request, resolver, tidy);
-    final headers = _buildHeaders(request, auth, resolver, uri, body, request.method.label, tidy);
+    final headerRows = _effectiveHeaders(inheritedHeaders, request.headers, resolver, tidy);
+    final headers = _buildHeaders(headerRows, auth, resolver, uri, body, request.method.label, tidy);
     if (sendNoCache && !headers.keys.any((name) => name.toLowerCase() == 'cache-control')) {
       headers['Cache-Control'] = 'no-cache';
     }
@@ -59,6 +67,7 @@ final class RequestSpecBuilder {
     ApiRequestEntity request,
     VariableResolver resolver, {
     RequestAuth? inheritedAuth,
+    List<KeyValueItem> inheritedHeaders = const [],
     bool trimKeysAndValues = false,
   }) {
     final tidy = trimKeysAndValues ? _trim : _keep;
@@ -86,7 +95,7 @@ final class RequestSpecBuilder {
 
     scan(request.url, 'the URL');
     scanRows(request.queryParams, (key) => 'the query parameter "$key"');
-    scanRows(request.headers, (key) => 'the "$key" header');
+    scanRows(_effectiveHeaders(inheritedHeaders, request.headers, resolver, tidy), (key) => 'the "$key" header');
     switch (auth.type) {
       case AuthType.apiKey:
         if (resolver.resolve(auth.apiKeyName).isNotEmpty) {
@@ -152,6 +161,19 @@ final class RequestSpecBuilder {
               MapEntry(key, tidy(resolver.resolve(item.value))),
       ];
 
+  /// The header rows that are sent, before auth: what the collection and its folders pass down, then the
+  /// request's own. A request's row of an inherited name (enabled or not) takes it over; see
+  /// `HeaderInheritance`. Names are compared as they are sent, with their `{{variables}}` resolved.
+  List<KeyValueItem> _effectiveHeaders(
+    List<KeyValueItem> inherited,
+    List<KeyValueItem> own,
+    VariableResolver resolver,
+    _Tidy tidy,
+  ) {
+    if (inherited.isEmpty) return own;
+    return HeaderInheritance.merge([inherited, own], nameOf: (key) => tidy(resolver.resolve(key)));
+  }
+
   static String _keep(String text) => text;
   static String _trim(String text) => text.trim();
 
@@ -188,7 +210,7 @@ final class RequestSpecBuilder {
   }
 
   Map<String, String> _buildHeaders(
-    ApiRequestEntity request,
+    List<KeyValueItem> headerRows,
     RequestAuth auth,
     VariableResolver resolver,
     Uri uri,
@@ -196,7 +218,7 @@ final class RequestSpecBuilder {
     String method,
     _Tidy tidy,
   ) {
-    final headers = {for (final row in _rows(request.headers, resolver, tidy)) row.key: row.value};
+    final headers = {for (final row in _rows(headerRows, resolver, tidy)) row.key: row.value};
     // Header names are case-insensitive: a user's `content-type` row wins.
     if (body.contentType != null && !headers.keys.any((name) => name.toLowerCase() == 'content-type')) {
       headers['Content-Type'] = body.contentType!;

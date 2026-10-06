@@ -8,13 +8,22 @@ import '../network/dio_api_client.dart';
 import '../network/logging_api_client.dart';
 import '../network/strict_cookie_jar.dart';
 import '../../features/collections/data/repositories/collection_auth_repository_impl.dart';
+import '../../features/collections/data/repositories/collection_order_repository_impl.dart';
 import '../../features/collections/data/repositories/collection_repository_impl.dart';
 import '../../features/collections/data/repositories/collection_variable_repository_impl.dart';
 import '../../features/collections/domain/repositories/collection_auth_repository.dart';
+import '../../features/collections/domain/repositories/collection_order_repository.dart';
 import '../../features/collections/domain/repositories/collection_repository.dart';
 import '../../features/collections/domain/repositories/collection_variable_repository.dart';
 import '../../features/collections/presentation/view_models/collection_runner_view_model.dart';
 import '../../features/collections/presentation/view_models/collections_view_model.dart';
+import '../../features/defaults/data/defaults_repository_impl.dart';
+import '../../features/defaults/domain/repositories/defaults_repository.dart';
+import '../../features/defaults/domain/usecases/resolve_request_defaults_usecase.dart';
+import '../../features/defaults/presentation/view_models/defaults_view_model.dart';
+import '../../features/defaults/presentation/view_models/inherited_defaults_view_model.dart';
+import '../../features/request_builder/domain/services/request_spec_builder.dart';
+import '../../features/scripting/domain/evaluator/assertion_evaluator.dart';
 import '../../features/console/presentation/view_models/request_console_log.dart';
 import '../../features/cookies/data/repositories/cookie_repository_impl.dart';
 import '../../features/cookies/domain/repositories/cookie_repository.dart';
@@ -83,7 +92,9 @@ import '../../features/git_sync/presentation/view_models/git_clone_view_model.da
 import '../../features/git_sync/presentation/view_models/git_sync_view_model.dart';
 import '../../features/git_sync/presentation/view_models/linked_collections_view_model.dart';
 import '../../features/history/data/repositories/history_repository_impl.dart';
+import '../../features/history/data/repository_history_context_source.dart';
 import '../../features/history/domain/repositories/history_repository.dart';
+import '../../features/settings/data/history_prefs.dart';
 import '../../features/history/presentation/view_models/history_view_model.dart';
 import '../../features/import_export/domain/repositories/git_state_store.dart';
 import '../../features/import_export/domain/services/backup_service.dart';
@@ -151,6 +162,7 @@ void setupDependencies({AppDatabase? database}) {
   _registerCollections();
   _registerRequestBuilder();
   _registerScripting();
+  _registerDefaults();
   _registerEnvironments();
   _registerHistory();
   _registerCookies();
@@ -176,7 +188,7 @@ void _registerDevTools() {
       locator<EnvironmentRepository>(),
       locator<SafetyPrefs>(),
       // Resolves {{baseUrl}} the way a send does, so the production-host list sees the real host.
-      (r) async => (await locator<BuildVariableResolverUseCase>()(r.collectionId)).resolve(r.url),
+      (r) async => (await locator<BuildVariableResolverUseCase>()(r.collectionId, folderId: r.folderId)).resolve(r.url),
     ),
   );
   locator.registerLazySingleton<TourPrefs>(TourPrefs.new);
@@ -253,6 +265,9 @@ void _registerCollections() {
   locator.registerLazySingleton<CollectionRepository>(
     () => CollectionRepositoryImpl(locator<AppDatabase>().collectionsDao),
   );
+  locator.registerLazySingleton<CollectionOrderRepository>(
+    () => CollectionOrderRepositoryImpl(locator<AppDatabase>().collectionsDao),
+  );
   locator.registerLazySingleton<CollectionVariableRepository>(
     () => CollectionVariableRepositoryImpl(locator<AppDatabase>().collectionVariablesDao),
   );
@@ -264,6 +279,7 @@ void _registerCollections() {
       locator<CollectionRepository>(),
       locator<RequestRepository>(),
       requestIdFilter: locator<TagFilterViewModel>(),
+      orderRepository: locator<CollectionOrderRepository>(),
     ),
   );
   locator.registerFactory<CollectionRunnerViewModel>(
@@ -287,6 +303,7 @@ void _registerRequestBuilder() {
       locator<CollectionVariableRepository>(),
       locator<EnvironmentRepository>(),
       locator<GlobalVariableRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<SendRequestUseCase>(
@@ -297,6 +314,8 @@ void _registerRequestBuilder() {
       locator<CollectionAuthRepository>(),
       locator<SettingsRepository>(),
       locator<RequestSettingsRepository>(),
+      const RequestSpecBuilder(),
+      locator<ResolveRequestDefaultsUseCase>(),
     ),
   );
   locator.registerLazySingleton<GenerateCodeSnippetUseCase>(
@@ -305,13 +324,15 @@ void _registerRequestBuilder() {
       locator<CollectionAuthRepository>(),
       settings: locator<SettingsRepository>(),
       requestSettings: locator<RequestSettingsRepository>(),
+      defaults: locator<ResolveRequestDefaultsUseCase>(),
     ),
   );
   locator.registerLazySingleton<CollectionRunnerService>(
-    () => CollectionRunnerService(
+    () => CollectionRunnerService.withFolders(
       locator<RequestRepository>(),
       locator<SendRequestUseCase>(),
       locator<RunRequestScriptsUseCase>(),
+      locator<CollectionRepository>(),
     ),
   );
   locator.registerLazySingleton<ListVariablesUseCase>(
@@ -319,6 +340,7 @@ void _registerRequestBuilder() {
       locator<CollectionVariableRepository>(),
       locator<EnvironmentRepository>(),
       locator<GlobalVariableRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerFactory<VariableScope>(
@@ -347,9 +369,29 @@ void _registerScripting() {
       locator<BuildVariableResolverUseCase>(),
       locator<EnvironmentRepository>(),
       locator<GlobalVariableRepository>(),
+      const AssertionEvaluator(),
+      locator<ResolveRequestDefaultsUseCase>(),
     ),
   );
   locator.registerFactory<RequestScriptsViewModel>(() => RequestScriptsViewModel(locator<RequestScriptsRepository>()));
+}
+
+/// What a collection and its folders pass down to their requests (headers, auth, variables, tests).
+void _registerDefaults() {
+  locator.registerLazySingleton<DefaultsRepository>(() => DefaultsRepositoryImpl(locator<AppDatabase>()));
+  locator.registerLazySingleton<ResolveRequestDefaultsUseCase>(
+    () => ResolveRequestDefaultsUseCase(locator<DefaultsRepository>()),
+  );
+  locator.registerFactory<InheritedDefaultsViewModel>(
+    () => InheritedDefaultsViewModel(locator<ResolveRequestDefaultsUseCase>()),
+  );
+  locator.registerFactory<DefaultsViewModel>(
+    () => DefaultsViewModel(
+      locator<DefaultsRepository>(),
+      locator<CollectionAuthRepository>(),
+      locator<CollectionVariableRepository>(),
+    ),
+  );
 }
 
 void _registerEnvironments() {
@@ -365,7 +407,20 @@ void _registerEnvironments() {
 }
 
 void _registerHistory() {
-  locator.registerLazySingleton<HistoryRepository>(() => HistoryRepositoryImpl(locator<AppDatabase>().historyDao));
+  // What History keeps (Settings > History); it loads itself on first use.
+  locator.registerLazySingleton<HistoryPrefs>(HistoryPrefs.new);
+  locator.registerLazySingleton<HistoryRepository>(
+    () => HistoryRepositoryImpl(
+      locator<AppDatabase>().historyDao,
+      policy: locator<HistoryPrefs>(),
+      context: RepositoryHistoryContextSource(
+        collections: locator<CollectionRepository>(),
+        environments: locator<EnvironmentRepository>(),
+        globals: locator<GlobalVariableRepository>(),
+        collectionAuth: locator<CollectionAuthRepository>(),
+      ),
+    ),
+  );
   locator.registerLazySingleton<HistoryViewModel>(() => HistoryViewModel(locator<HistoryRepository>()));
 }
 
@@ -411,6 +466,7 @@ void _registerDocumentation() {
       locator<CollectionAuthRepository>(),
       locator<DocumentationRepository>(),
       locator<TagRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<TagFilterViewModel>(
@@ -441,6 +497,7 @@ void _registerImportExport() {
       locator<RequestRepository>(),
       locator<CollectionVariableRepository>(),
       locator<CollectionAuthRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<BackupService>(
@@ -458,6 +515,7 @@ void _registerImportExport() {
       locator<DocumentationRepository>(),
       locator<TagRepository>(),
       locator<GitStateStore>(),
+      locator<DefaultsRepository>(),
     ),
   );
 
@@ -468,6 +526,7 @@ void _registerImportExport() {
       locator<CollectionVariableRepository>(),
       locator<CollectionAuthRepository>(),
       locator<RequestScriptsRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<ImportPostmanEnvironmentUseCase>(
@@ -479,6 +538,7 @@ void _registerImportExport() {
       locator<RequestRepository>(),
       locator<CollectionVariableRepository>(),
       locator<CollectionAuthRepository>(),
+      locator<DefaultsRepository>(),
     ),
   );
   locator.registerLazySingleton<ImportCurlUseCase>(() => ImportCurlUseCase(locator<RequestRepository>()));

@@ -3,6 +3,7 @@ import '../../../../core/usecases/usecase.dart';
 import '../../../collections/domain/repositories/collection_auth_repository.dart';
 import '../../../collections/domain/repositories/collection_repository.dart';
 import '../../../collections/domain/repositories/collection_variable_repository.dart';
+import '../../../defaults/domain/repositories/defaults_repository.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../request_builder/domain/entities/request_auth.dart';
 import '../../../request_builder/domain/repositories/request_repository.dart';
@@ -15,12 +16,16 @@ final class ExportPostmanCollectionUseCase implements UseCase<String, int> {
   final CollectionVariableRepository _collectionVariableRepository;
   final CollectionAuthRepository _collectionAuthRepository;
 
+  /// What the collection and its folders pass down; without it the export holds only what each request itself has.
+  final DefaultsRepository? _defaults;
+
   const ExportPostmanCollectionUseCase(
     this._collectionRepository,
     this._requestRepository,
     this._collectionVariableRepository,
-    this._collectionAuthRepository,
-  );
+    this._collectionAuthRepository, [
+    this._defaults,
+  ]);
 
   @override
   Future<String> call(int collectionId) async {
@@ -46,6 +51,7 @@ final class ExportPostmanCollectionUseCase implements UseCase<String, int> {
       requests: requests,
       variables: variables,
       collectionAuth: collectionAuth,
+      defaults: await _defaults?.loadTree(collectionId),
     );
   }
 }

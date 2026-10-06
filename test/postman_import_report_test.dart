@@ -162,24 +162,27 @@ void main() {
       ],
     });
 
-    test('are merged into the collection variables, first definition wins', () {
+    test('stay on their folder, the collection keeps only its own', () {
       final parsed = PostmanCollectionParser.parse(collection());
       expect(parsed.variables.map((v) => (v.key, v.value, v.enabled)), [
         ('host', 'https://a.test', true),
         ('same', '1', true),
-        ('role', 'admin', true),
-        ('off', 'x', false),
-        ('deep', 'd', true),
       ]);
+      final admin = parsed.items.single as PostmanFolderItem;
+      expect(admin.variables.map((v) => (v.key, v.value, v.enabled)), [
+        ('role', 'admin', true),
+        ('host', 'https://other.test', true),
+        ('same', '1', true),
+        ('off', 'x', false),
+      ]);
+      final nested = admin.children.single as PostmanFolderItem;
+      expect(nested.variables.map((v) => (v.key, v.value)), [('deep', 'd')]);
     });
 
-    test('a conflicting value is reported without its value, an identical one is silent', () {
+    test('a folder may define a name the collection has too, that is not a conflict and not reported', () {
       final parsed = PostmanCollectionParser.parse(collection());
-      expect(_skipped(parsed), ['Folder "Admin": variable "host" is already defined with another value, so it was not imported.']);
-      expect(_adjusted(parsed), [
-        'Folder "Admin": 2 variables imported as collection variables (PostPilot has no folder-level variables).',
-        'Folder "Nested": 1 variable imported as collection variable (PostPilot has no folder-level variables).',
-      ]);
+      expect(_skipped(parsed), isEmpty);
+      expect(_adjusted(parsed), isEmpty);
     });
   });
 
@@ -208,7 +211,7 @@ void main() {
       expect(parsed.skippedCount, 3);
     });
 
-    test('an unsupported folder auth is reported once and passed down as none', () {
+    test('an unsupported folder auth is reported once and kept on the folder as none', () {
       final parsed = PostmanCollectionParser.parse(
         jsonEncode({
           'info': {'name': 'C'},
@@ -225,7 +228,9 @@ void main() {
         }),
       );
       final folder = parsed.items.single as PostmanFolderItem;
-      expect(folder.children.map((c) => (c as PostmanRequestItem).auth.type), [AuthType.none, AuthType.none]);
+      expect(folder.auth?.type, AuthType.none);
+      expect(folder.children.map((c) => (c as PostmanRequestItem).auth.type), [AuthType.inherit, AuthType.inherit],
+          reason: 'the requests inherit the folder\'s (no) auth, they carry no copy of it');
       expect(_skipped(parsed), ['Folder "Secure": "edgegrid" authentication is not supported, so it was imported without authentication.']);
     });
 
@@ -413,7 +418,7 @@ void main() {
       ]);
     });
 
-    test('collection and folder test scripts apply to every request below, parents first', () {
+    test('collection and folder test scripts stay on the collection and the folder, where they apply to every request below', () {
       final parsed = PostmanCollectionParser.parse(
         jsonEncode({
           'info': {'name': 'C'},
@@ -434,17 +439,16 @@ void main() {
           ],
         }),
       );
-      final inner = (parsed.items.first as PostmanFolderItem).children.single as PostmanRequestItem;
+      final folder = parsed.items.first as PostmanFolderItem;
+      final inner = folder.children.single as PostmanRequestItem;
       final top = parsed.items.last as PostmanRequestItem;
-      expect(inner.assertions.map((a) => a.type), [
-        AssertionType.responseTimeBelowMs,
-        AssertionType.headerExists,
-        AssertionType.statusEquals,
-      ]);
-      expect(top.assertions.map((a) => a.type), [AssertionType.responseTimeBelowMs]);
+      expect(parsed.assertions.map((a) => a.type), [AssertionType.responseTimeBelowMs], reason: 'the collection\'s own test');
+      expect(folder.assertions.map((a) => a.type), [AssertionType.headerExists], reason: 'the folder\'s own test');
+      expect(inner.assertions.map((a) => a.type), [AssertionType.statusEquals], reason: 'a request keeps only its own');
+      expect(top.assertions, isEmpty);
       // The untranslatable statement is reported once, at the folder that holds it, not per request.
       expect(_skipped(parsed), ['Folder "Folder": test script statement not converted: weird()']);
-      expect(parsed.assertionCount, 4);
+      expect(parsed.assertionCount, 3, reason: 'one on the collection, one on the folder, one on the request: each counted once');
     });
 
     test('collectionVariables.set is converted but reported as a change', () {

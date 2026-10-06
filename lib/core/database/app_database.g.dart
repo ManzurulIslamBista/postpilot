@@ -7884,6 +7884,966 @@ class HistoryPayloadsCompanion extends UpdateCompanion<HistoryPayload> {
   }
 }
 
+class $RunRecordsTable extends RunRecords
+    with TableInfo<$RunRecordsTable, RunRecord> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $RunRecordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _collectionIdMeta = const VerificationMeta(
+    'collectionId',
+  );
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+    'collection_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES collections (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _environmentNameMeta = const VerificationMeta(
+    'environmentName',
+  );
+  @override
+  late final GeneratedColumn<String> environmentName = GeneratedColumn<String>(
+    'environment_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('app'),
+  );
+  static const VerificationMeta _passedMeta = const VerificationMeta('passed');
+  @override
+  late final GeneratedColumn<int> passed = GeneratedColumn<int>(
+    'passed',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _failedMeta = const VerificationMeta('failed');
+  @override
+  late final GeneratedColumn<int> failed = GeneratedColumn<int>(
+    'failed',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _skippedMeta = const VerificationMeta(
+    'skipped',
+  );
+  @override
+  late final GeneratedColumn<int> skipped = GeneratedColumn<int>(
+    'skipped',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _summaryJsonMeta = const VerificationMeta(
+    'summaryJson',
+  );
+  @override
+  late final GeneratedColumn<String> summaryJson = GeneratedColumn<String>(
+    'summary_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _resultsJsonMeta = const VerificationMeta(
+    'resultsJson',
+  );
+  @override
+  late final GeneratedColumn<String> resultsJson = GeneratedColumn<String>(
+    'results_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _startedAtMeta = const VerificationMeta(
+    'startedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> startedAt = GeneratedColumn<DateTime>(
+    'started_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    collectionId,
+    environmentName,
+    source,
+    passed,
+    failed,
+    skipped,
+    durationMs,
+    summaryJson,
+    resultsJson,
+    startedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'run_records';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<RunRecord> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('collection_id')) {
+      context.handle(
+        _collectionIdMeta,
+        collectionId.isAcceptableOrUnknown(
+          data['collection_id']!,
+          _collectionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_collectionIdMeta);
+    }
+    if (data.containsKey('environment_name')) {
+      context.handle(
+        _environmentNameMeta,
+        environmentName.isAcceptableOrUnknown(
+          data['environment_name']!,
+          _environmentNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    }
+    if (data.containsKey('passed')) {
+      context.handle(
+        _passedMeta,
+        passed.isAcceptableOrUnknown(data['passed']!, _passedMeta),
+      );
+    }
+    if (data.containsKey('failed')) {
+      context.handle(
+        _failedMeta,
+        failed.isAcceptableOrUnknown(data['failed']!, _failedMeta),
+      );
+    }
+    if (data.containsKey('skipped')) {
+      context.handle(
+        _skippedMeta,
+        skipped.isAcceptableOrUnknown(data['skipped']!, _skippedMeta),
+      );
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('summary_json')) {
+      context.handle(
+        _summaryJsonMeta,
+        summaryJson.isAcceptableOrUnknown(
+          data['summary_json']!,
+          _summaryJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('results_json')) {
+      context.handle(
+        _resultsJsonMeta,
+        resultsJson.isAcceptableOrUnknown(
+          data['results_json']!,
+          _resultsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('started_at')) {
+      context.handle(
+        _startedAtMeta,
+        startedAt.isAcceptableOrUnknown(data['started_at']!, _startedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  RunRecord map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return RunRecord(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      collectionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}collection_id'],
+      )!,
+      environmentName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}environment_name'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      passed: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}passed'],
+      )!,
+      failed: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}failed'],
+      )!,
+      skipped: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}skipped'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      summaryJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}summary_json'],
+      )!,
+      resultsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}results_json'],
+      )!,
+      startedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}started_at'],
+      )!,
+    );
+  }
+
+  @override
+  $RunRecordsTable createAlias(String alias) {
+    return $RunRecordsTable(attachedDatabase, alias);
+  }
+}
+
+class RunRecord extends DataClass implements Insertable<RunRecord> {
+  final int id;
+  final int collectionId;
+  final String environmentName;
+
+  /// 'app' or 'cli'.
+  final String source;
+  final int passed;
+  final int failed;
+  final int skipped;
+  final int durationMs;
+  final String summaryJson;
+
+  /// Per request/iteration results (name, method, url template, status, assertion messages, duration).
+  final String resultsJson;
+  final DateTime startedAt;
+  const RunRecord({
+    required this.id,
+    required this.collectionId,
+    required this.environmentName,
+    required this.source,
+    required this.passed,
+    required this.failed,
+    required this.skipped,
+    required this.durationMs,
+    required this.summaryJson,
+    required this.resultsJson,
+    required this.startedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['collection_id'] = Variable<int>(collectionId);
+    map['environment_name'] = Variable<String>(environmentName);
+    map['source'] = Variable<String>(source);
+    map['passed'] = Variable<int>(passed);
+    map['failed'] = Variable<int>(failed);
+    map['skipped'] = Variable<int>(skipped);
+    map['duration_ms'] = Variable<int>(durationMs);
+    map['summary_json'] = Variable<String>(summaryJson);
+    map['results_json'] = Variable<String>(resultsJson);
+    map['started_at'] = Variable<DateTime>(startedAt);
+    return map;
+  }
+
+  RunRecordsCompanion toCompanion(bool nullToAbsent) {
+    return RunRecordsCompanion(
+      id: Value(id),
+      collectionId: Value(collectionId),
+      environmentName: Value(environmentName),
+      source: Value(source),
+      passed: Value(passed),
+      failed: Value(failed),
+      skipped: Value(skipped),
+      durationMs: Value(durationMs),
+      summaryJson: Value(summaryJson),
+      resultsJson: Value(resultsJson),
+      startedAt: Value(startedAt),
+    );
+  }
+
+  factory RunRecord.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return RunRecord(
+      id: serializer.fromJson<int>(json['id']),
+      collectionId: serializer.fromJson<int>(json['collectionId']),
+      environmentName: serializer.fromJson<String>(json['environmentName']),
+      source: serializer.fromJson<String>(json['source']),
+      passed: serializer.fromJson<int>(json['passed']),
+      failed: serializer.fromJson<int>(json['failed']),
+      skipped: serializer.fromJson<int>(json['skipped']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      summaryJson: serializer.fromJson<String>(json['summaryJson']),
+      resultsJson: serializer.fromJson<String>(json['resultsJson']),
+      startedAt: serializer.fromJson<DateTime>(json['startedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'collectionId': serializer.toJson<int>(collectionId),
+      'environmentName': serializer.toJson<String>(environmentName),
+      'source': serializer.toJson<String>(source),
+      'passed': serializer.toJson<int>(passed),
+      'failed': serializer.toJson<int>(failed),
+      'skipped': serializer.toJson<int>(skipped),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'summaryJson': serializer.toJson<String>(summaryJson),
+      'resultsJson': serializer.toJson<String>(resultsJson),
+      'startedAt': serializer.toJson<DateTime>(startedAt),
+    };
+  }
+
+  RunRecord copyWith({
+    int? id,
+    int? collectionId,
+    String? environmentName,
+    String? source,
+    int? passed,
+    int? failed,
+    int? skipped,
+    int? durationMs,
+    String? summaryJson,
+    String? resultsJson,
+    DateTime? startedAt,
+  }) => RunRecord(
+    id: id ?? this.id,
+    collectionId: collectionId ?? this.collectionId,
+    environmentName: environmentName ?? this.environmentName,
+    source: source ?? this.source,
+    passed: passed ?? this.passed,
+    failed: failed ?? this.failed,
+    skipped: skipped ?? this.skipped,
+    durationMs: durationMs ?? this.durationMs,
+    summaryJson: summaryJson ?? this.summaryJson,
+    resultsJson: resultsJson ?? this.resultsJson,
+    startedAt: startedAt ?? this.startedAt,
+  );
+  RunRecord copyWithCompanion(RunRecordsCompanion data) {
+    return RunRecord(
+      id: data.id.present ? data.id.value : this.id,
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      environmentName: data.environmentName.present
+          ? data.environmentName.value
+          : this.environmentName,
+      source: data.source.present ? data.source.value : this.source,
+      passed: data.passed.present ? data.passed.value : this.passed,
+      failed: data.failed.present ? data.failed.value : this.failed,
+      skipped: data.skipped.present ? data.skipped.value : this.skipped,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      summaryJson: data.summaryJson.present
+          ? data.summaryJson.value
+          : this.summaryJson,
+      resultsJson: data.resultsJson.present
+          ? data.resultsJson.value
+          : this.resultsJson,
+      startedAt: data.startedAt.present ? data.startedAt.value : this.startedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RunRecord(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('environmentName: $environmentName, ')
+          ..write('source: $source, ')
+          ..write('passed: $passed, ')
+          ..write('failed: $failed, ')
+          ..write('skipped: $skipped, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('summaryJson: $summaryJson, ')
+          ..write('resultsJson: $resultsJson, ')
+          ..write('startedAt: $startedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    collectionId,
+    environmentName,
+    source,
+    passed,
+    failed,
+    skipped,
+    durationMs,
+    summaryJson,
+    resultsJson,
+    startedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RunRecord &&
+          other.id == this.id &&
+          other.collectionId == this.collectionId &&
+          other.environmentName == this.environmentName &&
+          other.source == this.source &&
+          other.passed == this.passed &&
+          other.failed == this.failed &&
+          other.skipped == this.skipped &&
+          other.durationMs == this.durationMs &&
+          other.summaryJson == this.summaryJson &&
+          other.resultsJson == this.resultsJson &&
+          other.startedAt == this.startedAt);
+}
+
+class RunRecordsCompanion extends UpdateCompanion<RunRecord> {
+  final Value<int> id;
+  final Value<int> collectionId;
+  final Value<String> environmentName;
+  final Value<String> source;
+  final Value<int> passed;
+  final Value<int> failed;
+  final Value<int> skipped;
+  final Value<int> durationMs;
+  final Value<String> summaryJson;
+  final Value<String> resultsJson;
+  final Value<DateTime> startedAt;
+  const RunRecordsCompanion({
+    this.id = const Value.absent(),
+    this.collectionId = const Value.absent(),
+    this.environmentName = const Value.absent(),
+    this.source = const Value.absent(),
+    this.passed = const Value.absent(),
+    this.failed = const Value.absent(),
+    this.skipped = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.summaryJson = const Value.absent(),
+    this.resultsJson = const Value.absent(),
+    this.startedAt = const Value.absent(),
+  });
+  RunRecordsCompanion.insert({
+    this.id = const Value.absent(),
+    required int collectionId,
+    this.environmentName = const Value.absent(),
+    this.source = const Value.absent(),
+    this.passed = const Value.absent(),
+    this.failed = const Value.absent(),
+    this.skipped = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.summaryJson = const Value.absent(),
+    this.resultsJson = const Value.absent(),
+    this.startedAt = const Value.absent(),
+  }) : collectionId = Value(collectionId);
+  static Insertable<RunRecord> custom({
+    Expression<int>? id,
+    Expression<int>? collectionId,
+    Expression<String>? environmentName,
+    Expression<String>? source,
+    Expression<int>? passed,
+    Expression<int>? failed,
+    Expression<int>? skipped,
+    Expression<int>? durationMs,
+    Expression<String>? summaryJson,
+    Expression<String>? resultsJson,
+    Expression<DateTime>? startedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (collectionId != null) 'collection_id': collectionId,
+      if (environmentName != null) 'environment_name': environmentName,
+      if (source != null) 'source': source,
+      if (passed != null) 'passed': passed,
+      if (failed != null) 'failed': failed,
+      if (skipped != null) 'skipped': skipped,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (summaryJson != null) 'summary_json': summaryJson,
+      if (resultsJson != null) 'results_json': resultsJson,
+      if (startedAt != null) 'started_at': startedAt,
+    });
+  }
+
+  RunRecordsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? collectionId,
+    Value<String>? environmentName,
+    Value<String>? source,
+    Value<int>? passed,
+    Value<int>? failed,
+    Value<int>? skipped,
+    Value<int>? durationMs,
+    Value<String>? summaryJson,
+    Value<String>? resultsJson,
+    Value<DateTime>? startedAt,
+  }) {
+    return RunRecordsCompanion(
+      id: id ?? this.id,
+      collectionId: collectionId ?? this.collectionId,
+      environmentName: environmentName ?? this.environmentName,
+      source: source ?? this.source,
+      passed: passed ?? this.passed,
+      failed: failed ?? this.failed,
+      skipped: skipped ?? this.skipped,
+      durationMs: durationMs ?? this.durationMs,
+      summaryJson: summaryJson ?? this.summaryJson,
+      resultsJson: resultsJson ?? this.resultsJson,
+      startedAt: startedAt ?? this.startedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (environmentName.present) {
+      map['environment_name'] = Variable<String>(environmentName.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (passed.present) {
+      map['passed'] = Variable<int>(passed.value);
+    }
+    if (failed.present) {
+      map['failed'] = Variable<int>(failed.value);
+    }
+    if (skipped.present) {
+      map['skipped'] = Variable<int>(skipped.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (summaryJson.present) {
+      map['summary_json'] = Variable<String>(summaryJson.value);
+    }
+    if (resultsJson.present) {
+      map['results_json'] = Variable<String>(resultsJson.value);
+    }
+    if (startedAt.present) {
+      map['started_at'] = Variable<DateTime>(startedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RunRecordsCompanion(')
+          ..write('id: $id, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('environmentName: $environmentName, ')
+          ..write('source: $source, ')
+          ..write('passed: $passed, ')
+          ..write('failed: $failed, ')
+          ..write('skipped: $skipped, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('summaryJson: $summaryJson, ')
+          ..write('resultsJson: $resultsJson, ')
+          ..write('startedAt: $startedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $RequestBaselinesTable extends RequestBaselines
+    with TableInfo<$RequestBaselinesTable, RequestBaseline> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $RequestBaselinesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _requestIdMeta = const VerificationMeta(
+    'requestId',
+  );
+  @override
+  late final GeneratedColumn<int> requestId = GeneratedColumn<int>(
+    'request_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES requests (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _snapshotJsonMeta = const VerificationMeta(
+    'snapshotJson',
+  );
+  @override
+  late final GeneratedColumn<String> snapshotJson = GeneratedColumn<String>(
+    'snapshot_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _recordedAtMeta = const VerificationMeta(
+    'recordedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> recordedAt = GeneratedColumn<DateTime>(
+    'recorded_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    requestId,
+    snapshotJson,
+    note,
+    recordedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'request_baselines';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<RequestBaseline> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('request_id')) {
+      context.handle(
+        _requestIdMeta,
+        requestId.isAcceptableOrUnknown(data['request_id']!, _requestIdMeta),
+      );
+    }
+    if (data.containsKey('snapshot_json')) {
+      context.handle(
+        _snapshotJsonMeta,
+        snapshotJson.isAcceptableOrUnknown(
+          data['snapshot_json']!,
+          _snapshotJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
+    if (data.containsKey('recorded_at')) {
+      context.handle(
+        _recordedAtMeta,
+        recordedAt.isAcceptableOrUnknown(data['recorded_at']!, _recordedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {requestId};
+  @override
+  RequestBaseline map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return RequestBaseline(
+      requestId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}request_id'],
+      )!,
+      snapshotJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}snapshot_json'],
+      )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      )!,
+      recordedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}recorded_at'],
+      )!,
+    );
+  }
+
+  @override
+  $RequestBaselinesTable createAlias(String alias) {
+    return $RequestBaselinesTable(attachedDatabase, alias);
+  }
+}
+
+class RequestBaseline extends DataClass implements Insertable<RequestBaseline> {
+  final int requestId;
+  final String snapshotJson;
+  final String note;
+  final DateTime recordedAt;
+  const RequestBaseline({
+    required this.requestId,
+    required this.snapshotJson,
+    required this.note,
+    required this.recordedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['request_id'] = Variable<int>(requestId);
+    map['snapshot_json'] = Variable<String>(snapshotJson);
+    map['note'] = Variable<String>(note);
+    map['recorded_at'] = Variable<DateTime>(recordedAt);
+    return map;
+  }
+
+  RequestBaselinesCompanion toCompanion(bool nullToAbsent) {
+    return RequestBaselinesCompanion(
+      requestId: Value(requestId),
+      snapshotJson: Value(snapshotJson),
+      note: Value(note),
+      recordedAt: Value(recordedAt),
+    );
+  }
+
+  factory RequestBaseline.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return RequestBaseline(
+      requestId: serializer.fromJson<int>(json['requestId']),
+      snapshotJson: serializer.fromJson<String>(json['snapshotJson']),
+      note: serializer.fromJson<String>(json['note']),
+      recordedAt: serializer.fromJson<DateTime>(json['recordedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'requestId': serializer.toJson<int>(requestId),
+      'snapshotJson': serializer.toJson<String>(snapshotJson),
+      'note': serializer.toJson<String>(note),
+      'recordedAt': serializer.toJson<DateTime>(recordedAt),
+    };
+  }
+
+  RequestBaseline copyWith({
+    int? requestId,
+    String? snapshotJson,
+    String? note,
+    DateTime? recordedAt,
+  }) => RequestBaseline(
+    requestId: requestId ?? this.requestId,
+    snapshotJson: snapshotJson ?? this.snapshotJson,
+    note: note ?? this.note,
+    recordedAt: recordedAt ?? this.recordedAt,
+  );
+  RequestBaseline copyWithCompanion(RequestBaselinesCompanion data) {
+    return RequestBaseline(
+      requestId: data.requestId.present ? data.requestId.value : this.requestId,
+      snapshotJson: data.snapshotJson.present
+          ? data.snapshotJson.value
+          : this.snapshotJson,
+      note: data.note.present ? data.note.value : this.note,
+      recordedAt: data.recordedAt.present
+          ? data.recordedAt.value
+          : this.recordedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RequestBaseline(')
+          ..write('requestId: $requestId, ')
+          ..write('snapshotJson: $snapshotJson, ')
+          ..write('note: $note, ')
+          ..write('recordedAt: $recordedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(requestId, snapshotJson, note, recordedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RequestBaseline &&
+          other.requestId == this.requestId &&
+          other.snapshotJson == this.snapshotJson &&
+          other.note == this.note &&
+          other.recordedAt == this.recordedAt);
+}
+
+class RequestBaselinesCompanion extends UpdateCompanion<RequestBaseline> {
+  final Value<int> requestId;
+  final Value<String> snapshotJson;
+  final Value<String> note;
+  final Value<DateTime> recordedAt;
+  const RequestBaselinesCompanion({
+    this.requestId = const Value.absent(),
+    this.snapshotJson = const Value.absent(),
+    this.note = const Value.absent(),
+    this.recordedAt = const Value.absent(),
+  });
+  RequestBaselinesCompanion.insert({
+    this.requestId = const Value.absent(),
+    this.snapshotJson = const Value.absent(),
+    this.note = const Value.absent(),
+    this.recordedAt = const Value.absent(),
+  });
+  static Insertable<RequestBaseline> custom({
+    Expression<int>? requestId,
+    Expression<String>? snapshotJson,
+    Expression<String>? note,
+    Expression<DateTime>? recordedAt,
+  }) {
+    return RawValuesInsertable({
+      if (requestId != null) 'request_id': requestId,
+      if (snapshotJson != null) 'snapshot_json': snapshotJson,
+      if (note != null) 'note': note,
+      if (recordedAt != null) 'recorded_at': recordedAt,
+    });
+  }
+
+  RequestBaselinesCompanion copyWith({
+    Value<int>? requestId,
+    Value<String>? snapshotJson,
+    Value<String>? note,
+    Value<DateTime>? recordedAt,
+  }) {
+    return RequestBaselinesCompanion(
+      requestId: requestId ?? this.requestId,
+      snapshotJson: snapshotJson ?? this.snapshotJson,
+      note: note ?? this.note,
+      recordedAt: recordedAt ?? this.recordedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (requestId.present) {
+      map['request_id'] = Variable<int>(requestId.value);
+    }
+    if (snapshotJson.present) {
+      map['snapshot_json'] = Variable<String>(snapshotJson.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (recordedAt.present) {
+      map['recorded_at'] = Variable<DateTime>(recordedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RequestBaselinesCompanion(')
+          ..write('requestId: $requestId, ')
+          ..write('snapshotJson: $snapshotJson, ')
+          ..write('note: $note, ')
+          ..write('recordedAt: $recordedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -7916,6 +8876,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $CollectionDefaultsTable collectionDefaults =
       $CollectionDefaultsTable(this);
   late final $HistoryPayloadsTable historyPayloads = $HistoryPayloadsTable(
+    this,
+  );
+  late final $RunRecordsTable runRecords = $RunRecordsTable(this);
+  late final $RequestBaselinesTable requestBaselines = $RequestBaselinesTable(
     this,
   );
   late final Index collectionVariablesCollectionId = Index(
@@ -7972,6 +8936,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final HistoryPayloadsDao historyPayloadsDao = HistoryPayloadsDao(
     this as AppDatabase,
   );
+  late final RunRecordsDao runRecordsDao = RunRecordsDao(this as AppDatabase);
+  late final RequestBaselinesDao requestBaselinesDao = RequestBaselinesDao(
+    this as AppDatabase,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -7998,6 +8966,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     folderDefaults,
     collectionDefaults,
     historyPayloads,
+    runRecords,
+    requestBaselines,
     collectionVariablesCollectionId,
     responseExamplesRequestId,
     entityUidsUid,
@@ -8109,6 +9079,20 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('history_payloads', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'collections',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('run_records', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'requests',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('request_baselines', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -8246,6 +9230,24 @@ final class $$CollectionsTableReferences
     final cache = $_typedResult.readTableOrNull(
       _collectionDefaultsRefsTable($_db),
     );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$RunRecordsTable, List<RunRecord>>
+  _runRecordsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.runRecords,
+    aliasName: 'collections__id__run_records__collection_id',
+  );
+
+  $$RunRecordsTableProcessedTableManager get runRecordsRefs {
+    final manager = $$RunRecordsTableTableManager(
+      $_db,
+      $_db.runRecords,
+    ).filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_runRecordsRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -8422,6 +9424,31 @@ class $$CollectionsTableFilterComposer
           }) => $$CollectionDefaultsTableFilterComposer(
             $db: $db,
             $table: $db.collectionDefaults,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> runRecordsRefs(
+    Expression<bool> Function($$RunRecordsTableFilterComposer f) f,
+  ) {
+    final $$RunRecordsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.runRecords,
+      getReferencedColumn: (t) => t.collectionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RunRecordsTableFilterComposer(
+            $db: $db,
+            $table: $db.runRecords,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -8636,6 +9663,31 @@ class $$CollectionsTableAnnotationComposer
         );
     return f(composer);
   }
+
+  Expression<T> runRecordsRefs<T extends Object>(
+    Expression<T> Function($$RunRecordsTableAnnotationComposer a) f,
+  ) {
+    final $$RunRecordsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.runRecords,
+      getReferencedColumn: (t) => t.collectionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RunRecordsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.runRecords,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$CollectionsTableTableManager
@@ -8658,6 +9710,7 @@ class $$CollectionsTableTableManager
             bool collectionAuthRefs,
             bool gitLinksRefs,
             bool collectionDefaultsRefs,
+            bool runRecordsRefs,
           })
         > {
   $$CollectionsTableTableManager(_$AppDatabase db, $CollectionsTable table)
@@ -8711,6 +9764,7 @@ class $$CollectionsTableTableManager
                 collectionAuthRefs = false,
                 gitLinksRefs = false,
                 collectionDefaultsRefs = false,
+                runRecordsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -8721,6 +9775,7 @@ class $$CollectionsTableTableManager
                     if (collectionAuthRefs) db.collectionAuth,
                     if (gitLinksRefs) db.gitLinks,
                     if (collectionDefaultsRefs) db.collectionDefaults,
+                    if (runRecordsRefs) db.runRecords,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -8851,6 +9906,27 @@ class $$CollectionsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (runRecordsRefs)
+                        await $_getPrefetchedData<
+                          Collection,
+                          $CollectionsTable,
+                          RunRecord
+                        >(
+                          currentTable: table,
+                          referencedTable: $$CollectionsTableReferences
+                              ._runRecordsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$CollectionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).runRecordsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.collectionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -8878,6 +9954,7 @@ typedef $$CollectionsTableProcessedTableManager =
         bool collectionAuthRefs,
         bool gitLinksRefs,
         bool collectionDefaultsRefs,
+        bool runRecordsRefs,
       })
     >;
 typedef $$FoldersTableCreateCompanionBuilder =
@@ -9623,6 +10700,26 @@ final class $$RequestsTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$RequestBaselinesTable, List<RequestBaseline>>
+  _requestBaselinesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.requestBaselines,
+    aliasName: 'requests__id__request_baselines__request_id',
+  );
+
+  $$RequestBaselinesTableProcessedTableManager get requestBaselinesRefs {
+    final manager = $$RequestBaselinesTableTableManager(
+      $_db,
+      $_db.requestBaselines,
+    ).filter((f) => f.requestId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _requestBaselinesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$RequestsTableFilterComposer
@@ -9838,6 +10935,31 @@ class $$RequestsTableFilterComposer
                     $removeJoinBuilderFromRootComposer,
               ),
         );
+    return f(composer);
+  }
+
+  Expression<bool> requestBaselinesRefs(
+    Expression<bool> Function($$RequestBaselinesTableFilterComposer f) f,
+  ) {
+    final $$RequestBaselinesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.requestBaselines,
+      getReferencedColumn: (t) => t.requestId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RequestBaselinesTableFilterComposer(
+            $db: $db,
+            $table: $db.requestBaselines,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
     return f(composer);
   }
 }
@@ -10182,6 +11304,31 @@ class $$RequestsTableAnnotationComposer
         );
     return f(composer);
   }
+
+  Expression<T> requestBaselinesRefs<T extends Object>(
+    Expression<T> Function($$RequestBaselinesTableAnnotationComposer a) f,
+  ) {
+    final $$RequestBaselinesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.requestBaselines,
+      getReferencedColumn: (t) => t.requestId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RequestBaselinesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.requestBaselines,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$RequestsTableTableManager
@@ -10203,6 +11350,7 @@ class $$RequestsTableTableManager
             bool requestScriptsRefs,
             bool responseExamplesRefs,
             bool requestSettingEntriesRefs,
+            bool requestBaselinesRefs,
           })
         > {
   $$RequestsTableTableManager(_$AppDatabase db, $RequestsTable table)
@@ -10315,6 +11463,7 @@ class $$RequestsTableTableManager
                 requestScriptsRefs = false,
                 responseExamplesRefs = false,
                 requestSettingEntriesRefs = false,
+                requestBaselinesRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -10322,6 +11471,7 @@ class $$RequestsTableTableManager
                     if (requestScriptsRefs) db.requestScripts,
                     if (responseExamplesRefs) db.responseExamples,
                     if (requestSettingEntriesRefs) db.requestSettingEntries,
+                    if (requestBaselinesRefs) db.requestBaselines,
                   ],
                   addJoins:
                       <
@@ -10433,6 +11583,27 @@ class $$RequestsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (requestBaselinesRefs)
+                        await $_getPrefetchedData<
+                          Request,
+                          $RequestsTable,
+                          RequestBaseline
+                        >(
+                          currentTable: table,
+                          referencedTable: $$RequestsTableReferences
+                              ._requestBaselinesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$RequestsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).requestBaselinesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.requestId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -10459,6 +11630,7 @@ typedef $$RequestsTableProcessedTableManager =
         bool requestScriptsRefs,
         bool responseExamplesRefs,
         bool requestSettingEntriesRefs,
+        bool requestBaselinesRefs,
       })
     >;
 typedef $$EnvironmentsTableCreateCompanionBuilder =
@@ -15625,6 +16797,744 @@ typedef $$HistoryPayloadsTableProcessedTableManager =
       HistoryPayload,
       PrefetchHooks Function({bool historyId})
     >;
+typedef $$RunRecordsTableCreateCompanionBuilder =
+    RunRecordsCompanion Function({
+      Value<int> id,
+      required int collectionId,
+      Value<String> environmentName,
+      Value<String> source,
+      Value<int> passed,
+      Value<int> failed,
+      Value<int> skipped,
+      Value<int> durationMs,
+      Value<String> summaryJson,
+      Value<String> resultsJson,
+      Value<DateTime> startedAt,
+    });
+typedef $$RunRecordsTableUpdateCompanionBuilder =
+    RunRecordsCompanion Function({
+      Value<int> id,
+      Value<int> collectionId,
+      Value<String> environmentName,
+      Value<String> source,
+      Value<int> passed,
+      Value<int> failed,
+      Value<int> skipped,
+      Value<int> durationMs,
+      Value<String> summaryJson,
+      Value<String> resultsJson,
+      Value<DateTime> startedAt,
+    });
+
+final class $$RunRecordsTableReferences
+    extends BaseReferences<_$AppDatabase, $RunRecordsTable, RunRecord> {
+  $$RunRecordsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $CollectionsTable _collectionIdTable(_$AppDatabase db) =>
+      db.collections.createAlias('run_records__collection_id__collections__id');
+
+  $$CollectionsTableProcessedTableManager get collectionId {
+    final $_column = $_itemColumn<int>('collection_id')!;
+
+    final manager = $$CollectionsTableTableManager(
+      $_db,
+      $_db.collections,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$RunRecordsTableFilterComposer
+    extends Composer<_$AppDatabase, $RunRecordsTable> {
+  $$RunRecordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get environmentName => $composableBuilder(
+    column: $table.environmentName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get passed => $composableBuilder(
+    column: $table.passed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get failed => $composableBuilder(
+    column: $table.failed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get skipped => $composableBuilder(
+    column: $table.skipped,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get summaryJson => $composableBuilder(
+    column: $table.summaryJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get resultsJson => $composableBuilder(
+    column: $table.resultsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get startedAt => $composableBuilder(
+    column: $table.startedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$CollectionsTableFilterComposer get collectionId {
+    final $$CollectionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.collections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CollectionsTableFilterComposer(
+            $db: $db,
+            $table: $db.collections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$RunRecordsTableOrderingComposer
+    extends Composer<_$AppDatabase, $RunRecordsTable> {
+  $$RunRecordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get environmentName => $composableBuilder(
+    column: $table.environmentName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get passed => $composableBuilder(
+    column: $table.passed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get failed => $composableBuilder(
+    column: $table.failed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get skipped => $composableBuilder(
+    column: $table.skipped,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get summaryJson => $composableBuilder(
+    column: $table.summaryJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get resultsJson => $composableBuilder(
+    column: $table.resultsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get startedAt => $composableBuilder(
+    column: $table.startedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$CollectionsTableOrderingComposer get collectionId {
+    final $$CollectionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.collections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CollectionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.collections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$RunRecordsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $RunRecordsTable> {
+  $$RunRecordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get environmentName => $composableBuilder(
+    column: $table.environmentName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<int> get passed =>
+      $composableBuilder(column: $table.passed, builder: (column) => column);
+
+  GeneratedColumn<int> get failed =>
+      $composableBuilder(column: $table.failed, builder: (column) => column);
+
+  GeneratedColumn<int> get skipped =>
+      $composableBuilder(column: $table.skipped, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get summaryJson => $composableBuilder(
+    column: $table.summaryJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get resultsJson => $composableBuilder(
+    column: $table.resultsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get startedAt =>
+      $composableBuilder(column: $table.startedAt, builder: (column) => column);
+
+  $$CollectionsTableAnnotationComposer get collectionId {
+    final $$CollectionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.collectionId,
+      referencedTable: $db.collections,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CollectionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.collections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$RunRecordsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $RunRecordsTable,
+          RunRecord,
+          $$RunRecordsTableFilterComposer,
+          $$RunRecordsTableOrderingComposer,
+          $$RunRecordsTableAnnotationComposer,
+          $$RunRecordsTableCreateCompanionBuilder,
+          $$RunRecordsTableUpdateCompanionBuilder,
+          (RunRecord, $$RunRecordsTableReferences),
+          RunRecord,
+          PrefetchHooks Function({bool collectionId})
+        > {
+  $$RunRecordsTableTableManager(_$AppDatabase db, $RunRecordsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$RunRecordsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$RunRecordsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$RunRecordsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> collectionId = const Value.absent(),
+                Value<String> environmentName = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<int> passed = const Value.absent(),
+                Value<int> failed = const Value.absent(),
+                Value<int> skipped = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<String> summaryJson = const Value.absent(),
+                Value<String> resultsJson = const Value.absent(),
+                Value<DateTime> startedAt = const Value.absent(),
+              }) => RunRecordsCompanion(
+                id: id,
+                collectionId: collectionId,
+                environmentName: environmentName,
+                source: source,
+                passed: passed,
+                failed: failed,
+                skipped: skipped,
+                durationMs: durationMs,
+                summaryJson: summaryJson,
+                resultsJson: resultsJson,
+                startedAt: startedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int collectionId,
+                Value<String> environmentName = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<int> passed = const Value.absent(),
+                Value<int> failed = const Value.absent(),
+                Value<int> skipped = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<String> summaryJson = const Value.absent(),
+                Value<String> resultsJson = const Value.absent(),
+                Value<DateTime> startedAt = const Value.absent(),
+              }) => RunRecordsCompanion.insert(
+                id: id,
+                collectionId: collectionId,
+                environmentName: environmentName,
+                source: source,
+                passed: passed,
+                failed: failed,
+                skipped: skipped,
+                durationMs: durationMs,
+                summaryJson: summaryJson,
+                resultsJson: resultsJson,
+                startedAt: startedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$RunRecordsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({collectionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (collectionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.collectionId,
+                                referencedTable: $$RunRecordsTableReferences
+                                    ._collectionIdTable(db),
+                                referencedColumn: $$RunRecordsTableReferences
+                                    ._collectionIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$RunRecordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $RunRecordsTable,
+      RunRecord,
+      $$RunRecordsTableFilterComposer,
+      $$RunRecordsTableOrderingComposer,
+      $$RunRecordsTableAnnotationComposer,
+      $$RunRecordsTableCreateCompanionBuilder,
+      $$RunRecordsTableUpdateCompanionBuilder,
+      (RunRecord, $$RunRecordsTableReferences),
+      RunRecord,
+      PrefetchHooks Function({bool collectionId})
+    >;
+typedef $$RequestBaselinesTableCreateCompanionBuilder =
+    RequestBaselinesCompanion Function({
+      Value<int> requestId,
+      Value<String> snapshotJson,
+      Value<String> note,
+      Value<DateTime> recordedAt,
+    });
+typedef $$RequestBaselinesTableUpdateCompanionBuilder =
+    RequestBaselinesCompanion Function({
+      Value<int> requestId,
+      Value<String> snapshotJson,
+      Value<String> note,
+      Value<DateTime> recordedAt,
+    });
+
+final class $$RequestBaselinesTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $RequestBaselinesTable, RequestBaseline> {
+  $$RequestBaselinesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $RequestsTable _requestIdTable(_$AppDatabase db) =>
+      db.requests.createAlias('request_baselines__request_id__requests__id');
+
+  $$RequestsTableProcessedTableManager get requestId {
+    final $_column = $_itemColumn<int>('request_id')!;
+
+    final manager = $$RequestsTableTableManager(
+      $_db,
+      $_db.requests,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_requestIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$RequestBaselinesTableFilterComposer
+    extends Composer<_$AppDatabase, $RequestBaselinesTable> {
+  $$RequestBaselinesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get snapshotJson => $composableBuilder(
+    column: $table.snapshotJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$RequestsTableFilterComposer get requestId {
+    final $$RequestsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.requestId,
+      referencedTable: $db.requests,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RequestsTableFilterComposer(
+            $db: $db,
+            $table: $db.requests,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$RequestBaselinesTableOrderingComposer
+    extends Composer<_$AppDatabase, $RequestBaselinesTable> {
+  $$RequestBaselinesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get snapshotJson => $composableBuilder(
+    column: $table.snapshotJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$RequestsTableOrderingComposer get requestId {
+    final $$RequestsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.requestId,
+      referencedTable: $db.requests,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RequestsTableOrderingComposer(
+            $db: $db,
+            $table: $db.requests,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$RequestBaselinesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $RequestBaselinesTable> {
+  $$RequestBaselinesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get snapshotJson => $composableBuilder(
+    column: $table.snapshotJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => column,
+  );
+
+  $$RequestsTableAnnotationComposer get requestId {
+    final $$RequestsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.requestId,
+      referencedTable: $db.requests,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RequestsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.requests,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$RequestBaselinesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $RequestBaselinesTable,
+          RequestBaseline,
+          $$RequestBaselinesTableFilterComposer,
+          $$RequestBaselinesTableOrderingComposer,
+          $$RequestBaselinesTableAnnotationComposer,
+          $$RequestBaselinesTableCreateCompanionBuilder,
+          $$RequestBaselinesTableUpdateCompanionBuilder,
+          (RequestBaseline, $$RequestBaselinesTableReferences),
+          RequestBaseline,
+          PrefetchHooks Function({bool requestId})
+        > {
+  $$RequestBaselinesTableTableManager(
+    _$AppDatabase db,
+    $RequestBaselinesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$RequestBaselinesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$RequestBaselinesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$RequestBaselinesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> requestId = const Value.absent(),
+                Value<String> snapshotJson = const Value.absent(),
+                Value<String> note = const Value.absent(),
+                Value<DateTime> recordedAt = const Value.absent(),
+              }) => RequestBaselinesCompanion(
+                requestId: requestId,
+                snapshotJson: snapshotJson,
+                note: note,
+                recordedAt: recordedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> requestId = const Value.absent(),
+                Value<String> snapshotJson = const Value.absent(),
+                Value<String> note = const Value.absent(),
+                Value<DateTime> recordedAt = const Value.absent(),
+              }) => RequestBaselinesCompanion.insert(
+                requestId: requestId,
+                snapshotJson: snapshotJson,
+                note: note,
+                recordedAt: recordedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$RequestBaselinesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({requestId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (requestId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.requestId,
+                                referencedTable:
+                                    $$RequestBaselinesTableReferences
+                                        ._requestIdTable(db),
+                                referencedColumn:
+                                    $$RequestBaselinesTableReferences
+                                        ._requestIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$RequestBaselinesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $RequestBaselinesTable,
+      RequestBaseline,
+      $$RequestBaselinesTableFilterComposer,
+      $$RequestBaselinesTableOrderingComposer,
+      $$RequestBaselinesTableAnnotationComposer,
+      $$RequestBaselinesTableCreateCompanionBuilder,
+      $$RequestBaselinesTableUpdateCompanionBuilder,
+      (RequestBaseline, $$RequestBaselinesTableReferences),
+      RequestBaseline,
+      PrefetchHooks Function({bool requestId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -15671,4 +17581,8 @@ class $AppDatabaseManager {
       $$CollectionDefaultsTableTableManager(_db, _db.collectionDefaults);
   $$HistoryPayloadsTableTableManager get historyPayloads =>
       $$HistoryPayloadsTableTableManager(_db, _db.historyPayloads);
+  $$RunRecordsTableTableManager get runRecords =>
+      $$RunRecordsTableTableManager(_db, _db.runRecords);
+  $$RequestBaselinesTableTableManager get requestBaselines =>
+      $$RequestBaselinesTableTableManager(_db, _db.requestBaselines);
 }

@@ -9,10 +9,13 @@
 ![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)
 [![Build & Release](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml)
+[![Try in your browser](https://img.shields.io/badge/Try%20it-in%20your%20browser-FF6C37?style=for-the-badge&logo=googlechrome&logoColor=white)](https://manzurulislambista.github.io/postpilot/)
 
 **Local-first. No account. No hosted backend.** Your data stays on your device and in the repositories you choose.
 
-[How it fits](#-how-it-fits-together) • [What makes it different](#-what-makes-postpilot-different) • [Features](#-everything-else) • [Download](#-download-latest-release) • [Build from source](#-build-from-source)
+> **Browser version:** it runs entirely in your tab and stores data in your browser. Requests leave the browser directly, so the API must allow CORS. For anything else (local servers, proxy, cookie jar, folder workspaces) use the desktop app.
+
+[How it fits](#-how-it-fits-together) • [What makes it different](#-what-makes-postpilot-different) • [Features](#-everything-else) • [Try in browser](https://manzurulislambista.github.io/postpilot/) • [Download](#-download-latest-release) • [Build from source](#-build-from-source)
 
 <img src="docs/assets/showcase.svg" alt="PostPilot screenshots: request builder, command palette, Odoo Studio, Dart Studio, production lock, run triage, response tools, themes" width="900">
 

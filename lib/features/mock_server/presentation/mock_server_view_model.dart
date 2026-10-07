@@ -9,6 +9,7 @@ import '../domain/services/mock_cors.dart';
 import '../domain/services/mock_example_handler.dart';
 import '../domain/services/mock_handler.dart';
 import '../domain/services/mock_http.dart';
+import '../domain/services/mock_network.dart';
 import '../domain/services/mock_pagination.dart';
 import '../domain/services/mock_routes.dart';
 import '../domain/services/mock_scenarios.dart';
@@ -176,6 +177,27 @@ final class MockServerViewModel with ChangeNotifier {
 
   void clearScenarios() {
     scenarios.clear();
+    notifyListeners();
+  }
+
+  // --- network conditions ------------------------------------------------------------------------
+
+  MockNetwork get network => backend.network;
+
+  /// A network profile for the whole server (null for none); the next request is affected, nothing restarts.
+  void setGlobalNetwork(NetworkProfile? profile) {
+    network.setGlobal(profile);
+    notifyListeners();
+  }
+
+  /// A network profile for one route (`GET /users/:id`); null takes the route back to the whole server's.
+  void setRouteNetwork(String routeKey, NetworkProfile? profile) {
+    network.setRoute(routeKey, profile);
+    notifyListeners();
+  }
+
+  void clearNetwork() {
+    network.clear();
     notifyListeners();
   }
 

@@ -7,6 +7,7 @@ import '../domain/services/mock_example_handler.dart';
 import '../domain/services/mock_handler.dart';
 import '../domain/services/mock_routes.dart';
 import '../domain/services/mock_scenarios.dart';
+import 'mock_network_menu.dart';
 import 'mock_server_view_model.dart';
 
 /// Make things go wrong on purpose, per route or for the whole server, while the server runs: an empty list, a 401, a slow answer,
@@ -25,7 +26,8 @@ class MockScenariosTab extends StatelessWidget {
       children: [
         Text(
           'A change here applies to the next request: nothing restarts. A route\'s own scenario replaces the one for the whole server, '
-          'so "Normal" on a route keeps it working while everything else fails.',
+          'so "Normal" on a route keeps it working while everything else fails. The network (slow, lossy, offline...) is set for the '
+          'whole server with the button at the top of this window, and per route with the button on its card.',
           style: context.textStyles.caption.copyWith(color: colors.secondaryText),
         ),
         const SizedBox(height: 10),
@@ -48,10 +50,18 @@ class MockScenariosTab extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _RouteScenarioRow(key: ValueKey('scenario-${r.key}'), route: r, vm: vm),
                 ),
-              if (any)
+              if (any || !vm.network.isIdle)
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton.icon(onPressed: vm.clearScenarios, icon: const Icon(Icons.restart_alt, size: 16), label: const Text('Back to normal everywhere')),
+                  child: TextButton.icon(
+                    // The scenarios and the network profiles both: nothing is left going wrong.
+                    onPressed: () {
+                      vm.clearScenarios();
+                      vm.clearNetwork();
+                    },
+                    icon: const Icon(Icons.restart_alt, size: 16),
+                    label: const Text('Back to normal everywhere'),
+                  ),
                 ),
             ],
           ),
@@ -81,6 +91,8 @@ class _RouteScenarioRow extends StatelessWidget {
               MethodBadge(method: route.method, width: 44),
               const SizedBox(width: 8),
               Expanded(child: Text(route.path, style: context.textStyles.mono, overflow: TextOverflow.ellipsis)),
+              // This route's own network (slow, lossy, offline...), in the title row so the card keeps its height.
+              MockNetworkMenu(profile: vm.network.routes[route.key], inherit: true, onChanged: (p) => vm.setRouteNetwork(route.key, p)),
             ],
           ),
           const SizedBox(height: 8),

@@ -62,4 +62,30 @@ void main() {
     expect(find.text('Every website can read these answers'), findsNothing);
     expect(tester.widget<TextField>(find.widgetWithText(TextField, 'Allowed origin')).enabled, isFalse);
   });
+
+  Future<void> settle(WidgetTester tester) async {
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  testWidgets('the network menu is in the header, leaves the server controls alone, and applies to the backend at once', (tester) async {
+    final vm = await open(tester);
+    expect(vm.network.global, isNull);
+    expect(find.byKey(const ValueKey('network-menu')), findsOneWidget);
+    expect(find.text('Start'), findsOneWidget, reason: 'the server controls are all still there');
+
+    await tester.tap(find.byKey(const ValueKey('network-menu')));
+    await settle(tester);
+    await tester.tap(find.text('Flapping'));
+    await settle(tester);
+    expect(vm.network.global!.id, 'flapping');
+    expect(vm.backend.network.global, same(vm.network.global), reason: 'the backend the server answers from');
+
+    await tester.tap(find.byKey(const ValueKey('network-menu')));
+    await settle(tester);
+    await tester.tap(find.text('No throttling'));
+    await settle(tester);
+    expect(vm.network.global, isNull);
+  });
 }

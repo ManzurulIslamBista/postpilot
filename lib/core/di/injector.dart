@@ -48,11 +48,17 @@ import '../../features/documentation/presentation/view_models/tag_filter_view_mo
 import '../../features/documentation/presentation/view_models/tags_view_model.dart';
 import '../../features/ai_assistant/data/ai_client.dart';
 import '../../features/ai_assistant/data/ai_settings_store.dart';
+import '../../features/dart_codegen/data/settings_model_snapshot_store.dart';
+import '../../features/dart_codegen/domain/repositories/model_snapshot_store.dart';
 import '../../features/dart_codegen/domain/usecases/build_api_layer_usecase.dart';
 import '../../features/graphql/presentation/graphql_explorer_view_model.dart';
 import '../../features/import_export/domain/usecases/refresh_openapi_usecase.dart';
+import '../../features/device_helper/data/device_host.dart';
+import '../../features/device_helper/domain/services/device_detector.dart';
 import '../../features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
 import '../../features/mock_server/presentation/mock_server_view_model.dart';
+import '../../features/traffic_recorder/domain/usecases/create_collection_from_recording_usecase.dart';
+import '../../features/traffic_recorder/presentation/traffic_recorder_view_model.dart';
 import '../../features/odoo/data/odoo_client.dart';
 import '../../features/odoo/data/odoo_doctor.dart';
 import '../../features/odoo/data/odoo_smart_resolver.dart';
@@ -205,7 +211,10 @@ void _registerDevTools() {
   locator.registerLazySingleton<BuildApiLayerUseCase>(
     () => BuildApiLayerUseCase(locator<CollectionLoader>(), locator<ResponseExampleRepository>()),
   );
-  locator.registerFactory<ApiLayerViewModel>(() => ApiLayerViewModel(locator<BuildApiLayerUseCase>()));
+  locator.registerLazySingleton<ModelSnapshotStore>(() => SettingsModelSnapshotStore(locator<AppDatabase>().settingsDao));
+  locator.registerFactory<ApiLayerViewModel>(
+    () => ApiLayerViewModel(locator<BuildApiLayerUseCase>(), locator<ModelSnapshotStore>()),
+  );
   locator.registerFactory<ApiTestsViewModel>(() => ApiTestsViewModel(locator<BuildApiLayerUseCase>()));
   locator.registerLazySingleton<ResponseHistory>(ResponseHistory.new);
   locator.registerLazySingleton<SafetyPrefs>(SafetyPrefs.new);
@@ -233,6 +242,20 @@ void _registerDevTools() {
   );
   // One for the whole session: the server keeps answering after its dialog closes.
   locator.registerLazySingleton<MockServerViewModel>(() => MockServerViewModel(locator<BuildMockRoutesUseCase>()));
+  locator.registerLazySingleton<CreateCollectionFromRecordingUseCase>(
+    () => CreateCollectionFromRecordingUseCase(
+      locator<ImportedCollectionWriter>(),
+      locator<EnvironmentRepository>(),
+      locator<ResponseExampleRepository>(),
+      locator<RequestScriptsRepository>(),
+    ),
+  );
+  // One for the whole session: the traffic recorder keeps recording after its dialog closes.
+  locator.registerLazySingleton<TrafficRecorderViewModel>(
+    () => TrafficRecorderViewModel(locator<CreateCollectionFromRecordingUseCase>()),
+  );
+  // Finds running emulators and phones with adb / simctl; runs nothing until the device helper asks.
+  locator.registerLazySingleton<DeviceDetector>(createSystemDeviceDetector);
   locator.registerFactory<GraphqlExplorerViewModel>(
     () => GraphqlExplorerViewModel(
       locator<ApiClient>(),

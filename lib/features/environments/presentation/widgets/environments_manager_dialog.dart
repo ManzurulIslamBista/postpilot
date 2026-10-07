@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../flavor_export/presentation/flavor_export_dialog.dart';
 import '../../domain/entities/environment_entity.dart';
 import '../../domain/entities/global_variable_entity.dart';
 import '../view_models/environments_view_model.dart';
@@ -143,18 +144,31 @@ class _EnvironmentList extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.all(8),
-          child: TextButton.icon(
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add environment'),
-            onPressed: () async {
-              final name = await showPromptDialog(context, title: 'New environment');
-              if (name != null) {
-                await vm.createEnvironment(name);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Created "$name"')));
-                }
-              }
-            },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add environment'),
+                onPressed: () async {
+                  final name = await showPromptDialog(context, title: 'New environment');
+                  if (name != null) {
+                    await vm.createEnvironment(name);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Created "$name"')));
+                    }
+                  }
+                },
+              ),
+              // The selected environment is ticked first; the dialog offers every other one too.
+              TextButton.icon(
+                icon: const Icon(Icons.flutter_dash, size: 16),
+                label: const Text('Export for Flutter…'),
+                onPressed: vm.environments.isEmpty
+                    ? null
+                    : () => FlavorExportDialog.show(context, environmentId: selectedId != null && selectedId != _globalsId ? selectedId : null),
+              ),
+            ],
           ),
         ),
       ],

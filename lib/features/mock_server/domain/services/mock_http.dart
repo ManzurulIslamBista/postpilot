@@ -92,9 +92,28 @@ final class MockResponse {
   bool get isJson => headers.entries.any((e) => e.key.toLowerCase() == 'content-type' && e.value.toLowerCase().contains('json'));
 }
 
+/// How the engine must put an answer on the wire when the network is not perfect (see `MockNetwork`): paced, cut off, or
+/// with a wrong Content-Length. Without one the answer is written as it is.
+final class MockWire {
+  /// The speed of the body in bytes per second; 0 writes it as fast as possible.
+  final int bytesPerSecond;
+
+  /// The share (0 to 1) of the body that is sent before the connection is dropped; null sends all of it.
+  final double? truncateAt;
+
+  /// Bytes the Content-Length header claims beyond the real body. The connection closes after the body, so the caller sees an
+  /// answer that ends too early.
+  final int declaredLengthExtra;
+
+  const MockWire({this.bytesPerSecond = 0, this.truncateAt, this.declaredLengthExtra = 0});
+
+  /// Whether the answer is cut short on purpose (the connection is dropped instead of closed in the normal way).
+  bool get breaksTheBody => truncateAt != null || declaredLengthExtra > 0;
+}
+
 /// What the backend decided for a request: the answer, or none at all.
 final class MockOutcome {
-  /// Null when the server must never answer (the timeout scenario).
+  /// Null when the server must never answer (the timeout scenario), or when the connection is to be dropped ([dropped]).
   final MockResponse? response;
 
   /// `GET /users/:id`, null when no route matched.
@@ -109,7 +128,25 @@ final class MockOutcome {
   /// The request was a HEAD answered from the GET route: headers only, no body.
   final bool headOnly;
 
-  const MockOutcome({this.response, this.route, this.scenario, this.elapsed = Duration.zero, this.headOnly = false});
+  /// What the network profile did to this request, for the log: `3G: +312 ms, 750 kbit/s`; null when none applied.
+  final String? network;
+
+  /// How to write the answer when the network is to affect it; null writes it plainly.
+  final MockWire? wire;
+
+  /// The connection is to be closed without an answer (offline, a lost connection, a flapping network that is down).
+  final bool dropped;
+
+  const MockOutcome({
+    this.response,
+    this.route,
+    this.scenario,
+    this.elapsed = Duration.zero,
+    this.headOnly = false,
+    this.network,
+    this.wire,
+    this.dropped = false,
+  });
 
   bool get neverAnswers => response == null;
 }

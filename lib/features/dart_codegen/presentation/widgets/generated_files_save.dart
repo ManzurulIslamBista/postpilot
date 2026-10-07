@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../../core/utils/generated_files_writer.dart';
 import '../../domain/entities/generated_file.dart';
+import '../../domain/services/file_change_plan.dart';
 
 /// Writes [files] below [folder] without replacing anything on its own. Shared
 /// files that already exist (the project's own `api_client.dart`) are kept; any
@@ -163,6 +164,134 @@ class _PathList extends StatelessWidget {
         shrinkWrap: true,
         padding: const EdgeInsets.all(8),
         children: [for (final path in paths) SelectableText(path, style: context.textStyles.mono)],
+      ),
+    );
+  }
+}
+
+/// "Write changed files only": compares [files] with what [folder] holds, shows what each new or changed file would
+/// look like as a diff, and after a yes writes just those. Files that are already identical are not touched, and a
+/// shared file the project has (its own `api_client.dart`) is kept. Returns what was written, an empty result when
+/// nothing needed writing, or null when the user cancelled.
+Future<WriteFilesResult?> saveChangedGeneratedFiles(BuildContext context, String folder, List<GeneratedFile> files) async {
+  final onDisk = await readFilesInFolder(folder, [for (final f in files) f.path]);
+  final plan = FileChangePlan.compute(files, onDisk);
+  if (!context.mounted) return null;
+  final go = await showChangePreview(context, folder, plan);
+  if (go != true) return plan.hasWork ? null : const WriteFilesResult();
+  final shared = {for (final f in files) if (f.shared) f.path};
+  return writeFilesToFolder(folder, {for (final f in plan.toWrite) f.path: f.content}, overwrite: true, neverOverwrite: shared);
+}
+
+/// The dialog of [saveChangedGeneratedFiles]: a summary, then a unified diff per file that would be written. Pops `true`
+/// to write.
+Future<bool?> showChangePreview(BuildContext context, String folder, FileChangePlan plan) => showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final colors = context.colors;
+        final styles = context.textStyles;
+        final created = plan.created;
+        final changed = plan.changed;
+        final summary = [
+          '${created.length} new',
+          '${changed.length} changed',
+          '${plan.unchanged.length} already up to date',
+          if (plan.keptShared.isNotEmpty) '${plan.keptShared.length} shared kept as they are',
+        ].join(' · ');
+        final shown = [...changed, ...created];
+        return AlertDialog(
+          key: const ValueKey('change-preview'),
+          title: Text(plan.hasWork ? 'Write changed files only' : 'Everything is up to date'),
+          content: SizedBox(
+            width: 760,
+            height: 460,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(folder, style: styles.caption.copyWith(color: colors.secondaryText)),
+                const SizedBox(height: 4),
+                Text(summary, style: styles.body.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: shown.isEmpty
+                      ? Text(
+                          'Every generated file is already in this folder with the same content, so nothing is written.',
+                          style: styles.body,
+                        )
+                      : ListView(
+                          primary: false,
+                          children: [
+                            for (var i = 0; i < shown.length; i++)
+                              ExpansionTile(
+                                key: ValueKey('${shown[i].kind.name}:${shown[i].path}'),
+                                initiallyExpanded: i == 0,
+                                tilePadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  shown[i].kind == FileChangeKind.created ? Icons.add_circle_outline : Icons.sync_alt,
+                                  size: 18,
+                                  color: shown[i].kind == FileChangeKind.created ? colors.statusSuccess : colors.statusWarning,
+                                ),
+                                title: Text(shown[i].path, style: styles.mono),
+                                subtitle: Text(
+                                  '${shown[i].kind == FileChangeKind.created ? 'new file' : 'changed'}: '
+                                  '+${shown[i].diff?.added ?? 0} -${shown[i].diff?.removed ?? 0}',
+                                  style: styles.caption.copyWith(color: colors.secondaryText),
+                                ),
+                                children: [_DiffText(text: shown[i].diffText)],
+                              ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: Text(plan.hasWork ? 'Cancel' : 'Close')),
+            if (plan.hasWork)
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Write ${plan.toWrite.length} file${plan.toWrite.length == 1 ? '' : 's'}'),
+              ),
+          ],
+        );
+      },
+    );
+
+/// A unified diff with the added and removed lines tinted.
+class _DiffText extends StatelessWidget {
+  final String text;
+  const _DiffText({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final mono = context.textStyles.mono;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colors.appBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.border),
+      ),
+      child: SelectableText.rich(
+        TextSpan(
+          children: [
+            for (final line in text.split('\n'))
+              TextSpan(
+                text: '$line\n',
+                style: mono.copyWith(
+                  color: line.startsWith('+') && !line.startsWith('+++')
+                      ? colors.statusSuccess
+                      : line.startsWith('-') && !line.startsWith('---')
+                          ? colors.statusError
+                          : line.startsWith('@@')
+                              ? colors.secondaryText
+                              : null,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

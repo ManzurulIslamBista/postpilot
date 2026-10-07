@@ -8,10 +8,11 @@ import 'odoo_convert_tab.dart';
 import 'odoo_dart_tab.dart';
 import 'odoo_domain_tab.dart';
 import 'odoo_explorer_tab.dart';
+import 'odoo_flutter_client_tab.dart';
 import 'odoo_payload_tab.dart';
 
 /// The tabs of Odoo Studio, in order; [OdooStudioDialog.show] opens one by its [index].
-enum OdooStudioTab { connect, explorer, domain, payload, check, migrate, dart }
+enum OdooStudioTab { connect, explorer, domain, payload, check, migrate, dart, flutterClient }
 
 /// Odoo, end to end, for developers: connect (Odoo 19+ JSON-2 with an API key, or Odoo 18 and older with a JSON-RPC
 /// login) and save the server as an environment, generate the requests, explore models and fields, build domains and
@@ -42,7 +43,7 @@ class _OdooStudioDialogState extends State<OdooStudioDialog> {
     return ToolDialog(
       icon: Icons.hub_outlined,
       title: 'Odoo Studio',
-      subtitle: 'JSON-2 and JSON-RPC · explore models · domains · payloads · request check · migrate old RPC · Dart classes',
+      subtitle: 'JSON-2 and JSON-RPC · explore models · domains · payloads · request check · migrate old RPC · Dart classes · Flutter client',
       width: 1040,
       height: 700,
       child: ToolTabs(
@@ -55,6 +56,7 @@ class _OdooStudioDialogState extends State<OdooStudioDialog> {
           ToolTab(label: 'Check', icon: Icons.fact_check_outlined, child: OdooCheckTab(viewModel: _vm)),
           ToolTab(label: 'Migrate RPC', icon: Icons.swap_horiz, child: OdooConvertTab(viewModel: _vm)),
           ToolTab(label: 'Dart model', icon: Icons.flutter_dash, child: OdooDartTab(viewModel: _vm)),
+          ToolTab(label: 'Flutter client', icon: Icons.phone_android, child: OdooFlutterClientTab(viewModel: _vm)),
         ],
       ),
     );

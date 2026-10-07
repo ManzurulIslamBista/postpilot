@@ -17,11 +17,15 @@ class GeneratedFilesView extends StatefulWidget {
   final String emptyTitle;
   final String emptyMessage;
 
+  /// Called after files were written to a folder (by either save button), e.g. to remember what was generated.
+  final Future<void> Function()? onSaved;
+
   const GeneratedFilesView({
     super.key,
     required this.files,
     this.emptyTitle = 'Nothing generated yet',
     this.emptyMessage = '',
+    this.onSaved,
   });
 
   @override
@@ -56,6 +60,23 @@ class _GeneratedFilesViewState extends State<GeneratedFilesView> {
       final result = await saveGeneratedFiles(context, folder, widget.files);
       if (result == null || !mounted) return;
       await showWriteResult(context, folder, result);
+      await widget.onSaved?.call();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text("Couldn't write the files: $e")));
+    }
+  }
+
+  /// Shows a diff of every file that would change and writes only those.
+  Future<void> _saveChanged() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final workplaces = context.read<WorkplaceViewModel>();
+    final folder = await workplaces.pickFolder();
+    if (folder == null || !mounted) return;
+    try {
+      final result = await saveChangedGeneratedFiles(context, folder, widget.files);
+      if (result == null || !mounted) return;
+      if (result.written.isNotEmpty) await showWriteResult(context, folder, result);
+      await widget.onSaved?.call();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text("Couldn't write the files: $e")));
     }
@@ -109,19 +130,36 @@ class _GeneratedFilesViewState extends State<GeneratedFilesView> {
         final code = CodeBlock(
           key: ValueKey(selected.path),
           text: selected.content,
-          label: selected.path,
+          // The whole path does not fit beside the Copy button on a phone: the end of it does.
+          label: wide ? selected.path : '…/${selected.name}',
         );
         final toolbar = Row(
           children: [
             Text('${files.length} files', style: context.textStyles.caption.copyWith(color: colors.secondaryText)),
-            const Spacer(),
-            TextButton.icon(onPressed: _copyAll, icon: const Icon(Icons.copy_all_outlined, size: 16), label: const Text('Copy all')),
-            if (canSave)
-              FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.save_alt, size: 16),
-                label: const Text('Save to folder…'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  TextButton.icon(onPressed: _copyAll, icon: const Icon(Icons.copy_all_outlined, size: 16), label: const Text('Copy all')),
+                  if (canSave)
+                    OutlinedButton.icon(
+                      onPressed: _saveChanged,
+                      icon: const Icon(Icons.compare_arrows, size: 16),
+                      label: const Text('Write changed files only…'),
+                    ),
+                  if (canSave)
+                    FilledButton.icon(
+                      onPressed: _save,
+                      icon: const Icon(Icons.save_alt, size: 16),
+                      label: const Text('Save to folder…'),
+                    ),
+                ],
               ),
+            ),
           ],
         );
         return Column(

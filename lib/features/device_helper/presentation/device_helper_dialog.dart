@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/tool_dialog.dart';
+import '../../environments/presentation/view_models/environments_view_model.dart';
+import '../data/device_host.dart';
 import '../data/network_info.dart';
+import '../domain/services/device_detector.dart';
 import '../domain/services/device_targets.dart';
+import 'running_devices_section.dart';
 
 /// "Why can't my phone reach localhost?" answered: the right host for each
 /// kind of device, your computer's network addresses, a QR code to open the
@@ -13,10 +18,17 @@ import '../domain/services/device_targets.dart';
 class DeviceHelperDialog extends StatefulWidget {
   final String initialUrl;
   final int? initialPort;
-  const DeviceHelperDialog({super.key, this.initialUrl = '', this.initialPort});
 
-  static Future<void> show(BuildContext context, {String initialUrl = '', int? initialPort}) =>
-      ToolDialog.show(context, (_) => DeviceHelperDialog(initialUrl: initialUrl, initialPort: initialPort));
+  /// Finds the running emulators and phones, and the dialog scans as it opens; without one it scans only when asked.
+  final DeviceDetector? detector;
+
+  /// Where "Use for `<environment>`" writes; the app's own when null and there is one.
+  final EnvironmentsViewModel? environments;
+
+  const DeviceHelperDialog({super.key, this.initialUrl = '', this.initialPort, this.detector, this.environments});
+
+  static Future<void> show(BuildContext context, {String initialUrl = '', int? initialPort, DeviceDetector? detector}) =>
+      ToolDialog.show(context, (_) => DeviceHelperDialog(initialUrl: initialUrl, initialPort: initialPort, detector: detector));
 
   @override
   State<DeviceHelperDialog> createState() => _DeviceHelperDialogState();
@@ -28,9 +40,16 @@ class _DeviceHelperDialogState extends State<DeviceHelperDialog> {
   List<LocalAddress>? _addresses;
   String? _qrHost;
 
+  /// A detector that was given scans when the dialog opens (see `openDeviceHelper`); the fallback one only when asked to, so a
+  /// dialog opened without one (a test, say) never starts a program on its own.
+  late final DeviceDetector _detector = widget.detector ?? createSystemDeviceDetector();
+  late final bool _autoScan = widget.detector != null;
+  EnvironmentsViewModel? _environments;
+
   @override
   void initState() {
     super.initState();
+    _environments = widget.environments ?? _environmentsFromContext();
     listLocalAddresses().then((a) {
       if (mounted) {
         setState(() {
@@ -46,6 +65,15 @@ class _DeviceHelperDialogState extends State<DeviceHelperDialog> {
     _url.dispose();
     _port.dispose();
     super.dispose();
+  }
+
+  /// The environments of the app when there are any in scope; the dialog also opens without them.
+  EnvironmentsViewModel? _environmentsFromContext() {
+    try {
+      return context.read<EnvironmentsViewModel>();
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 
   int get _portNumber => int.tryParse(_port.text.trim()) ?? 3000;
@@ -77,6 +105,7 @@ class _DeviceHelperDialogState extends State<DeviceHelperDialog> {
                 'Use the address below instead of localhost.',
           ),
           const SizedBox(height: 14),
+          RunningDevicesSection(detector: _detector, environments: _environments, lanIp: _qrHost, autoScan: _autoScan),
           ToolSection(
             title: 'Emulators and simulators',
             child: Column(

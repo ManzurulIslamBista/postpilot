@@ -1,4 +1,5 @@
 import '../../../dart_codegen/domain/entities/generated_file.dart';
+import '../../../dart_codegen/domain/services/dart_model_generator.dart' show DartModelStyle;
 import '../../../dart_codegen/domain/services/dart_names.dart';
 import '../entities/odoo_model_info.dart';
 
@@ -12,7 +13,32 @@ class OdooDartOptions {
   /// A `selection` field with at most this many values becomes an enum.
   final int enumLimit;
 
-  const OdooDartOptions({this.fieldNames, this.includeComputed = false, this.enumLimit = 12});
+  /// How the class serialises: by hand ([DartModelStyle.plain], the default), or annotated for json_serializable / freezed
+  /// (run build_runner). All three read Odoo's JSON the same way (`false` for an empty value, `[id, name]` for a
+  /// many2one, UTC datetimes) through the helpers of `odoo_json.dart`.
+  final DartModelStyle style;
+
+  /// The folder (below the project root) the model and the support file are written to.
+  final String folder;
+
+  /// The class name and file name to use instead of the ones derived from the model name (the client generator
+  /// needs unique ones when two models would produce the same).
+  final String? className;
+  final String? fileName;
+
+  /// Leave `binary` fields (images, attachments) out: a list read would download all of them.
+  final bool skipBinary;
+
+  const OdooDartOptions({
+    this.fieldNames,
+    this.includeComputed = false,
+    this.enumLimit = 12,
+    this.style = DartModelStyle.plain,
+    this.folder = 'lib/models',
+    this.className,
+    this.fileName,
+    this.skipBinary = false,
+  });
 }
 
 /// Turns an Odoo model's `fields_get` into a Dart class that reads Odoo's
@@ -24,17 +50,30 @@ final class OdooDartGenerator {
 
   static const supportPath = 'odoo_json.dart';
 
+  /// The fields of [model] that [options] keep, in the order of the model.
+  static List<OdooField> selectFields(OdooModelInfo model, OdooDartOptions options) => [
+        for (final f in model.fields)
+          if ((options.includeComputed || f.stored) &&
+              (options.fieldNames?.contains(f.name) ?? true) &&
+              !(options.skipBinary && f.type == 'binary'))
+            f,
+      ];
+
   List<GeneratedFile> generate(OdooModelInfo model, {OdooDartOptions options = const OdooDartOptions()}) {
-    final className = DartNames.pascal(model.model);
-    final fields = [
-      for (final f in model.fields)
-        if ((options.includeComputed || f.stored) && (options.fieldNames?.contains(f.name) ?? true)) f,
-    ];
+    final className = options.className ?? DartNames.pascal(model.model);
+    final fields = selectFields(model, options);
     final enums = <String, OdooField>{};
     for (final f in fields) {
       if (f.type == 'selection' && f.selection.isNotEmpty && f.selection.length <= options.enumLimit) {
         enums['$className${DartNames.pascal(f.name)}'] = f;
       }
+    }
+    final fileName = options.fileName ?? DartNames.snake(model.model, fallback: 'model');
+    final path = '${options.folder}/$fileName.dart';
+    // Shared by every generated model, so a copy already in the project is kept.
+    final support = GeneratedFile('${options.folder}/$supportPath', _supportFile, shared: true);
+    if (options.style != DartModelStyle.plain) {
+      return [GeneratedFile(path, _annotated(model, className, fileName, fields, enums, options).trimRight()), support];
     }
 
     final b = StringBuffer()
@@ -81,13 +120,129 @@ final class OdooDartGenerator {
     b.writeln('      };');
     b.writeln('}');
 
-    final path = 'lib/models/${DartNames.snake(model.model, fallback: 'model')}.dart';
-    return [
-      GeneratedFile(path, b.toString().trimRight()),
-      // Shared by every generated model, so a copy already in the project is kept.
-      const GeneratedFile('lib/models/$supportPath', _supportFile, shared: true),
-    ];
+    return [GeneratedFile(path, b.toString().trimRight()), support];
   }
+
+  // --- json_serializable and freezed ----------------------------------------------------
+
+  /// The same class with annotations instead of hand-written code. Every field names the helper of `odoo_json.dart`
+  /// that reads it, so Odoo's `false` for an empty value, its `[id, name]` pairs and its UTC datetimes come out right
+  /// without a custom converter class per type.
+  String _annotated(
+    OdooModelInfo model,
+    String className,
+    String fileName,
+    List<OdooField> fields,
+    Map<String, OdooField> enums,
+    OdooDartOptions options,
+  ) {
+    final freezed = options.style == DartModelStyle.freezed;
+    final names = {for (final f in fields) f.name: DartNames.camel(f.name)};
+    String enumOf(OdooField f) => '$className${DartNames.pascal(f.name)}';
+    final b = StringBuffer()
+      ..writeln(freezed ? "import 'package:freezed_annotation/freezed_annotation.dart';" : "import 'package:json_annotation/json_annotation.dart';")
+      ..writeln()
+      ..writeln("import '$supportPath';")
+      ..writeln()
+      ..writeln(freezed ? "part '$fileName.freezed.dart';" : "part '$fileName.g.dart';");
+    if (freezed) b.writeln("part '$fileName.g.dart';");
+    b.writeln();
+    enums.forEach((name, f) => b
+      ..writeln(_enum(name, f, withToOdoo: true))
+      ..writeln());
+
+    String annotation(OdooField f) {
+      final enumName = enumOf(f);
+      final isEnum = enums.containsKey(enumName);
+      final fromJson = _fromJsonFunction(f, enumName, isEnum);
+      final toJson = _toJsonFunction(f, enumName, isEnum);
+      final parts = <String>[
+        if (names[f.name] != f.name) 'name: ${DartNames.quote(f.name)}',
+        if (fromJson != null) 'fromJson: $fromJson',
+        if (toJson != null) 'toJson: $toJson',
+        if (f.name == 'id' || (f.readonly && !f.required)) 'includeToJson: false',
+        if (_type(f, enumName, enums).endsWith('?')) 'includeIfNull: false',
+      ];
+      return parts.isEmpty ? '' : '@JsonKey(${parts.join(', ')})';
+    }
+
+    b.writeln('/// ${model.model}');
+    if (freezed) {
+      b
+        ..writeln('@freezed')
+        ..writeln('abstract class $className with _\$$className {')
+        ..writeln('  const factory $className({');
+      for (final f in fields) {
+        if (f.help != null || f.label != f.name) b.writeln('    /// ${_oneLine(f.help ?? f.label)}');
+        final type = _type(f, enumOf(f), enums);
+        final fallback = switch (f.type) {
+          'boolean' => '@Default(false) ',
+          'one2many' || 'many2many' => '@Default(<int>[]) ',
+          _ => '',
+        };
+        final prefix = [annotation(f), fallback.trim()].where((s) => s.isNotEmpty).join(' ');
+        b.writeln('    ${prefix.isEmpty ? '' : '$prefix '}$type ${names[f.name]},');
+      }
+      b
+        ..writeln('  }) = _$className;')
+        ..writeln()
+        ..writeln('  /// The field names to send as `fields` in search_read / read.')
+        ..writeln('  static const fieldNames = [${fields.map((f) => DartNames.quote(f.name)).join(', ')}];')
+        ..writeln()
+        ..writeln('  factory $className.fromJson(Map<String, dynamic> json) => _\$${className}FromJson(json);')
+        ..writeln('}');
+    } else {
+      b
+        ..writeln('@JsonSerializable()')
+        ..writeln('class $className {');
+      for (final f in fields) {
+        if (f.help != null || f.label != f.name) b.writeln('  /// ${_oneLine(f.help ?? f.label)}');
+        final a = annotation(f);
+        if (a.isNotEmpty) b.writeln('  $a');
+        b.writeln('  final ${_type(f, enumOf(f), enums)} ${names[f.name]};');
+      }
+      b
+        ..writeln()
+        ..writeln('  const $className({');
+      for (final f in fields) {
+        b.writeln('    this.${names[f.name]}${_default(f)},');
+      }
+      b
+        ..writeln('  });')
+        ..writeln()
+        ..writeln('  /// The field names to send as `fields` in search_read / read.')
+        ..writeln('  static const fieldNames = [${fields.map((f) => DartNames.quote(f.name)).join(', ')}];')
+        ..writeln()
+        ..writeln('  factory $className.fromJson(Map<String, dynamic> json) => _\$${className}FromJson(json);')
+        ..writeln()
+        ..writeln('  /// Values to send to create / write: unset (null) fields and read-only ones are left out.')
+        ..writeln('  Map<String, dynamic> toJson() => _\$${className}ToJson(this);')
+        ..writeln('}');
+    }
+    return b.toString();
+  }
+
+  /// The helper that reads the field; none for a `dynamic` one, which takes the value as it is.
+  String? _fromJsonFunction(OdooField f, String enumName, bool isEnum) => switch (f.type) {
+        'integer' => 'odooInt',
+        'float' || 'monetary' => 'odooDouble',
+        'boolean' => 'odooBool',
+        'date' => 'odooDate',
+        'datetime' => 'odooDateTime',
+        'many2one' => 'OdooRef.from',
+        'one2many' || 'many2many' => 'odooIds',
+        'json' || 'properties' => null,
+        'selection' when isEnum => '$enumName.fromOdoo',
+        _ => 'odooString',
+      };
+
+  String? _toJsonFunction(OdooField f, String enumName, bool isEnum) => switch (f.type) {
+        'date' => 'odooDateToJson',
+        'datetime' => 'odooDateTimeToJson',
+        'many2one' => 'odooRefToJson',
+        'selection' when isEnum => '$enumName.toOdoo',
+        _ => null,
+      };
 
   // --- types -------------------------------------------------------------------
 
@@ -141,7 +296,8 @@ final class OdooDartGenerator {
     return (always ? '' : 'if ($name != null) ', value);
   }
 
-  String _enum(String name, OdooField f) {
+  /// [withToOdoo] adds the static `toOdoo` that json_serializable / freezed name as the field's `toJson`.
+  String _enum(String name, OdooField f, {bool withToOdoo = false}) {
     final used = <String>{};
     String id(String v) {
       var base = DartNames.camel(v, fallback: 'value');
@@ -176,8 +332,13 @@ final class OdooDartGenerator {
       ..writeln('      if (v.odoo == value) return v;')
       ..writeln('    }')
       ..writeln('    return null;')
-      ..writeln('  }')
-      ..write('}');
+      ..writeln('  }');
+    if (withToOdoo) {
+      b
+        ..writeln()
+        ..writeln('  static String? toOdoo($name? value) => value?.odoo;');
+    }
+    b.write('}');
     return b.toString();
   }
 
@@ -201,6 +362,12 @@ class OdooRef {
   }
 
   @override
+  bool operator ==(Object other) => other is OdooRef && other.id == id && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(id, name);
+
+  @override
   String toString() => name ?? '#$id';
 }
 
@@ -220,5 +387,13 @@ String odooFormatDateTime(DateTime v) {
 }
 
 List<int> odooIds(Object? v) => v is List ? [for (final e in v) if (e is num) e.toInt()] : const [];
+
+/// What `write` takes for a many2one: the id.
+int? odooRefToJson(OdooRef? v) => v?.id;
+
+/// `2026-10-02`.
+String? odooDateToJson(DateTime? v) => v?.toIso8601String().substring(0, 10);
+
+String? odooDateTimeToJson(DateTime? v) => v == null ? null : odooFormatDateTime(v);
 ''';
 }

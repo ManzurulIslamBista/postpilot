@@ -9,10 +9,12 @@ import '../../ai_assistant/presentation/ai_request_dialog.dart';
 import '../../ci/presentation/ci_setup_dialog.dart';
 import '../../run_triage/presentation/current_collection_actions.dart';
 import '../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
-import '../../device_helper/presentation/device_helper_dialog.dart';
+import '../../device_helper/presentation/device_helper_launcher.dart';
+import '../../flavor_export/presentation/flavor_export_dialog.dart';
 import '../../graphql/presentation/graphql_explorer_dialog.dart';
 import '../../import_export/presentation/openapi_refresh_dialog.dart';
 import '../../mock_server/presentation/mock_server_dialog.dart';
+import '../../traffic_recorder/presentation/traffic_recorder_dialog.dart';
 import '../../realtime/presentation/realtime_dialog.dart';
 import '../../environments/presentation/view_models/environments_view_model.dart';
 import '../../history/presentation/widgets/history_dialog.dart';
@@ -95,12 +97,28 @@ abstract final class PaletteItems {
           run: (c) => DartStudioDialog.show(c, initialTab: 2),
         ),
         PaletteItem(
+          id: 'dart.odooClient',
+          title: 'Dart Studio: Flutter client for Odoo',
+          subtitle: 'Pick Odoo models and generate a typed client with repositories and an optional state layer',
+          icon: Icons.hub_outlined,
+          keywords: const ['flutter', 'odoo', 'client', 'repository', 'provider', 'riverpod', 'bloc'],
+          run: (c) => DartStudioDialog.show(c, initialTab: 3),
+        ),
+        PaletteItem(
           id: 'mock.server',
           title: 'Mock server: serve a collection as a live API',
           subtitle: 'Saved examples answer real HTTP calls on this computer',
           icon: Icons.dns_outlined,
           keywords: const ['mock', 'backend', 'fake', 'stub', 'server', 'examples'],
           run: (c) => MockServerDialog.show(c),
+        ),
+        PaletteItem(
+          id: 'traffic.recorder',
+          title: 'Traffic recorder: record what your app really calls',
+          subtitle: 'Point the app at a local recorder, then turn the calls into a collection. No certificate or proxy setting',
+          icon: Icons.sensors,
+          keywords: const ['traffic', 'record', 'recorder', 'proxy', 'capture', 'charles', 'mitmproxy', 'har', 'sniff', 'intercept', 'flutter'],
+          run: (c) => TrafficRecorderDialog.show(c),
         ),
         PaletteItem(
           id: 'openapi.refresh',
@@ -134,7 +152,15 @@ abstract final class PaletteItems {
           subtitle: '10.0.2.2, your Wi-Fi address, QR code, adb reverse',
           icon: Icons.phonelink_setup,
           keywords: const ['android', 'ios', 'emulator', 'simulator', 'localhost', 'qr', 'lan', 'ip', 'adb'],
-          run: (c) => DeviceHelperDialog.show(c),
+          run: (c) => openDeviceHelper(c),
+        ),
+        PaletteItem(
+          id: 'flavor.export',
+          title: 'Environments: export for Flutter (.env, dart-define, AppConfig)',
+          subtitle: 'Flavor files per environment, run commands, launch configurations and a typed AppConfig class',
+          icon: Icons.flutter_dash,
+          keywords: const ['flutter', 'flavor', 'dotenv', '.env', 'dart-define', 'env.json', 'launch.json', 'appconfig', 'environment', 'export'],
+          run: (c) => FlavorExportDialog.show(c),
         ),
         PaletteItem(
           id: 'odoo.connect',
@@ -191,6 +217,14 @@ abstract final class PaletteItems {
           icon: Icons.fact_check_outlined,
           keywords: const ['odoo', 'check', 'validate', 'lint', 'schema', 'typo', 'required', 'domain'],
           run: (c) => OdooStudioDialog.show(c, initialTab: OdooStudioTab.check.index),
+        ),
+        PaletteItem(
+          id: 'odoo.flutterClient',
+          title: 'Odoo Studio: generate a Flutter client for Odoo models',
+          subtitle: 'OdooClient (Dio), Domain builder, x2many Command, exceptions and a repository per model, with Provider, Riverpod or BLoC state',
+          icon: Icons.phone_android,
+          keywords: const ['odoo', 'flutter', 'dart', 'client', 'repository', 'provider', 'riverpod', 'bloc', 'json-2', 'domain', 'command'],
+          run: (c) => OdooStudioDialog.show(c, initialTab: OdooStudioTab.flutterClient.index),
         ),
       ];
 

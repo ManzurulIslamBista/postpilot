@@ -28,3 +28,9 @@ Future<WriteFilesResult> writeFilesToFolder(
   Set<String> neverOverwrite = const {},
 }) =>
     platform.writeFilesToFolder(folder, files, overwrite: overwrite, neverOverwrite: neverOverwrite);
+
+/// The text of those of [paths] (relative to [folder]) that exist there, by path; a path that does not exist, is a
+/// folder or is unreasonably large is left out. This is what a "what would change" preview compares the generated
+/// files with. A path that would leave [folder] is rejected, as in [writeFilesToFolder].
+Future<Map<String, String>> readFilesInFolder(String folder, Iterable<String> paths) =>
+    platform.readFilesInFolder(folder, paths);

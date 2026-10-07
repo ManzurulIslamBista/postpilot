@@ -115,6 +115,9 @@ void main() {
   }
 
   Future<void> generate(WidgetTester tester) async {
+    // The options above the file list scroll on a small screen: bring the button into view first.
+    await tester.ensureVisible(find.text('Generate tests'));
+    await tester.pump();
     await tester.tap(find.text('Generate tests'));
     await until(tester, () => find.text('fixture_loader.dart').evaluate().isNotEmpty);
   }
@@ -142,6 +145,8 @@ void main() {
   testWidgets('versions from a pasted pubspec.lock replace the suggestions, and the add command shrinks to nothing', (tester) async {
     await open(tester, size: const Size(1200, 900), dark: false);
     expect(find.textContaining('Pin versions from your pubspec.lock'), findsOneWidget);
+    await tester.ensureVisible(find.textContaining('Pin versions from your pubspec.lock'));
+    await tester.pump();
     await tester.tap(find.textContaining('Pin versions from your pubspec.lock'));
     await tester.pumpAndSettle();
     await tester.enterText(lockField(), _lock);
@@ -155,6 +160,8 @@ void main() {
 
   testWidgets('text that is not a lock file is called out', (tester) async {
     await open(tester, size: const Size(1200, 900), dark: false);
+    await tester.ensureVisible(find.textContaining('Pin versions from your pubspec.lock'));
+    await tester.pump();
     await tester.tap(find.textContaining('Pin versions from your pubspec.lock'));
     await tester.pumpAndSettle();
     await tester.enterText(lockField(), 'this is not yaml: [');

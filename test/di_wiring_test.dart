@@ -18,13 +18,17 @@ import 'package:postpilot/features/auth_renewal/domain/usecases/relogin_usecase.
 import 'package:postpilot/features/auth_renewal/presentation/view_models/inherited_oauth2_status_view_model.dart';
 import 'package:postpilot/features/auth_renewal/presentation/view_models/relogin_section_view_model.dart';
 import 'package:postpilot/features/ai_assistant/data/ai_settings_store.dart';
+import 'package:postpilot/features/dart_codegen/domain/repositories/model_snapshot_store.dart';
 import 'package:postpilot/features/dart_codegen/domain/usecases/build_api_layer_usecase.dart';
 import 'package:postpilot/features/dart_codegen/presentation/view_models/api_layer_view_model.dart';
 import 'package:postpilot/features/dart_codegen/presentation/view_models/api_tests_view_model.dart';
 import 'package:postpilot/features/graphql/presentation/graphql_explorer_view_model.dart';
 import 'package:postpilot/features/import_export/domain/usecases/refresh_openapi_usecase.dart';
+import 'package:postpilot/features/device_helper/domain/services/device_detector.dart';
 import 'package:postpilot/features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
 import 'package:postpilot/features/mock_server/presentation/mock_server_view_model.dart';
+import 'package:postpilot/features/traffic_recorder/domain/usecases/create_collection_from_recording_usecase.dart';
+import 'package:postpilot/features/traffic_recorder/presentation/traffic_recorder_view_model.dart';
 import 'package:postpilot/features/odoo/data/odoo_client.dart';
 import 'package:postpilot/features/odoo/data/odoo_doctor.dart';
 import 'package:postpilot/features/odoo/data/odoo_smart_resolver.dart';
@@ -278,6 +282,7 @@ final _wirings = <_Wiring>[
   _wire<WorkplaceViewModel>(),
   // developer tools
   _wire<BuildApiLayerUseCase>(),
+  _wire<ModelSnapshotStore>(),
   _wire<ApiLayerViewModel>(),
   _wire<ApiTestsViewModel>(),
   _wire<ResponseHistory>(),
@@ -290,6 +295,9 @@ final _wirings = <_Wiring>[
   _wire<RefreshOpenApiUseCase>(),
   _wire<BuildMockRoutesUseCase>(),
   _wire<MockServerViewModel>(),
+  _wire<CreateCollectionFromRecordingUseCase>(),
+  _wire<TrafficRecorderViewModel>(),
+  _wire<DeviceDetector>(),
   _wire<GraphqlExplorerViewModel>(),
   _wire<RealtimeViewModel>(),
   _wire<OdooClient>(),

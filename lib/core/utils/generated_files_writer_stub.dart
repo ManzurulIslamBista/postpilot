@@ -12,3 +12,6 @@ Future<WriteFilesResult> writeFilesToFolder(
   Set<String> neverOverwrite = const {},
 }) =>
     throw UnsupportedError('Writing to a folder is not supported on this platform');
+
+Future<Map<String, String>> readFilesInFolder(String folder, Iterable<String> paths) =>
+    throw UnsupportedError('Reading from a folder is not supported on this platform');

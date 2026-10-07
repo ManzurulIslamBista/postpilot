@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/tool_dialog.dart';
+import '../../../odoo/presentation/widgets/odoo_client_studio_pane.dart';
 import 'api_layer_pane.dart';
 import 'api_tests_pane.dart';
 import 'dart_model_pane.dart';
@@ -51,6 +52,11 @@ class DartStudioDialog extends StatelessWidget {
             label: 'Tests',
             icon: Icons.science_outlined,
             child: ApiTestsPane(initialCollectionId: collectionId),
+          ),
+          const ToolTab(
+            label: 'Odoo client',
+            icon: Icons.hub_outlined,
+            child: OdooClientStudioPane(),
           ),
         ],
       ),

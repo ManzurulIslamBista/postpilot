@@ -33,7 +33,13 @@ final class ImportedCollectionWriter {
   /// Creates a brand-new collection. If anything fails midway the half-built
   /// collection is deleted (the cascade removes its contents), so a retry
   /// doesn't leave a duplicate next to it.
-  Future<WrittenCollection> write(ImportedCollection collection) async {
+  ///
+  /// [onRequestWritten] is awaited after each request is saved, with the item and its new id, for callers that attach
+  /// more to it (saved examples, tests). An error there rolls the whole collection back like any other failure.
+  Future<WrittenCollection> write(
+    ImportedCollection collection, {
+    Future<void> Function(ImportedRequest request, int requestId)? onRequestWritten,
+  }) async {
     final collectionId = await _collectionRepository.createCollection(collection.name);
     try {
       final auth = collection.auth;
@@ -47,7 +53,7 @@ final class ImportedCollectionWriter {
           enabled: variable.enabled,
         ));
       }
-      await addItems(collectionId, null, collection.items);
+      await addItems(collectionId, null, collection.items, onRequestWritten: onRequestWritten);
     } catch (_) {
       await _collectionRepository.deleteCollection(collectionId);
       rethrow;
@@ -60,7 +66,12 @@ final class ImportedCollectionWriter {
   }
 
   /// Adds [items] to an existing collection, under [folderId] (null = top level).
-  Future<void> addItems(int collectionId, int? folderId, List<ImportedItem> items) async {
+  Future<void> addItems(
+    int collectionId,
+    int? folderId,
+    List<ImportedItem> items, {
+    Future<void> Function(ImportedRequest request, int requestId)? onRequestWritten,
+  }) async {
     for (final item in items) {
       switch (item) {
         case ImportedFolder():
@@ -69,7 +80,7 @@ final class ImportedCollectionWriter {
             parentFolderId: folderId,
             name: ImportNames.folder(item.name),
           );
-          await addItems(collectionId, newFolderId, item.children);
+          await addItems(collectionId, newFolderId, item.children, onRequestWritten: onRequestWritten);
         case ImportedRequest():
           final requestId = await _requestRepository.createRequest(
             collectionId: collectionId,
@@ -88,6 +99,7 @@ final class ImportedCollectionWriter {
             body: item.body,
             auth: item.auth,
           ));
+          await onRequestWritten?.call(item, requestId);
       }
     }
   }

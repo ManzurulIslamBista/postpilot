@@ -3,6 +3,7 @@ import 'dart:math';
 import 'mock_example_handler.dart';
 import 'mock_handler.dart';
 import 'mock_http.dart';
+import 'mock_network.dart';
 import 'mock_routes.dart';
 import 'mock_scenarios.dart';
 import 'mock_spec_handler.dart';
@@ -16,6 +17,9 @@ final class MockBackend {
   final MockClock clock;
   final MockExampleHandler examples;
   final MockScenarios scenarios = MockScenarios();
+
+  /// Slow, lossy, flapping, offline... networks for the whole server or one route, on top of the scenarios.
+  final MockNetwork network;
   final Random _random;
 
   /// When set, requests are answered from this document and the saved examples are not used.
@@ -32,6 +36,7 @@ final class MockBackend {
     this.spec,
     List<MockMatchRule> rules = const [],
   })  : examples = MockExampleHandler(table, rules: rules, clock: clock),
+        network = MockNetwork(clock.now),
         _random = random ?? Random();
 
   MockRouteTable get table => examples.table;
@@ -66,11 +71,28 @@ final class MockBackend {
     }
 
     final decision = scenarios.decide(match?.key, _random);
-    if (decision.hang) {
-      return MockOutcome(response: null, route: match?.key, scenario: decision.label, elapsed: clock.now().difference(started));
+    final net = network.decide(match?.key, _random);
+    if (decision.hang || net.hang) {
+      return MockOutcome(
+        response: null,
+        route: match?.key,
+        scenario: decision.label,
+        network: net.label,
+        elapsed: clock.now().difference(started),
+      );
     }
-    final wait = delay + decision.latency;
+    final wait = delay + decision.latency + net.latency;
     if (wait > Duration.zero) await clock.delay(wait);
+    if (net.dropConnection) {
+      return MockOutcome(
+        response: null,
+        route: match?.key,
+        scenario: decision.label,
+        network: net.label,
+        elapsed: clock.now().difference(started),
+        dropped: true,
+      );
+    }
 
     MockResponse response;
     final fail = decision.failStatus;
@@ -84,16 +106,64 @@ final class MockBackend {
       if (decision.emptyList) response = emptyLists(response);
       if (decision.malformedJson) response = malformed(response);
     }
+    // The network speaks last: a failing route is still slow, and a server error from the network replaces a good answer.
+    final netError = fail == null ? net.errorStatus : null;
+    if (netError != null) {
+      final message = 'The mock server is simulating a bad network (${net.profile}): it answers ${mockReasonPhrase(netError)}.';
+      response = handler.errorResponse(match, request, netError, message) ?? _plainError(netError, message);
+      final retry = net.retryAfterSeconds;
+      if (retry != null) response = response.copyWith(headers: {...response.headers, 'retry-after': '$retry'});
+    }
+    final corruption = net.corruption;
+    if (corruption != null) response = corrupt(response, corruption);
     response = _finish(response);
     if (headOnly) {
       response = response.copyWith(headers: {...response.headers, 'content-length': '${utf8.encode(response.body).length}'});
     }
+    final wrongLength = corruption == NetworkCorruption.wrongContentLength;
+    final wire = !headOnly && (net.bytesPerSecond > 0 || net.truncateAt != null || wrongLength)
+        ? MockWire(
+            bytesPerSecond: net.bytesPerSecond,
+            truncateAt: net.truncateAt,
+            declaredLengthExtra: wrongLength ? max(16, utf8.encode(response.body).length ~/ 2) : 0,
+          )
+        : null;
     return MockOutcome(
       response: response,
       route: match?.key,
       scenario: decision.label,
+      network: net.label,
       elapsed: clock.now().difference(started),
       headOnly: headOnly,
+      wire: wire,
+    );
+  }
+
+  /// [response] broken the way [mode] says. A wrong content length is on the wire, not in the response: see [MockWire].
+  static MockResponse corrupt(MockResponse response, NetworkCorruption mode) => switch (mode) {
+        NetworkCorruption.truncatedJson => malformed(response),
+        NetworkCorruption.malformedJson => brokenSyntax(response),
+        NetworkCorruption.wrongContentType => response.copyWith(headers: {
+            for (final e in response.headers.entries)
+              if (e.key.toLowerCase() != 'content-type') e.key: e.value,
+            'content-type': 'text/html; charset=utf-8',
+          }),
+        NetworkCorruption.wrongContentLength => response,
+      };
+
+  /// [response] with a comma before the last closing bracket: valid JavaScript, a syntax error in JSON. An answer with no body
+  /// gets a small broken object.
+  static MockResponse brokenSyntax(MockResponse response) {
+    var text = response.body.trim().isEmpty ? '{"data": [1,,]}' : response.body;
+    final at = max(text.lastIndexOf('}'), text.lastIndexOf(']'));
+    text = at >= 0 ? '${text.substring(0, at)},${text.substring(at)}' : '$text}';
+    while (_parses(text)) {
+      text = '$text}}';
+    }
+    return MockResponse(
+      response.status == 204 ? 200 : response.status,
+      headers: {...response.headers, 'content-type': 'application/json'},
+      body: text,
     );
   }
 

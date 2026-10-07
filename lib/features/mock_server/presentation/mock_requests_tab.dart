@@ -72,6 +72,7 @@ class _EntryTile extends StatelessWidget {
     final detail = [
       e.route ?? 'No route matched',
       if (e.scenario != null) 'scenario: ${e.scenario}',
+      if (e.network != null) 'network: ${e.network}',
       if (e.preview.isNotEmpty) e.preview,
     ].join('  ·  ');
     return ExpansionTile(
@@ -89,7 +90,7 @@ class _EntryTile extends StatelessWidget {
           Expanded(child: Text(e.path, overflow: TextOverflow.ellipsis, style: context.textStyles.mono)),
           const SizedBox(width: 8),
           Text(
-            e.neverAnswered ? 'no answer' : '${e.status} · ${e.duration.inMilliseconds} ms',
+            e.dropped ? 'dropped' : (e.neverAnswered ? 'no answer' : '${e.status} · ${e.duration.inMilliseconds} ms'),
             style: TextStyle(color: e.neverAnswered ? colors.statusWarning : colors.forStatus(e.status), fontWeight: FontWeight.w600, fontSize: 12),
           ),
         ],
@@ -123,9 +124,16 @@ class _EntryTile extends StatelessWidget {
         if (e.requestBody.isNotEmpty) _block(context, 'Request body', e.requestBody),
         if (e.responseBody.isNotEmpty) _block(context, 'Answer body', e.responseBody),
         if (e.neverAnswered)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: InfoBanner(kind: BannerKind.warning, message: 'The timeout scenario held this connection open and sent nothing.'),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: InfoBanner(
+              kind: BannerKind.warning,
+              message: e.dropped
+                  ? 'The network profile closed this connection without an answer.'
+                  : (e.network != null && e.scenario?.startsWith('timeout') != true
+                      ? 'The network profile held this connection open and sent nothing.'
+                      : 'The timeout scenario held this connection open and sent nothing.'),
+            ),
           ),
       ],
     );

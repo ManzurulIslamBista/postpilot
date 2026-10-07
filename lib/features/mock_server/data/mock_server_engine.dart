@@ -48,8 +48,14 @@ final class MockLogEntry {
   final Map<String, String> requestHeaders;
   final String requestBody;
 
-  /// The answer's body, masked and cut.
+  /// The answer's body, masked and cut. When the network cut it off, only what was sent.
   final String responseBody;
+
+  /// What the network profile did to this request (`3G: +312 ms, 750 kbit/s`, `Lossy: connection dropped`), null for nothing.
+  final String? network;
+
+  /// The server closed the connection without answering (a network profile did it), as opposed to holding it open.
+  final bool dropped;
 
   const MockLogEntry({
     required this.at,
@@ -62,6 +68,8 @@ final class MockLogEntry {
     this.requestHeaders = const {},
     this.requestBody = '',
     this.responseBody = '',
+    this.network,
+    this.dropped = false,
   });
 
   /// The server never answered this one (the timeout scenario).

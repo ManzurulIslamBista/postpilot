@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'generated_files_writer_result.dart';
@@ -66,4 +67,20 @@ Future<WriteFilesResult> writeFilesToFolder(
     if (exists) overwritten.add(path);
   }
   return WriteFilesResult(written: written, overwritten: overwritten, skipped: skipped);
+}
+
+/// Generated source is small; a bigger file is not one of ours and is not worth diffing.
+const _maxReadBytes = 2 * 1024 * 1024;
+
+Future<Map<String, String>> readFilesInFolder(String folder, Iterable<String> paths) async {
+  final base = await _base(folder);
+  final targets = {for (final path in paths) path: _target(base, path)};
+  final contents = <String, String>{};
+  for (final entry in targets.entries) {
+    final file = File(entry.value);
+    if (await FileSystemEntity.type(file.path) != FileSystemEntityType.file) continue;
+    if (await file.length() > _maxReadBytes) continue;
+    contents[entry.key] = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+  }
+  return contents;
 }

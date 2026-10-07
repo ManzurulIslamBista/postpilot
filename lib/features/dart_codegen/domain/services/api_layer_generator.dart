@@ -3,6 +3,8 @@ import '../../../git_sync/domain/services/secret_names.dart';
 import '../entities/generated_file.dart';
 import 'dart_model_generator.dart';
 import 'dart_names.dart';
+import 'state_layer.dart';
+import 'state_layer_generator.dart';
 
 enum ApiBodyKind { none, json, text, form, urlEncoded, graphql }
 
@@ -68,18 +70,27 @@ final class ApiLayerOptions {
   /// Make every DTO field nullable and optional (see [DartModelOptions.allNullable]).
   final bool allNullable;
 
+  /// A presentation layer on top of the repositories (or data sources): one view model, set of notifiers or set of cubits
+  /// per group. [StateLayerStyle.none] writes nothing more.
+  final StateLayerStyle stateLayer;
+
   const ApiLayerOptions({
     this.packageName = 'app',
     this.modelStyle = DartModelStyle.plain,
     this.domainLayer = true,
     this.allNullable = false,
+    this.stateLayer = StateLayerStyle.none,
   });
 }
 
 final class ApiLayerResult {
   final List<GeneratedFile> files;
   final List<String> notes;
-  const ApiLayerResult(this.files, this.notes);
+
+  /// The DTO files the layer wrote, by path, with the classes in them: what "regenerate with diff" compares.
+  final Map<String, ApiModel> models;
+
+  const ApiLayerResult(this.files, this.notes, {this.models = const {}});
 }
 
 /// Generates a feature-first Dart API layer from a collection: a Dio data
@@ -160,10 +171,35 @@ final class ApiLayerGenerator {
         {for (final op in ops) ...op.modelImports}.map((p) => "import 'package:$pkg/$p';").toList()..sort();
 
     final registrations = <String>[];
+    final stateGroups = <StateGroup>[];
     groups.forEach((group, ops) {
       final snake = DartNames.snake(group);
       final dsPath = 'lib/features/$feature/data/datasources/${snake}_remote_data_source.dart';
       files.add(GeneratedFile(dsPath, _dataSource(group, ops, modelImports(ops), pkg)));
+      if (options.stateLayer != StateLayerStyle.none) {
+        // The presentation layer calls the repository; without the domain layer, the data source (same method signatures).
+        final sourceImport = options.domainLayer
+            ? "import 'package:$pkg/features/$feature/domain/repositories/${snake}_repository.dart';"
+            : "import 'package:$pkg/features/$feature/data/datasources/${snake}_remote_data_source.dart';";
+        stateGroups.add(StateGroup(
+          name: group,
+          sourceType: options.domainLayer ? '${group}Repository' : '${group}RemoteDataSource',
+          imports: [sourceImport, ...modelImports(ops)],
+          operations: [
+            for (final op in ops)
+              StateOperation(
+                name: op.methodName,
+                stem: op._stem,
+                title: op.title,
+                request: '${op.httpMethod} ${op.docPath}',
+                signature: _signature(op),
+                callArguments: _callArgs(op),
+                resultType: op.responseType,
+                isAction: op.httpMethod != 'GET' && op.httpMethod != 'HEAD',
+              ),
+          ],
+        ));
+      }
       registrations.add('    ..registerLazySingleton<${group}RemoteDataSource>(() => ${group}RemoteDataSource(sl<Dio>()))');
       if (options.domainLayer) {
         files
@@ -179,6 +215,13 @@ final class ApiLayerGenerator {
       }
     });
     files.add(GeneratedFile('lib/features/$feature/${feature}_injection.dart', _injection(feature, registrations, groups, pkg, options.domainLayer)));
+    if (stateGroups.isNotEmpty) {
+      const states = StateLayerGenerator();
+      files.addAll(states.sharedFiles(options.stateLayer));
+      for (final group in stateGroups) {
+        files.add(states.group(group, style: options.stateLayer, feature: feature, packageName: pkg));
+      }
+    }
 
     final bases = {for (final r in requests) _split(r.url).base};
     if (bases.length > 1) {
@@ -194,7 +237,8 @@ final class ApiLayerGenerator {
     }
     _noteUntranslated(groups, notes);
     notes.add('Add `dio` to pubspec.yaml${options.modelStyle == DartModelStyle.plain ? '' : ' (and the model style packages, then run build_runner)'}.');
-    return ApiLayerResult(files, notes);
+    if (stateGroups.isNotEmpty) notes.add(const StateLayerGenerator().usageNote(options.stateLayer, stateGroups.first));
+    return ApiLayerResult(files, notes, models: plan.models);
   }
 
   /// A use case's class and file name must be unique across the whole collection,
@@ -589,10 +633,12 @@ final class ApiLayerGenerator {
     String feature,
     Set<String> imports,
   ) {
-    final modelOptions = DartModelOptions(style: options.modelStyle, allNullable: options.allNullable, avoidClassNames: _importedTypes);
+    // The state layer imports its package (and call_state.dart) next to the DTO files, so a DTO must not take their names.
+    final avoid = {..._importedTypes, ...options.stateLayer.reservedNames};
+    final modelOptions = DartModelOptions(style: options.modelStyle, allNullable: options.allNullable, avoidClassNames: avoid);
     final result = const DartModelGenerator().generate([sample], rootName: rootName, options: modelOptions);
     if (result.classCount == 0) return null;
-    final wanted = DartNames.className(rootName, fallback: 'Root', also: _importedTypes);
+    final wanted = DartNames.className(rootName, fallback: 'Root', also: avoid);
     var root = wanted;
     var path = 'lib/features/$feature/data/models/${DartNames.snake(root)}.dart';
     var n = 2;

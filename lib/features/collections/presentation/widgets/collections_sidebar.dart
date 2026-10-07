@@ -23,6 +23,7 @@ import '../../../import_export/presentation/import_any_dialog.dart';
 import '../../../import_export/presentation/openapi_refresh_dialog.dart';
 import '../../../test_suggestions/presentation/widgets/openapi_tests_dialog.dart';
 import '../../../mock_server/presentation/mock_server_dialog.dart';
+import '../../../traffic_recorder/presentation/traffic_recorder_dialog.dart';
 import '../../../request_builder/domain/entities/api_request_entity.dart';
 import '../../../shell/presentation/shell_view_model.dart';
 import '../../../workplace/presentation/view_models/workplace_view_model.dart';
@@ -388,6 +389,7 @@ class _CollectionTile extends StatelessWidget {
                 PopupMenuItem(value: 'openapi_tests', child: Text('Generate tests from OpenAPI…')),
                 PopupMenuItem(value: 'dart_api', child: Text('Generate Dart API layer…')),
                 PopupMenuItem(value: 'mock_server', child: Text('Mock server…')),
+                PopupMenuItem(value: 'traffic_recorder', child: Text('Traffic recorder…')),
                 PopupMenuItem(value: 'ci', child: Text('Set up CI…')),
                 PopupMenuDivider(),
                 PopupMenuItem(value: 'export', child: Text('Export as Postman JSON')),
@@ -430,6 +432,8 @@ class _CollectionTile extends StatelessWidget {
         await DartStudioDialog.show(context, collectionId: collection.id, initialTab: 1);
       case 'mock_server':
         await MockServerDialog.show(context, collectionId: collection.id);
+      case 'traffic_recorder':
+        await TrafficRecorderDialog.show(context);
       case 'ci':
         await CiSetupDialog.show(context, collectionName: collection.name);
       case 'run_history':

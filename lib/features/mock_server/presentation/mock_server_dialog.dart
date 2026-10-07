@@ -9,7 +9,8 @@ import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/tool_dialog.dart';
 import '../../collections/presentation/view_models/collections_view_model.dart';
 import '../../device_helper/data/network_info.dart';
-import '../../device_helper/presentation/device_helper_dialog.dart';
+import '../../device_helper/presentation/device_helper_launcher.dart';
+import 'mock_network_menu.dart';
 import 'mock_openapi_tab.dart';
 import 'mock_requests_tab.dart';
 import 'mock_routes_tab.dart';
@@ -97,6 +98,9 @@ class _MockServerDialogState extends State<MockServerDialog> {
           width: 960,
           height: 680,
           headerActions: [
+            // Slow, lossy, flapping or offline: a menu in the header so the server controls keep their room. Applies to the next
+            // request, running or not.
+            if (_vm.isSupported) MockNetworkMenu(profile: _vm.network.global, onChanged: _vm.setGlobalNetwork),
             if (running)
               Container(
                 margin: const EdgeInsets.only(right: 6),
@@ -213,7 +217,7 @@ class _MockServerDialogState extends State<MockServerDialog> {
                                   IconButton(
                                     icon: const Icon(Icons.phonelink_setup, size: 18),
                                     tooltip: 'Open on a phone or emulator',
-                                    onPressed: () => DeviceHelperDialog.show(context, initialPort: _vm.port),
+                                    onPressed: () => openDeviceHelper(context, initialPort: _vm.port),
                                   ),
                                 ],
                               ),

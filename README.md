@@ -1,6 +1,8 @@
-# 🚀 PostPilot
-
 <div align="center">
+
+<img src="docs/assets/banner.svg" alt="PostPilot: the API client for Odoo, Flutter and Git teams" width="100%">
+
+<br>
 
 ![Flutter](https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white)
 ![Dart](https://img.shields.io/badge/dart-%230175C2.svg?style=for-the-badge&logo=dart&logoColor=white)
@@ -8,16 +10,90 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)
 [![Build & Release](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/ManzurulIslamBista/postpilot/actions/workflows/build-and-release.yml)
 
-**A modern, lightweight, developer-first API client and Postman alternative built with Flutter.**  
-Designed for speed, offline-first reliability, Git-based version control, and real-time team collaboration.
+**Local-first. No account. No hosted backend.** Your data stays on your device and in the repositories you choose.
 
-[Downloads](#-download-latest-release) • [Features](#-key-features) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [Contributing](#-contributing)
+[Why PostPilot](#-what-makes-postpilot-different) • [Features](#-features) • [Download](#-download-latest-release) • [Build from source](#-build-from-source) • [Contributing](#-contributing)
+
+<img src="docs/assets/showcase.svg" alt="PostPilot screenshots: request builder, command palette, response tools, Dart models, Odoo Studio, runner, safety, themes" width="900">
 
 </div>
 
----
+## 🔥 What makes PostPilot different
+
+PostPilot covers what you expect from an API client (requests, collections, environments, tests, import/export). On top of that it is built around three workflows that general-purpose clients do not target:
+
+| | Only in PostPilot | What you get |
+| :-: | :-- | :-- |
+| 🧩 | **Odoo Studio** | Connect to an Odoo 19+ server (External JSON-2 API), explore models and fields, build domains visually, build `create`/`write` payloads, **check a request body against the live schema**, migrate old XML-RPC / JSON-RPC calls to JSON-2. |
+| 🎯 | **Made for Flutter / Dart** | JSON → Dart models (plain, `json_serializable`, `freezed`), a whole **API layer** (Dio data source, DTOs, repository, use cases) and its tests generated from a collection, a **typed Flutter client for Odoo** (Provider, Riverpod or BLoC), environment export to `.env` / `--dart-define` / `AppConfig`, and a device helper (`10.0.2.2`, LAN address, QR code, `adb reverse`). |
+| 🔀 | **Git is the sync layer** | A workspace is one `workspace.json` in your own GitHub repository: branches, commit, pull, push and 3-way merge inside the app. Every push shows what changed with a commit message written for you, and warns instead of overwriting a teammate. |
+| 🔐 | **Secrets never reach Git** | Secret values live in `workspace.local.json` on your device. Git only carries `workspace.json`, so teammates fill in their own. |
+| 🛡️ | **Production lock** | An environment named `prod` / `live` (or a production host) turns red and asks before `POST`/`PUT`/`PATCH`/`DELETE`, Odoo writes (`create`, `write`, `unlink`) and GraphQL mutations. Reads over `POST` (Odoo `search_read`, GraphQL `query`) still run. |
+| 🤖 | **CLI + MCP server for AI agents** | Run a workspace headless with JUnit / JSON / Markdown reports, or expose it to AI agents over MCP. Output is secret-masked, and an agent can neither lift the production lock nor redirect a request to another host. [Details](docs/cli.md) |
+| 🚦 | **CI and run triage** | Generate the GitHub Actions / GitLab CI / shell workflow in one click. Failed runs are **grouped by cause and compared with the run before**, so you see what changed. |
+| 🎙️ | **Traffic recorder** | Point your app at a local recorder and turn what it really calls into a collection. No certificate or proxy setting. |
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
+
+<details>
+<summary><b>🖼️ Screenshot gallery</b> (static)</summary>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/command-palette.png" alt="Command palette"><br><sub><b>Command palette</b> (<code>Alt+Shift+P</code>): every tool, request and environment in one search.</sub></td>
+    <td width="50%"><img src="docs/screenshots/response-tools.png" alt="Response tools"><br><sub><b>Response tools:</b> JSON tree with one-click "use as variable" and "add test", table, JWT decode, compare, schema, Dart model.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/dart-models.png" alt="Dart model generator"><br><sub><b>Dart models</b> from any response: plain, <code>json_serializable</code> or <code>freezed</code>.</sub></td>
+    <td><img src="docs/screenshots/odoo-studio.png" alt="Odoo Studio domain builder"><br><sub><b>Odoo Studio:</b> visual domain builder with JSON and Python output.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/collection-runner.png" alt="Collection runner"><br><sub><b>Collection runner</b> with data files, iterations and a Triage tab.</sub></td>
+    <td><img src="docs/screenshots/safety.png" alt="Safety settings"><br><sub><b>Safety:</b> production lock and device-only secrets.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/light-theme.png" alt="Light theme"><br><sub>Light and dark themes (or follow the system).</sub></td>
+    <td align="center"><img src="docs/screenshots/mobile.png" alt="Phone layout" width="220"><br><sub>The same app on a phone.</sub></td>
+  </tr>
+</table>
+
+</details>
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
+
+## ✨ Features
+
+**Requests**
+- `GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS`; bodies: JSON / text / XML / HTML, form-data (with file upload), `x-www-form-urlencoded`, GraphQL and binary.
+- Auth: Bearer, Basic, API Key, Digest, AWS Signature v4, JWT Bearer and OAuth 2.0 (Client Credentials, Password, Authorization Code with PKCE). Tokens are fetched and refreshed by themselves, and a `401` can re-run a login request.
+- `{{variables}}` everywhere with live preview; global, environment and collection scopes; inherited headers, auth and tests per collection or folder.
+- Code snippets for 17 targets (cURL, Python, JavaScript, Node, Go, Rust, Swift, Kotlin, Java, C#, PHP, Ruby, Dart, PowerShell and more), cookie jar, console and history with search, replay and HAR export.
+
+**Testing and automation**
+- Assertions and value extractors per request, JSON Schema checks, and flow controls: poll until, retry, run if, always run, and fetch all pages.
+- Collection runner with iterations, CSV / JSON data files, reordering and subsets. Test suggestions from a response.
+- Mock server (saved examples answer real HTTP calls), WebSocket and Server-Sent Events, GraphQL explorer with schema browsing.
+
+**Import, export and sharing**
+- Import Postman (collections and environments, `pm.*` scripts translated), OpenAPI / Swagger, Insomnia, HAR and cURL. Export Postman, OpenAPI, cURL scripts and full backups.
+- Update a collection from a newer OpenAPI spec without touching your edits. Generate API docs from a collection.
+- Starter templates (REST, auth and status codes, GraphQL, Odoo) and a six-step quick tour.
+
+**Platforms**
+- Windows, macOS, Linux, Android and the web, from one Flutter codebase. Resizable panels on desktop, a stacked layout on phones.
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
 
 ## 📥 Download Latest Release
+
+<p align="center">
+  <a href="https://github.com/ManzurulIslamBista/postpilot/releases/latest"><img src="docs/assets/download.svg" alt="Download the latest PostPilot release" width="100%"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ManzurulIslamBista/postpilot/releases/latest"><img src="https://img.shields.io/github/v/release/ManzurulIslamBista/postpilot?style=for-the-badge&color=FF6C37&label=latest" alt="Latest release"></a>
+  <a href="https://github.com/ManzurulIslamBista/postpilot/releases"><img src="https://img.shields.io/github/downloads/ManzurulIslamBista/postpilot/total?style=for-the-badge&color=F03E7E&label=downloads" alt="Total downloads"></a>
+</p>
 
 Choose the optimized package for your operating system and hardware architecture:
 
@@ -36,214 +112,41 @@ Choose the optimized package for your operating system and hardware architecture
 | 🐧 **Linux** | x86_64 / amd64 | Debian Package (`.deb`) | [**Download PostPilot_Linux_amd64.deb**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Linux_amd64.deb) |
 | 🐧 **Linux** | x86_64 / amd64 | Portable Archive (`.tar.gz`) | [**Download PostPilot_Linux_x64.tar.gz**](https://github.com/ManzurulIslamBista/postpilot/releases/latest/download/PostPilot_Linux_x64.tar.gz) |
 
----
+<img src="docs/assets/divider.svg" alt="" width="100%">
 
-## 📖 Overview
+## 🛠️ Build from source
 
-**PostPilot** is an open-source, cross-platform API testing and development environment crafted with Flutter and Dart. It combines the ease of use of modern API clients with powerful developer workflows such as workspaces and collections that live in Git repositories (pull, push, merge), and local-first SQLite persistence. There is no hosted backend: your data stays on your device and in the repositories you choose.
+Needs the [Flutter SDK](https://docs.flutter.dev/get-started/install) (Dart `^3.12.0`) and, for Windows desktop, Visual Studio with "Desktop development with C++".
 
----
+```bash
+git clone https://github.com/ManzurulIslamBista/postpilot.git
+cd postpilot
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs   # database and model code
+flutter run -d windows        # or macos, linux, chrome
+```
 
-## ✨ Key Features
+Run the checks with `flutter analyze` and `flutter test`.
 
-### 🛠️ Advanced Request Builder
-- **HTTP Methods Supported:** `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`.
-- **Flexible Request Bodies:** JSON, form-data, x-www-form-urlencoded, raw text, and binary.
-- **Dynamic Parameter Resolution:** Use `{{variable}}` syntax in URLs, headers, and body payloads.
-- **Inherited & Custom Auth:** Support for Bearer Token, Basic Auth, API Key, and parent-collection inheritance.
-
-### 📁 Collections & Hierarchical Organization
-- Group requests into structured collections and nested folders.
-- Configure collection-level authentication and headers that propagate to child requests.
-- Generate interactive API documentation directly from your collections.
-
-### 🌐 Environments & Variable Scoping
-- **Global Variables:** Accessible across all requests.
-- **Environment Variables:** Easily switch between `Development`, `Staging`, and `Production`.
-- Dynamic variable resolution with live preview.
-
-### 🔄 Direct Git Synchronization
-- Connect collections directly to remote Git repositories (GitHub / GitLab / self-hosted).
-- Branch management: checkout, create, and switch branches.
-- Commit, pull, and push collection changes with built-in 3-way merge conflict handling.
-
-### 👥 Teams Through Git
-- Teams collaborate the way they already do: through the Git repository (and its access rules).
-- **Workplaces** keep several independent workspaces side by side, each stored as one `workspace.json`
-  and optionally connected to its own GitHub repository (pull / push).
-- **Collections** can each be linked to their own repository, branch and folder, and are synced separately.
-
-### 🍪 Cookie Jar & Network Inspector
-- Built-in persistent cookie management.
-- Live network console logging request/response timestamps, headers, payloads, and latency metrics.
-
-### 📜 Pre-Request & Test Scripting
-- Write scripts to run before sending requests or validate assertions on responses.
-- Store response examples and historical requests.
-
-### 📦 Import & Export
-- Import and export collections seamlessly (Postman collection format and OpenAPI/Swagger compatible).
-
-### 🧰 Developer Tools (press `Ctrl+Shift+P`)
-One command palette finds every tool, request (by name, URL or body) and environment.
-- **Response tools** (the wand beside a response): JSON tree with one-click "use as variable" / "add test", table and CSV, JWT and timestamp decoding, compare with the previous response, JSON Schema check (also available as a saved test), network timing, **Dart models**, an optional AI helper (your own Anthropic key) and a secret-masked bug report.
-- **Dart Studio**: classes from JSON (plain, `json_serializable`, `freezed`; several samples are merged so optional fields are detected) and a whole API layer (Dio data source, DTOs, repository, use cases) generated from a collection.
-- **Odoo Studio** (Odoo 19+ External JSON-2 API): connect and save as an environment, ready-made requests per model, model/field explorer, visual domain builder, migration of old XML-RPC/JSON-RPC calls, readable Odoo errors, and Dart classes from `fields_get`.
-- **Mock server** (serves saved examples as a live API), **Realtime** (WebSocket and Server-Sent Events), **GraphQL explorer** (introspection to ready-to-run queries), **Device helper** (`10.0.2.2`, LAN address and QR code, `adb reverse`), **starter templates** and a quick tour.
-- **Safety**: a Production environment turns red and asks before POST/PUT/PATCH/DELETE; secret values stay in `workspace.local.json` on your device, never in the `workspace.json` that Git carries.
-- **Git**: every push shows what changed with a commit message written for you, and warns instead of silently overwriting a teammate's push. A collection can be updated from a newer OpenAPI spec without touching your edits.
-
-### 🖥️ Command line and AI agents
-Run a workspace in CI, or expose it to an AI agent, with plain Dart (no UI):
+**Command line and agents** (plain Dart, no UI):
 
 ```bash
 dart run bin/postpilot.dart run workspace.json --env Staging --report junit --out report.xml
-dart run bin/postpilot.dart list workspace.json
-dart run bin/postpilot.dart mcp workspace.json --env Staging     # Model Context Protocol over stdio
+dart run bin/postpilot.dart mcp workspace.json --env Staging     # MCP server over stdio
 ```
 
-Exit codes: `0` all passed; `1` a request or test failed, or nothing was verified (every selected request was skipped, or any was with `--fail-on-skip`); `2` usage or file error, no request matched, or the production lock refused the run. Secrets are never in the shared file: pass them as `POSTPILOT_VAR_<name>` environment variables in CI (or keep `workspace.local.json` beside the file). Add the MCP server to an agent such as Claude Code with `claude mcp add postpilot -- dart run bin/postpilot.dart mcp workspace.json --env Staging`.
+All options, exit codes, the production lock and agent safety are in [docs/cli.md](docs/cli.md).
 
-Options for `run` and `mcp`: `--env`, `--collection`, `--folder`, `--var name=value`, `--bail`, `--timeout <s>`, `--delay <ms>`, `--insecure`, `--report console|junit|json|markdown`, `--out <file>`, `--no-color`, and the safety options below. Only `run` takes these:
+<img src="docs/assets/divider.svg" alt="" width="100%">
 
-- `--report markdown` prints a Markdown summary (the verdict, the failures grouped by cause with a hint each, the failing requests); `--out <file>` writes it to a file, `--markdown-out <file>` writes it in addition to whatever `--report` prints, and when `$GITHUB_STEP_SUMMARY` is set (GitHub Actions) it is appended there by itself, so a run shows its summary on the job page without a flag.
-- `--iterations <n>` repeats the whole run `n` times (1-1000). `--data <file>` feeds each pass one row of a CSV file (header row; comma, semicolon, tab or pipe) or a JSON array of objects: `{{column}}` in a request becomes that row's value, a column beats a `--var` of the same name, and the number of rows replaces `--iterations`. Each pass starts from the same variables: what a request saved in one pass is not seen by the next (the app's runner keeps it in the environment between passes). `--bail` ends the whole run after the first pass with a failure; reports and run records name the pass of each request.
-- `--records-dir <dir>` writes a run record per collection (`postpilot-run-<time>-<collection>.json`, masked, addresses without their query string) that the app imports with "Import CLI run" in a collection's Run history, so a CI failure can be grouped by cause and compared with earlier runs there. A file that cannot be written is reported on stderr and does not change the exit code.
-- The app can write the whole GitHub Actions workflow for you: **Set up CI...** in a collection's menu or the workplace menu (also GitLab CI and a shell script), and **Monitor...** runs a collection every few minutes while the app is open.
+## 🏗️ Under the hood
 
-- **Production lock** (on by default). While the environment looks like production (a name with `prod`, `production`, `prd` or `live`) or a request goes to a production host, a request that changes data is refused before anything is sent: `POST`, `PUT`, `PATCH`, `DELETE`, an Odoo write (`create`, `write`, `unlink`, `action_*`...) and a GraphQL mutation. Reads still run, including reads over `POST` (Odoo `search_read`, `read`, `search_count`, `fields_get`..., GraphQL `query` and `subscription`). `run` exits `2` and lists the blocked requests; in `mcp` the tool call returns an error that says so. `--allow-production` sends them anyway (only the person who starts the process can pass it, an agent cannot), `--production-word <w>` adds a word that marks an environment (repeatable), and `--production-host <host>` marks a host as production under any environment name (repeatable; `api.acme.com`, `*.acme.com` and `acme.com:8443` are all understood, and a host covers its subdomains). The app has the same lock in Settings > Safety, with its own list of production hosts.
-- **Self-renewing auth.** OAuth 2.0 requests run: Client Credentials and Password get their token by themselves (a stored token that is still valid is used as it is, a refresh token is used when there is one), and a token that expires during the run is renewed before the request that would have been rejected, with the same code the app uses. The client secret comes from `POSTPILOT_VAR_<name>` or `workspace.local.json`. Renewed tokens live in memory for the run (a CI job has nowhere to save them), and the output says when one was renewed, never what it was. A collection or folder set to "on 401/403 run request X" does that here too: X runs (subject to the production lock), its extractors save the token variable, and the rejected request is sent once more, once. In `mcp` the same applies, and the variables an agent passes can never change where a token request goes.
-- **Skipped requests.** OAuth 2.0 Authorization Code needs a person to sign in once in the app: without a stored token (or a refresh token) it is skipped, listed with the reason, as is an OAuth 2.0 auth with no token URL. A run in which everything was skipped exits `1`, and `--fail-on-skip` makes any skipped request fail the run. Digest auth works: the `401` challenge is answered with the same code the app uses.
-- **Agents.** Everything the MCP server returns is secret-masked: URLs, headers, bodies, error texts and the value a failed check saw. The `variables` an agent passes to `run_request` are taken as plain text (no `{{...}}`) and can never change the scheme, host or port a request is sent to, so a prompt-injected "set `baseUrl` to https://evil.example" cannot make the server send your Bearer token or API key there; use `--var` (yours, trusted) to point at another host.
-
----
-
-## 🏗️ Architecture & Tech Stack
-
-PostPilot is built following **Clean Architecture** principles to ensure modularity, maintainability, and testability.
-
-```
-lib/
-├── app.dart                    # Application entry point & theme setup
-├── main.dart                   # Main launcher & dependency initialization
-├── core/                       # Core shared modules
-│   ├── config/                 # App and backend configurations
-│   ├── constants/              # Global constants
-│   ├── database/               # Drift (SQLite) DAOs & table definitions
-│   ├── di/                     # GetIt dependency injection setup
-│   ├── network/                # Dio client, cookies, and adapters
-│   ├── shortcuts/              # Keyboard shortcuts
-│   ├── theme/                  # Modern UI themes and styles
-│   └── utils/                  # Dynamic variables & helpers
-└── features/                   # Feature modules (Clean Architecture)
-    ├── collections/            # Collections, folders, and request tree
-    ├── console/                # Network logs & live console
-    ├── cookies/                # Cookie manager
-    ├── documentation/          # Automated documentation viewer
-    ├── environments/           # Environment and variable management
-    ├── git_sync/               # Git integration & version control engine
-    ├── history/                # Request history & replay
-    ├── import_export/          # Postman / OpenAPI import & export
-    ├── request_builder/        # HTTP client interface & response visualizer
-    ├── scripting/              # Pre/post request scripts
-    ├── settings/               # App configuration & preferences
-    ├── shell/                  # Navigation rail & split-view workbench
-    └── workplace/              # Workspaces stored as workspace.json, with Git pull/push
-```
-
-### Core Libraries & Tools
-- **UI Framework:** [Flutter](https://flutter.dev) (Desktop & Web ready)
-- **Local Persistence:** [Drift](https://drift.simonbinder.eu/) (Reactive SQLite for Dart) & [drift_flutter](https://pub.dev/packages/drift_flutter)
-- **HTTP Engine:** [Dio](https://pub.dev/packages/dio) with [cookie_jar](https://pub.dev/packages/cookie_jar)
-- **Dependency Injection:** [GetIt](https://pub.dev/packages/get_it)
-- **Secure Storage:** [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage)
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) (version `^3.12.0` or higher)
-- Dart SDK `^3.12.0`
-- C++ build tools (for Windows desktop: Visual Studio with "Desktop development with C++")
-
-### Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/ManzurulIslamBista/postpilot.git
-   cd postpilot
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   flutter pub get
-   ```
-
-3. **Generate database and model files (if modified):**
-   ```bash
-   dart run build_runner build --delete-conflicting-outputs
-   ```
-
-4. **Run the application:**
-   - **Windows:**
-     ```bash
-     flutter run -d windows
-     ```
-   - **macOS:**
-     ```bash
-     flutter run -d macos
-     ```
-   - **Linux:**
-     ```bash
-     flutter run -d linux
-     ```
-
----
-
-## 🗄️ Data & Git
-
-PostPilot is local-first: everything is stored in SQLite on your device (in the browser's storage on the web).
-There is nothing to set up on a server.
-
-To share work, connect a **workplace** (a whole workspace) or a single **collection** to a GitHub repository.
-Use a GitHub personal access token with the `repo` scope, and keep real credentials out of shared files.
-
----
-
-## 🧪 Testing
-
-Run static analysis and unit tests using Flutter tooling:
-
-```bash
-# Run static analysis
-flutter analyze
-
-# Run tests
-flutter test
-```
-
----
+Clean Architecture with feature modules under `lib/features/`. [Flutter](https://flutter.dev), [Drift](https://drift.simonbinder.eu/) (SQLite), [Dio](https://pub.dev/packages/dio), [GetIt](https://pub.dev/packages/get_it) and [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage). Everything is stored in SQLite on your device (browser storage on the web). To share work, link a workplace or a single collection to a GitHub repository with a personal access token (`repo` scope).
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome!
-Feel free to check the [issues page](https://github.com/ManzurulIslamBista/postpilot/issues).
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'feat: add AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 🏢 Maintained by
-
-**PostPilot** is developed and maintained by **[Bista Solutions Inc.](https://www.bistasolutions.com/)**
-
----
+Issues and pull requests are welcome on the [issues page](https://github.com/ManzurulIslamBista/postpilot/issues). Fork, create a feature branch, open a pull request.
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE) - &copy; 2026 **Bista Solutions Inc.** All rights reserved.
+[MIT](LICENSE) © 2026 **[Bista Solutions Inc.](https://www.bistasolutions.com/)**, who develop and maintain PostPilot.

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 28" width="1200" height="28" role="presentation">
+<defs>
+<linearGradient id="wing" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FF4D8D"/><stop offset="1" stop-color="#FF8A3D"/></linearGradient>
+<linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF6C37"/><stop offset="1" stop-color="#E0306F"/></linearGradient>
+<linearGradient id="tail" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C21F66"/><stop offset="1" stop-color="#8E1A5B"/></linearGradient>
+<linearGradient id="brand" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF7A45"/><stop offset="1" stop-color="#FF4D8D"/></linearGradient>
+<linearGradient id="line" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF7A45" stop-opacity="0"/><stop offset=".25" stop-color="#FF7A45"/><stop offset=".75" stop-color="#FF4D8D"/><stop offset="1" stop-color="#FF4D8D" stop-opacity="0"/></linearGradient>
+</defs>
+<style>
+.fly{animation:fly 9s linear infinite}
+@keyframes fly{from{transform:translateX(-50px)}to{transform:translateX(1230px)}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+<rect x="0" y="13" width="1200" height="2" rx="1" fill="url(#line)" opacity=".75"/>
+<g class="fly"><g transform="translate(0,14) rotate(43) scale(.05) translate(-518,-523)"><polygon points="800,236 236,486 446,586" fill="url(#wing)"/>
+<polygon points="800,236 446,586 592,810" fill="url(#body)"/>
+<polygon points="446,586 592,810 396,742" fill="url(#tail)"/>
+<polyline points="800,236 446,586" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="5" stroke-linecap="round"/></g></g>
+</svg>

@@ -26,6 +26,8 @@ import 'package:postpilot/features/import_export/domain/usecases/refresh_openapi
 import 'package:postpilot/features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
 import 'package:postpilot/features/mock_server/presentation/mock_server_view_model.dart';
 import 'package:postpilot/features/odoo/data/odoo_client.dart';
+import 'package:postpilot/features/odoo/data/odoo_doctor.dart';
+import 'package:postpilot/features/odoo/data/odoo_smart_resolver.dart';
 import 'package:postpilot/features/odoo/domain/usecases/create_odoo_workspace_usecase.dart';
 import 'package:postpilot/features/odoo/presentation/view_models/odoo_studio_view_model.dart';
 import 'package:postpilot/features/realtime/presentation/realtime_view_model.dart';
@@ -291,6 +293,8 @@ final _wirings = <_Wiring>[
   _wire<GraphqlExplorerViewModel>(),
   _wire<RealtimeViewModel>(),
   _wire<OdooClient>(),
+  _wire<OdooSmartReferenceResolver>(),
+  _wire<OdooDoctor>(),
   _wire<CreateOdooWorkspaceUseCase>(),
   _wire<OdooStudioViewModel>(),
 ];

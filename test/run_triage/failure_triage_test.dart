@@ -119,7 +119,8 @@ void main() {
 
   test('an empty run is fine', () {
     final r = FailureTriage.analyse(const []);
-    expect((r.totalResults, r.failedResults, r.groups), (0, 0, isEmpty));
+    expect((r.totalResults, r.failedResults), (0, 0));
+    expect(r.groups, isEmpty);
   });
 
   test('network hints name the class of the failure', () {

@@ -198,13 +198,17 @@ class _ProbeCard extends StatelessWidget {
               message: 'Sending it again may create or change a record on the server a second time. '
                   'Where the environment looks like production, PostPilot asks before it goes out.',
             ),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              controlAffinity: ListTileControlAffinity.leading,
-              value: vm.unsafeOptIn,
-              onChanged: vm.probing ? null : (v) => vm.setUnsafeOptIn(v ?? false),
-              title: Text('I understand: send this $method request again', style: context.textStyles.body),
+            // Its own Material: a ListTile paints on the nearest one, and the card has a background colour.
+            Material(
+              type: MaterialType.transparency,
+              child: CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: vm.unsafeOptIn,
+                onChanged: vm.probing ? null : (v) => vm.setUnsafeOptIn(v ?? false),
+                title: Text('I understand: send this $method request again', style: context.textStyles.body),
+              ),
             ),
           ],
           const SizedBox(height: 6),

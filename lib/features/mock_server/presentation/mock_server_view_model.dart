@@ -7,6 +7,7 @@ import '../data/mock_server_engine.dart';
 import '../domain/services/mock_backend.dart';
 import '../domain/services/mock_cors.dart';
 import '../domain/services/mock_example_handler.dart';
+import '../domain/services/mock_handler.dart';
 import '../domain/services/mock_http.dart';
 import '../domain/services/mock_pagination.dart';
 import '../domain/services/mock_routes.dart';

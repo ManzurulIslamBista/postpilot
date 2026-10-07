@@ -100,14 +100,18 @@ void main() {
       expect(r.headers['link'], allOf(contains('rel="prev"'), isNot(contains('rel="next"'))));
     });
 
-    test('the limit parameter sets the page size, and the schema maximum caps it', () {
+    test('the limit parameter sets the page size, and the schema maximum is enforced', () {
       final h = _handler();
       final three = _call(h, 'GET', '$_base/users', query: {'limit': ['3'], 'page': ['2']});
       expect(_ids(three), [4, 5, 6]);
       expect(_map(three)['totalPages'], 4);
-      final capped = _call(h, 'GET', '$_base/users', query: {'limit': ['100']});
-      expect(_map(capped)['limit'], 20, reason: 'maximum: 20');
-      expect(_ids(capped), hasLength(10));
+      // The schema's maximum is a limit of the request: 100 is refused, 20 (the most) answers every item.
+      final tooMany = _call(h, 'GET', '$_base/users', query: {'limit': ['100']});
+      expect(tooMany.status, 400);
+      expect(_map(tooMany)['message'], 'query.limit: must be at most 20');
+      final most = _call(h, 'GET', '$_base/users', query: {'limit': ['20']});
+      expect(_map(most)['limit'], 20);
+      expect(_ids(most), hasLength(10));
     });
 
     test('a page past the end is empty, not an error', () {

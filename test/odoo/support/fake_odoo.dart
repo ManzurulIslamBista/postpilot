@@ -257,7 +257,7 @@ class FakeOdoo implements ApiClient {
     final model = params['model'] as String;
     final method = params['method'] as String;
     final args = params['args'] is List ? List<Object?>.of(params['args'] as List) : <Object?>[];
-    final kwargs = params['kwargs'] is Map ? Map<String, Object?>.of(params['kwargs'] as Map) : <String, Object?>{};
+    final kwargs = params['kwargs'] is Map ? Map<String, Object?>.of((params['kwargs'] as Map).cast<String, Object?>()) : <String, Object?>{};
     try {
       var ids = const <int>[];
       if (_onRecords.contains(method)) {

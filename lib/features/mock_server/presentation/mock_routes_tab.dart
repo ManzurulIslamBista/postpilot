@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/method_badge.dart';
-import '../domain/services/mock_scenarios.dart';
 import 'mock_server_view_model.dart';
 
 /// The routes the server answers, each with the scenario it is under, and the address a device reaches the server at.

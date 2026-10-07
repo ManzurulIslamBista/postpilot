@@ -128,7 +128,7 @@ void main() {
     RunIfDecision decide(Map<String, String> variables) =>
         RunIfEvaluator.evaluate(post.flow.runIf, RunIfContext(resolver: VariableResolver.layered([variables])));
     expect(decide({'allowDataChanging': 'false'}).run, isFalse);
-    expect(decide({'allowDataChanging': 'false'}).reason, 'Skipped: {{allowDataChanging}} is "false", not "true"');
+    expect(decide({'allowDataChanging': 'false'}).reason, 'Skipped: {{allowDataChanging}} is "false", but this runs only when it equals "true"');
     expect(decide(const {}).run, isFalse);
     expect(decide({'allowDataChanging': 'true'}).run, isTrue);
   });

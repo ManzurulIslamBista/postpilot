@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:postpilot/core/network/api_client.dart';
 import 'package:postpilot/core/network/api_http_response.dart';
 import 'package:postpilot/features/odoo/data/odoo_client.dart';
 import 'package:postpilot/features/odoo/domain/services/odoo_json2.dart';

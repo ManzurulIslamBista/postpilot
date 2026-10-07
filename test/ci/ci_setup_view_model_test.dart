@@ -44,7 +44,7 @@ void main() {
     await db.collectionRepository.createCollection('Billing');
     final dev = await db.environmentRepository.create('Dev');
     final production = await db.environmentRepository.create('Production');
-    await db.environmentRepository.setActive(dev);
+    db.environments[0] = EnvironmentEntity(id: dev, name: 'Dev', isActive: true);
     Future<void> variable(int env, String key, {bool secret = false, bool enabled = true}) => db.environmentRepository.upsertVariable(
           EnvironmentVariableEntity(id: 0, environmentId: env, key: key, value: 'v', isSecret: secret, enabled: enabled),
         );

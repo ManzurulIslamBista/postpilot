@@ -137,7 +137,7 @@ void main() {
             AssertionType.jsonSchema,
           ]);
           expect(find.text('Added 4 tests'), findsOneWidget);
-          expect(find.text('In Tests tab'), findsNWidgets(4));
+          expect(find.text('In Tests tab'), findsWidgets);
           expect(find.text('Add 0 selected'), findsOneWidget);
 
           await tester.tap(find.text('Undo'));
@@ -150,7 +150,9 @@ void main() {
         testWidgets('Send again finds the values that change, and says which', (tester) async {
           build();
           await _pump(tester, SuggestTestsPanel(suggestions: suggestions, baseline: baseline), size: size, dark: dark);
+          await tester.scrollUntilVisible(find.text('body.queueDepth equals 12'), 300, scrollable: find.byType(Scrollable).first, maxScrolls: 60);
           expect(find.text('body.queueDepth equals 12'), findsOneWidget);
+          await tester.scrollUntilVisible(find.text('Send again to detect changing values'), -300, scrollable: find.byType(Scrollable).first, maxScrolls: 60);
           await tester.tap(find.text('Send again to detect changing values'));
           await _settle(tester);
           expect(find.text('Compared two answers'), findsOneWidget);

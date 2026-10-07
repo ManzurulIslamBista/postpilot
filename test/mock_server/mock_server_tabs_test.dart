@@ -84,7 +84,9 @@ void main() {
         ),
       ),
     ));
-    await tester.tap(find.text('open'));
+    await tester.ensureVisible(find.text('open'));
+    await tester.tap(find.text('open'), warnIfMissed: false);
+    await tester.pump();
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -104,6 +106,13 @@ void main() {
     await settle(tester);
   }
 
+  /// Taps [finder] after scrolling it into view, so a button below the fold of a small tab is really hit.
+  Future<void> tapVisible(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.tap(finder, warnIfMissed: false);
+    await tester.pump();
+  }
+
   Future<void> press(WidgetTester tester, String label) async {
     final finder = find.text(label);
     await tester.ensureVisible(finder);
@@ -115,6 +124,8 @@ void main() {
   Future<void> scrollTo(WidgetTester tester, Type tabType, Finder finder) async {
     final scrollable = find.descendant(of: find.byType(tabType), matching: find.byType(Scrollable)).first;
     await tester.scrollUntilVisible(finder, 150, scrollable: scrollable, maxScrolls: 60);
+    await tester.ensureVisible(finder);
+    await tester.pump();
   }
 
   Future<void> start(WidgetTester tester) async {
@@ -126,6 +137,7 @@ void main() {
     await tab(tester, 'From OpenAPI');
     await tester.enterText(find.byKey(const ValueKey('openapi-text')), shopOpenApiJson);
     await tester.pump();
+    await scrollTo(tester, MockOpenApiTab, find.text('Load document'));
     await press(tester, 'Load document');
     await tester.pump(const Duration(milliseconds: 200));
   }
@@ -209,6 +221,7 @@ void main() {
     await tab(tester, 'From OpenAPI');
     await tester.enterText(find.byKey(const ValueKey('openapi-text')), '{"hello": "world"}');
     await tester.pump();
+    await scrollTo(tester, MockOpenApiTab, find.text('Load document'));
     await press(tester, 'Load document');
     expect(find.textContaining('That is not an OpenAPI or Swagger document'), findsOneWidget);
     expect(vm.spec, isNull);
@@ -243,7 +256,7 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'Seed'), '42');
     await tester.pump();
     expect(vm.seed, 42);
-    await tester.tap(find.widgetWithText(FilterChip, 'Check requests against the spec'));
+    await tapVisible(tester, find.widgetWithText(FilterChip, 'Check requests against the spec'));
     await tester.pump();
     expect(vm.validateRequests, isFalse);
   });
@@ -265,7 +278,7 @@ void main() {
     expect(find.text('http://localhost:3001'), findsWidgets);
     expect(find.text('http://10.0.2.2:3001'), findsOneWidget);
     expect(find.text('http://10.0.3.2:3001'), findsOneWidget);
-    await tester.tap(find.byTooltip('Copy http://10.0.2.2:3001'));
+    await tapVisible(tester, find.byTooltip('Copy http://10.0.2.2:3001'));
     await tester.pump();
     expect(copied, 'http://10.0.2.2:3001');
     await scrollTo(tester, MockRoutesTab, find.text('/users'));
@@ -278,9 +291,9 @@ void main() {
     await tab(tester, 'Scenarios');
 
     // Whole server: slow, with the two bounds.
-    await tester.tap(find.byType(DropdownButtonFormField<MockScenarioKind?>).first);
+    await tapVisible(tester, find.byType(DropdownButtonFormField<MockScenarioKind?>).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Slow').last);
+    await tapVisible(tester, find.text('Slow').last);
     await tester.pumpAndSettle();
     expect(vm.scenarios.global.kind, MockScenarioKind.slow);
     await tester.enterText(find.widgetWithText(TextField, 'From').first, '200');
@@ -292,9 +305,9 @@ void main() {
     // One route: flaky, every 2nd. Its own scenario replaces the slow one, so there is no waiting below.
     final row = find.byKey(const ValueKey('scenario-GET /users'));
     await scrollTo(tester, MockScenariosTab, row);
-    await tester.tap(find.descendant(of: row, matching: find.byType(DropdownButtonFormField<MockScenarioKind?>)));
+    await tapVisible(tester, find.descendant(of: row, matching: find.byType(DropdownButtonFormField<MockScenarioKind?>)));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Flaky').last);
+    await tapVisible(tester, find.text('Flaky').last);
     await tester.pumpAndSettle();
     expect(vm.scenarios.routes['GET /users']!.kind, MockScenarioKind.flaky);
     await tester.enterText(find.descendant(of: row, matching: find.widgetWithText(TextField, 'Every Nth')), '2');
@@ -312,7 +325,7 @@ void main() {
     expect(statuses, [200, 500, 200]);
 
     await scrollTo(tester, MockScenariosTab, find.text('Back to normal everywhere'));
-    await tester.tap(find.text('Back to normal everywhere'));
+    await tapVisible(tester, find.text('Back to normal everywhere'));
     await tester.pump();
     expect(vm.scenarios.isAllNormal, isTrue);
   });
@@ -322,7 +335,7 @@ void main() {
     await start(tester);
     await tab(tester, 'Scenarios');
     await scrollTo(tester, MockScenariosTab, find.text('Add a rule'));
-    await tester.tap(find.text('Add a rule'));
+    await tapVisible(tester, find.text('Add a rule'));
     await tester.pump();
     expect(vm.rules, hasLength(1));
     expect(vm.rules.single.routeKey, 'GET /users');
@@ -334,7 +347,7 @@ void main() {
     expect([vm.rules.single.field, vm.rules.single.equals], ['broken', '1']);
     final o = await tester.runAsync(() => engine.backend!.handle(get('/users', query: {'broken': ['1']})));
     expect(o!.response!.status, 410);
-    await tester.tap(find.byTooltip('Remove this rule'));
+    await tapVisible(tester, find.byTooltip('Remove this rule'));
     await tester.pump();
     expect(vm.rules, isEmpty);
   });
@@ -376,18 +389,18 @@ void main() {
     expect(find.textContaining('flaky (every 2nd, 500): passed'), findsOneWidget);
     expect(find.textContaining('Passwords, tokens and keys are masked'), findsOneWidget);
 
-    await tester.tap(find.text('/users?api_key=••••••'));
+    await tapVisible(tester, find.text('/users?api_key=••••••'));
     await tester.pumpAndSettle();
     expect(find.textContaining('authorization: Bearer ••••••'), findsOneWidget);
     expect(find.textContaining('"password":"••••••"'), findsWidgets);
-    await tester.tap(find.text('Copy as cURL'));
+    await tapVisible(tester, find.text('Copy as cURL'));
     await tester.pump();
     expect(copied, startsWith("curl --request POST 'http://localhost:3001/users?api_key=••••••'"));
     expect(copied, contains("--header 'authorization: Bearer ••••••'"));
     expect(copied, contains("--data-raw '{\"name\":\"Ann\",\"password\":\"••••••\"}'"));
     expect(copied, isNot(contains('hunter2')));
 
-    await tester.tap(find.text('Clear'));
+    await tapVisible(tester, find.text('Clear'));
     await tester.pump();
     expect(find.text('Waiting for requests'), findsOneWidget);
   });

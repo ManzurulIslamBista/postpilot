@@ -54,7 +54,7 @@ final class CiSetupViewModel with ChangeNotifier {
     required this._collections,
     required this._writer,
     required this.project,
-    List<String> this._productionWords = const [],
+    this._productionWords = const [],
   });
 
   bool isLoading = true;

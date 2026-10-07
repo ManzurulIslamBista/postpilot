@@ -163,7 +163,7 @@ void main() {
       expect(_stored(db).map((a) => a.type), [AssertionType.bodyContains, AssertionType.jsonPathExists]);
       expect(vm.lastAdded, isNull);
       expect(reloaded, [7]);
-      expect(vm.alreadyThere, isEmpty, reason: 'the rows can be proposed again');
+      expect(vm.alreadyThere, {'exists:ok'}, reason: 'only the person own matching test still counts, the added rows can be proposed again');
       await vm.undo();
       expect(_stored(db), hasLength(2), reason: 'a second Undo has nothing to take out');
     });

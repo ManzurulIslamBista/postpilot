@@ -15,9 +15,8 @@ final class OpenApiTestsViewModel with ChangeNotifier {
   OpenApiTestsViewModel({
     this.collectionId,
     Future<GeneratedSuite> Function(String text)? read,
-    required Future<GeneratedTestsResult> Function(int collectionId, GeneratedSuite suite, GeneratedSelection selection) write,
-  })  : _read = read ?? ((text) => compute(OpenApiTestGenerator.generate, text)),
-        _write = write;
+    required this._write,
+  }) : _read = read ?? ((text) => compute(OpenApiTestGenerator.generate, text));
 
   int? collectionId;
   String spec = '';

@@ -60,8 +60,8 @@ final class MockFaker {
     if (node.containsKey('const')) return _copy(node['const']);
     final values = node['enum'];
     if (values is List && values.isNotEmpty) {
-      // The position inside an array is left out of the hash, so consecutive items step through the enum.
-      return _copy(values[(index + _hash(path.replaceFirst(RegExp(r'\[\d+\]$'), ''))) % values.length]);
+      // The positions inside arrays are left out of the hash, so consecutive items step through the enum.
+      return _copy(values[(index + _hash(path.replaceAll(RegExp(r'\[\d+\]'), ''))) % values.length]);
     }
     for (final key in const ['oneOf', 'anyOf']) {
       final options = node[key];

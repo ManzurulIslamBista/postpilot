@@ -53,7 +53,7 @@ void main() {
     final collection = await db.collectionRepository.createCollection('Shop');
     expect(collection, isPositive);
     final staging = stagingId = await db.environmentRepository.create('Staging');
-    await db.environmentRepository.setActive(staging);
+    db.environments[0] = EnvironmentEntity(id: staging, name: 'Staging', isActive: true);
     final production = await db.environmentRepository.create('Production');
     EnvironmentVariableEntity variable(int env, String key, {bool secret = false, bool enabled = true}) =>
         EnvironmentVariableEntity(id: 0, environmentId: env, key: key, value: secret ? '' : 'x', isSecret: secret, enabled: enabled);

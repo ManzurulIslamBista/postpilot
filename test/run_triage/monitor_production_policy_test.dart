@@ -119,6 +119,7 @@ void main() {
 
   test('nothing to run is an empty plan', () {
     final plan = MonitorProductionPolicy.plan(const [], productionEnvironment: true);
-    expect((plan.allowed, plan.skipped), (isEmpty, isEmpty));
+    expect(plan.allowed, isEmpty);
+    expect(plan.skipped, isEmpty);
   });
 }

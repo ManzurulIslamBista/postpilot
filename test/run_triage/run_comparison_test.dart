@@ -63,7 +63,9 @@ void main() {
         previous: [entry('A', skipped: 'Run if', status: null)],
         current: [entry('A', skipped: 'Run if', status: null)],
       );
-      expect((c.newFailures, c.fixed, c.stillFailing), (isEmpty, isEmpty, isEmpty));
+      expect(c.newFailures, isEmpty);
+      expect(c.fixed, isEmpty);
+      expect(c.stillFailing, isEmpty);
       expect(c.summary, 'Same as the earlier run');
       expect(c.isUnchanged, isTrue);
     });

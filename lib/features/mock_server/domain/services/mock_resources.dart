@@ -106,7 +106,8 @@ abstract final class MockResources {
       if (used.contains(entry.key) || segments.isEmpty || SpecOperation.isParam(segments.last)) continue;
       final ops = entry.value;
       final get = ops['GET'];
-      final listLike = get != null && _listPayload(spec.resolver, get, name: segments.last) != null;
+      // Only a recognisable list counts here: an object that merely has an array field (`/users/me` with its tags) is not one.
+      final listLike = get != null && _listPayload(spec.resolver, get, name: segments.last, strict: true) != null;
       if (!listLike) continue;
       used.add(entry.key);
       families.add(_family(spec, entry.key, segments, ops, null, const {}, null));
@@ -223,7 +224,7 @@ abstract final class MockResources {
   }
 
   /// The items and envelope of a list operation's answer, or null when it does not answer with a list.
-  static ({Map<String, dynamic> items, MockEnvelope? envelope})? _listPayload(MockSchemaResolver resolver, SpecOperation op, {required String name}) {
+  static ({Map<String, dynamic> items, MockEnvelope? envelope})? _listPayload(MockSchemaResolver resolver, SpecOperation op, {required String name, bool strict = false}) {
     final schema = op.success?.schema;
     if (schema == null) return null;
     final flat = resolver.flatten(schema);
@@ -246,7 +247,7 @@ abstract final class MockResources {
         break;
       }
     }
-    key ??= arrays.length == 1 ? arrays.single : null;
+    if (!strict) key ??= arrays.length == 1 ? arrays.single : null;
     if (key == null) return null;
     final payload = resolver.flatten((properties[key] as Map).cast<String, dynamic>());
     final items = payload['items'];

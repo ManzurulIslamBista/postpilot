@@ -7,6 +7,7 @@ import 'package:postpilot/core/enums/auth_type.dart';
 import 'package:postpilot/core/enums/body_type.dart';
 import 'package:postpilot/core/enums/http_method.dart';
 import 'package:postpilot/core/network/api_client.dart';
+import 'package:postpilot/core/network/api_http_response.dart';
 import 'package:postpilot/features/auth_renewal/domain/entities/relogin_config.dart';
 import 'package:postpilot/features/cli/cli_cookies.dart';
 import 'package:postpilot/features/cli/production_lock.dart';

@@ -44,18 +44,14 @@ final class SuggestionsViewModel with ChangeNotifier {
   SuggestionsViewModel({
     required this.requestId,
     required this.response,
-    required RequestScriptsRepository scripts,
+    required this._scripts,
     ApiRequestEntity? Function()? request,
-    Future<ApiResponseEntity> Function(ApiRequestEntity request)? send,
-    Future<bool> Function(ApiRequestEntity request)? confirmSend,
+    this._send,
+    this._confirmSend,
     Future<void> Function(int requestId)? afterWrite,
-    TestSuggester suggester = const TestSuggester(),
-  })  : _scripts = scripts,
-        _request = request ?? (() => null),
-        _send = send,
-        _confirmSend = confirmSend,
-        _afterWrite = afterWrite ?? ((_) async {}),
-        _suggester = suggester;
+    this._suggester = const TestSuggester(),
+  }) : _request = request ?? (() => null),
+       _afterWrite = afterWrite ?? ((_) async {});
 
   SuggestionResult result = SuggestionResult.empty;
   bool loaded = false;

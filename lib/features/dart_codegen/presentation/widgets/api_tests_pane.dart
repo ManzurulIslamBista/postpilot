@@ -69,6 +69,14 @@ class _ApiTestsPaneState extends State<ApiTestsPane> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Everything above the file list scrolls, so the notes and the dev_dependencies never push the files out of a small window.
+              Flexible(
+                flex: 2,
+                child: SingleChildScrollView(
+                  primary: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
               Wrap(
                 spacing: 12,
                 runSpacing: 10,
@@ -176,7 +184,13 @@ class _ApiTestsPaneState extends State<ApiTestsPane> {
                   ),
                 ),
               for (final note in _vm.notes) InfoBanner(message: note, margin: const EdgeInsets.only(bottom: 8)),
+                ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               Expanded(
+                flex: 3,
                 child: GeneratedFilesView(
                   files: _vm.files,
                   emptyTitle: 'Pick a collection and press Generate tests',

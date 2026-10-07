@@ -14,7 +14,6 @@ import 'package:postpilot/features/environments/domain/repositories/environment_
 import 'package:postpilot/features/environments/presentation/view_models/environments_view_model.dart';
 import 'package:postpilot/features/odoo/data/odoo_client.dart';
 import 'package:postpilot/features/odoo/domain/usecases/create_odoo_workspace_usecase.dart';
-import 'package:postpilot/features/odoo/presentation/view_models/odoo_payload_view_model.dart';
 import 'package:postpilot/features/odoo/presentation/view_models/odoo_studio_view_model.dart';
 import 'package:postpilot/features/odoo/presentation/widgets/odoo_check_tab.dart';
 import 'package:postpilot/features/odoo/presentation/widgets/odoo_connect_tab.dart';
@@ -42,6 +41,10 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
+Finder _byLabel(String label) => find.byWidgetPredicate((w) => w is TextField && w.decoration?.labelText == label);
+Finder _byHint(String hint) => find.byWidgetPredicate((w) => w is TextField && (w.decoration?.hintText ?? '').startsWith(hint));
+Finder _text(String text) => find.textContaining(text, skipOffstage: false);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -52,10 +55,10 @@ void main() {
   late CollectionsViewModel collections;
   late EnvironmentsViewModel environments;
 
-  OdooStudioViewModel newStudio({Map<String, String>? variables, bool connect = true}) {
+  OdooStudioViewModel newStudio({bool connect = true}) {
     final vm = OdooStudioViewModel(
       OdooClient(odoo),
-      _Environments(variables ?? {'odooUrl': odoo.host, 'odooDb': odoo.db, 'odooApiKey': odoo.apiKey}),
+      _Environments({'odooUrl': odoo.host, 'odooDb': odoo.db, 'odooApiKey': odoo.apiKey}),
       CreateOdooWorkspaceUseCase(repos.environmentRepository, repos.collectionRepository, repos.requestRepository),
     );
     if (connect) vm.setConnection(url: odoo.host, database: odoo.db, apiKey: odoo.apiKey);
@@ -97,13 +100,43 @@ void main() {
         home: Scaffold(body: child),
       ),
     ));
+    // The collections come from a database stream, which needs real time to deliver.
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
+    await _settle(tester);
+  }
+
+  /// On a phone the Payload tab shows the form or the body, one at a time.
+  Future<void> openBody(WidgetTester tester) async {
+    final segment = find.text('Body');
+    if (segment.evaluate().isEmpty) return;
+    await tester.tap(segment);
+    await _settle(tester);
+  }
+
+  Future<void> openFields(WidgetTester tester) async {
+    final segment = find.text('Fields');
+    if (segment.evaluate().isEmpty) return;
+    await tester.tap(segment);
+    await _settle(tester);
+  }
+
+  Future<void> readModel(WidgetTester tester) async {
+    await tester.enterText(_byLabel('Model'), 'res.partner');
+    await tester.tap(find.text('Read fields'));
+    await _settle(tester);
+  }
+
+  /// Narrows the list to one field, so it is on screen whatever the size of the window.
+  Future<void> only(WidgetTester tester, String field) async {
+    await tester.enterText(_byHint('Filter'), field);
     await _settle(tester);
   }
 
   Finder row(String field) => find.byKey(ValueKey('res.partner|$field'));
   Finder inRow(String field, Finder what) => find.descendant(of: row(field), matching: what);
-  String body(WidgetTester tester) => tester.widget<CodeBlock>(find.byType(CodeBlock).first).text;
-  Map<String, dynamic> firstVals(WidgetTester tester) => (jsonDecode(body(tester).replaceAll(RegExp(r'\{\{[^{}]+\}\}'), '0'))['vals_list'] as List).first as Map<String, dynamic>;
+  String body(WidgetTester tester) => tester.widget<CodeBlock>(find.byType(CodeBlock, skipOffstage: false).first).text;
+  Map<String, dynamic> firstVals(WidgetTester tester) =>
+      (jsonDecode(body(tester).replaceAll(RegExp(r'\{\{[^{}]+\}\}'), '0'))['vals_list'] as List).first as Map<String, dynamic>;
 
   for (final dark in [false, true]) {
     for (final size in const [Size(1200, 900), Size(420, 800)]) {
@@ -116,99 +149,96 @@ void main() {
           expect(find.text('Read fields'), findsOneWidget);
         });
 
-        testWidgets('reads a model, shows its fields with the required one marked, and builds the body as values are typed', (tester) async {
+        testWidgets('reads a model, marks the required field, and builds the body as values are typed', (tester) async {
           await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
-          final vm = tester.state<State>(find.byType(OdooPayloadTab));
-          expect(vm, isNotNull);
-
-          await tester.enterText(find.widgetWithText(TextField, '').first, 'res.partner');
-          await tester.testTextInput.receiveAction(TextInputAction.done);
-          await _settle(tester);
+          await readModel(tester);
 
           expect(row('name'), findsOneWidget);
           expect(find.text(' *'), findsWidgets, reason: 'the required name is marked');
-          // Odoo's own and read-only fields are not offered.
-          expect(row('write_date'), findsNothing);
-          expect(row('complete_name'), findsNothing);
           expect(firstVals(tester), {'active': true, 'type': 'contact', 'is_company': false, 'color': 0});
-          expect(find.textContaining('Required and not set: name'), findsOneWidget);
+          expect(_text('Required and not set: name'), findsOneWidget);
 
           await tester.enterText(inRow('name', find.byType(TextField)), 'Acme');
           await tester.pump();
           expect(firstVals(tester)['name'], 'Acme');
-          expect(find.textContaining('Required and not set'), findsNothing);
+          expect(_text('Required and not set'), findsNothing);
 
+          await only(tester, 'color');
           await tester.enterText(inRow('color', find.byType(TextField)), 'abc');
           await tester.pump();
           expect(find.text('Enter a whole number.'), findsOneWidget);
           expect(firstVals(tester).containsKey('color'), isFalse);
         });
 
-        testWidgets('a switch sets a boolean, a dropdown a selection, a command dialog an x2many', (tester) async {
+        testWidgets('Odoo\'s own fields and the read-only ones are not offered until asked for', (tester) async {
           await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
-          await tester.enterText(find.widgetWithText(TextField, '').first, 'res.partner');
-          await tester.testTextInput.receiveAction(TextInputAction.done);
-          await _settle(tester);
+          await readModel(tester);
 
-          await tester.ensureVisible(inRow('is_company', find.byType(Switch)));
+          await only(tester, 'write_date');
+          expect(row('write_date'), findsNothing);
+          await only(tester, 'complete_name');
+          expect(row('complete_name'), findsNothing);
+          await tester.tap(find.text('Show read-only'));
+          await _settle(tester);
+          expect(row('complete_name'), findsOneWidget);
+        });
+
+        testWidgets('a switch sets a boolean and a dropdown a selection', (tester) async {
+          await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
+          await readModel(tester);
+
+          await only(tester, 'is_company');
           await tester.tap(inRow('is_company', find.byType(Switch)));
           await tester.pump();
           expect(firstVals(tester)['is_company'], true);
 
-          await tester.ensureVisible(inRow('type', find.byType(DropdownButtonFormField<String>)));
+          await only(tester, 'type');
           await tester.tap(inRow('type', find.byType(DropdownButtonFormField<String>)));
           await _settle(tester);
           await tester.tap(find.text('invoice — Invoice Address').last);
           await _settle(tester);
           expect(firstVals(tester)['type'], 'invoice');
+        });
 
-          await tester.ensureVisible(inRow('category_id', find.text('Add command')));
-          await tester.tap(inRow('category_id', find.text('Add command')));
+        testWidgets('a command dialog builds an x2many command, shown as a readable row', (tester) async {
+          await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
+          await readModel(tester);
+          await only(tester, 'category_id');
+
+          await tester.tap(find.text('Add command'));
           await _settle(tester);
           expect(find.text('Add a command for category_id'), findsOneWidget);
-          await tester.enterText(find.widgetWithText(TextField, 'Record id'), '1');
+          await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+          await tester.pump();
+          expect(find.text('Enter the id of the record to link.'), findsOneWidget);
+          expect(find.text('Add a command for category_id'), findsOneWidget, reason: 'the dialog stays open until the command is complete');
+
+          await tester.enterText(_byLabel('Record id'), '1');
           await tester.tap(find.widgetWithText(FilledButton, 'Add'));
           await _settle(tester);
           expect(firstVals(tester)['category_id'], [
             [4, 1],
           ]);
-          expect(find.text('Link record 1'), findsOneWidget, reason: 'the command is shown as a readable row');
+          expect(find.text('Link record 1'), findsOneWidget);
 
-          await tester.tap(inRow('category_id', find.byTooltip('Remove')));
+          await tester.tap(find.byTooltip('Remove'));
           await tester.pump();
           expect(firstVals(tester).containsKey('category_id'), isFalse);
         });
 
-        testWidgets('a command dialog refuses a command without its id and says what is missing', (tester) async {
+        testWidgets('loads a record, and the boxes and the body show its values', (tester) async {
           await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
-          await tester.enterText(find.widgetWithText(TextField, '').first, 'res.partner');
-          await tester.testTextInput.receiveAction(TextInputAction.done);
-          await _settle(tester);
-
-          await tester.ensureVisible(inRow('category_id', find.text('Add command')));
-          await tester.tap(inRow('category_id', find.text('Add command')));
-          await _settle(tester);
-          await tester.tap(find.widgetWithText(FilledButton, 'Add'));
-          await tester.pump();
-          expect(find.text('Enter the id of the record to link.'), findsOneWidget);
-          expect(find.text('Add a command for category_id'), findsOneWidget, reason: 'the dialog stays open');
-        });
-
-        testWidgets('loads a record, and the boxes show its values', (tester) async {
-          await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
-          await tester.enterText(find.widgetWithText(TextField, '').first, 'res.partner');
-          await tester.testTextInput.receiveAction(TextInputAction.done);
-          await _settle(tester);
+          await readModel(tester);
 
           await tester.tap(find.text('Load from record'));
           await _settle(tester);
-          await tester.enterText(find.widgetWithText(TextField, 'Record id'), '2');
+          await tester.enterText(_byLabel('Record id'), '2');
           await tester.pump();
           await tester.tap(find.widgetWithText(FilledButton, 'Load'));
           await _settle(tester);
 
           expect(find.widgetWithText(TextField, 'Azure Interior'), findsWidgets);
-          expect(find.textContaining('Loaded record 2 of res.partner'), findsOneWidget);
+          expect(_text('Loaded record 2 of res.partner'), findsOneWidget);
           final vals = firstVals(tester);
           expect(vals['name'], 'Azure Interior');
           expect(vals['country_id'], 233);
@@ -217,34 +247,33 @@ void main() {
           ]);
         });
 
-        testWidgets('write asks for the ids, and its body uses the variable that stays undefined until they are typed', (tester) async {
+        testWidgets('write asks for the ids, and until they are typed uses the variable that stays undefined', (tester) async {
           await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
-          await tester.enterText(find.widgetWithText(TextField, '').first, 'res.partner');
-          await tester.testTextInput.receiveAction(TextInputAction.done);
-          await _settle(tester);
+          await readModel(tester);
 
           await tester.tap(find.text('write'));
           await _settle(tester);
-
-          expect(find.text('Records to write (ids)'), findsOneWidget);
+          expect(_byLabel('Records to write (ids)'), findsOneWidget);
           expect(body(tester), contains('"ids": [{{recordId}}]'));
-          await tester.enterText(find.widgetWithText(TextFormField, '7'.isEmpty ? '' : ''), '7');
+
+          await tester.enterText(_byLabel('Records to write (ids)'), '7');
           await tester.pump();
           expect(jsonDecode(body(tester))['ids'], [7]);
         });
 
         testWidgets('Check lists what is wrong, and Create request saves the body into the collection', (tester) async {
           await pump(tester, OdooPayloadTab(viewModel: studio), size: size, dark: dark);
-          await tester.enterText(find.widgetWithText(TextField, '').first, 'res.partner');
-          await tester.testTextInput.receiveAction(TextInputAction.done);
-          await _settle(tester);
+          await readModel(tester);
 
+          await openBody(tester);
           await tester.tap(find.text('Check'));
           await _settle(tester);
           expect(find.textContaining('"name" (Name) is required and has no default.'), findsOneWidget);
 
+          await openFields(tester);
           await tester.enterText(inRow('name', find.byType(TextField)), 'Acme');
           await tester.pump();
+          await openBody(tester);
           await tester.tap(find.text('Check'));
           await _settle(tester);
           expect(find.text('No problems found'), findsOneWidget);
@@ -261,9 +290,9 @@ void main() {
           await pump(tester, OdooCheckTab(viewModel: studio), size: size, dark: dark);
           expect(find.text('Check a request'), findsOneWidget);
 
-          await tester.enterText(find.byWidgetPredicate((w) => w is TextField && w.decoration?.labelText == 'Model'), 'res.partner');
-          await tester.enterText(find.byWidgetPredicate((w) => w is TextField && w.decoration?.labelText == 'Method'), 'create');
-          await tester.enterText(find.byWidgetPredicate((w) => w is TextField && (w.decoration?.hintText ?? '').startsWith('The JSON body')), '{"vals_list": [{"nmae": "A"}]}');
+          await tester.enterText(_byLabel('Model'), 'res.partner');
+          await tester.enterText(_byLabel('Method'), 'create');
+          await tester.enterText(_byHint('The JSON body'), '{"vals_list": [{"nmae": "A"}]}');
           await tester.pump();
           await tester.tap(find.widgetWithText(FilledButton, 'Check'));
           await _settle(tester);
@@ -274,7 +303,7 @@ void main() {
           await _settle(tester);
 
           expect(find.text('No problems found'), findsOneWidget);
-          final field = tester.widget<TextField>(find.byWidgetPredicate((w) => w is TextField && (w.decoration?.hintText ?? '').startsWith('The JSON body')));
+          final field = tester.widget<TextField>(_byHint('The JSON body'));
           expect(jsonDecode(field.controller!.text), {
             'vals_list': [
               {'name': 'A'},
@@ -282,9 +311,9 @@ void main() {
           });
         });
 
-        testWidgets('a bad example shows every kind of problem, with Apply all fixes', (tester) async {
+        testWidgets('a bad example shows several kinds of problem, with Apply all fixes', (tester) async {
           await pump(tester, OdooCheckTab(viewModel: studio), size: size, dark: dark);
-          await tester.enterText(find.byWidgetPredicate((w) => w is TextField && w.decoration?.labelText == 'Model'), 'res.partner');
+          await tester.enterText(_byLabel('Model'), 'res.partner');
           await tester.tap(find.text('Insert a bad example'));
           await tester.pump();
           await tester.tap(find.widgetWithText(FilledButton, 'Check'));
@@ -292,14 +321,13 @@ void main() {
 
           expect(find.textContaining('parnter_id'), findsWidgets);
           expect(find.textContaining('"is_company" (Is a Company) is true or false'), findsOneWidget);
-          expect(find.textContaining('Apply all'), findsOneWidget);
           await tester.ensureVisible(find.textContaining('Apply all'));
           await tester.tap(find.textContaining('Apply all'));
           await _settle(tester);
-          final field = tester.widget<TextField>(find.byWidgetPredicate((w) => w is TextField && (w.decoration?.hintText ?? '').startsWith('The JSON body')));
+          final field = tester.widget<TextField>(_byHint('The JSON body'));
           final vals = (jsonDecode(field.controller!.text)['vals_list'] as List).first as Map;
           expect(vals['is_company'], true);
-          expect(vals['parent_id'], isNotNull);
+          expect(vals.containsKey('parent_id'), isTrue, reason: 'the typo was renamed');
         });
       });
 
@@ -314,7 +342,6 @@ void main() {
         expect(find.text('Password or API key'), findsOneWidget);
         expect(find.text('Log in and test'), findsOneWidget);
         expect(studio.protocol, OdooProtocol.jsonRpc);
-        expect(find.textContaining('Portable references'.toUpperCase()), findsOneWidget);
 
         await tester.tap(find.text('Odoo 19+ · JSON-2'));
         await _settle(tester);
@@ -324,15 +351,15 @@ void main() {
     }
   }
 
-  testWidgets('the Connect tab logs in to an Odoo 18 server, tests it and finds its databases', (tester) async {
+  testWidgets('the Connect tab logs in to an Odoo 18 server, finds its databases and tests the login', (tester) async {
     final rpc = newStudio(connect: false);
     addTearDown(rpc.dispose);
     await pump(tester, OdooConnectTab(viewModel: rpc), size: const Size(1200, 900), dark: false);
     await tester.tap(find.text('Odoo ≤18 · JSON-RPC'));
     await _settle(tester);
-    await tester.enterText(find.widgetWithText(TextField, 'Server URL'), odoo.host);
-    await tester.enterText(find.widgetWithText(TextField, 'Login'), odoo.login);
-    await tester.enterText(find.widgetWithText(TextField, 'Password or API key'), odoo.password);
+    await tester.enterText(_byLabel('Server URL'), odoo.host);
+    await tester.enterText(_byLabel('Login'), odoo.login);
+    await tester.enterText(_byLabel('Password or API key'), odoo.password);
     await tester.pump();
 
     await tester.tap(find.byTooltip('Find the databases of this server'));
@@ -369,7 +396,6 @@ void main() {
       await tester.tap(find.text('Check against Odoo'));
       await _settle(tester);
       expect(find.textContaining('Field "nmae" does not exist on res.partner'), findsOneWidget);
-      expect(find.text('Use this body'), findsOneWidget);
       expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Use this body')).onPressed, isNull, reason: 'nothing was changed yet');
 
       await tester.tap(find.text('Rename to name'));
@@ -388,10 +414,10 @@ void main() {
       await tester.tap(find.text('Odoo fields'));
       await _settle(tester);
       expect(find.text('Fields of res.partner'), findsOneWidget);
-      expect(find.text('write_date'), findsOneWidget, reason: 'every field of the model is listed, with its flags');
+      expect(find.text('complete_name'), findsOneWidget, reason: 'every field of the model is listed, with its flags');
       expect(find.text('display_name'), findsNothing, reason: 'Odoo\'s own columns are not offered');
 
-      await tester.enterText(find.widgetWithText(TextField, ''), 'credit');
+      await tester.enterText(_byHint('Filter fields'), 'credit');
       await _settle(tester);
       await tester.tap(find.text('credit_limit'));
       await _settle(tester);

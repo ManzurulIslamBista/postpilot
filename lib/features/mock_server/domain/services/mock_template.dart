@@ -30,7 +30,8 @@ abstract final class MockTemplate {
     if (!hasPlaceholders(text)) return text;
     final rng = random ?? Random();
     final clock = now ?? DateTime.now();
-    final json = text.trimLeft().startsWith('{') || text.trimLeft().startsWith('[');
+    // `{{$guid}}` alone is a placeholder, not an object.
+    final json = RegExp(r'^\s*(\{(?!\{)|\[)').hasMatch(text);
     final out = StringBuffer();
     var last = 0;
     var inString = false;

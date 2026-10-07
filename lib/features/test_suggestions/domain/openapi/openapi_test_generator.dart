@@ -425,7 +425,7 @@ final class _Operation {
       for (final e in _map(schema['properties']).entries) {
         if (out.length >= _maxBoundary) break;
         if (!body.containsKey(e.key)) continue;
-        for (final (suffix, value) in _violations(_map(e.value), '${e.key}')) {
+        for (final (suffix, value) in _violations(_map(e.value), e.key)) {
           if (out.length >= _maxBoundary) break;
           out.add(_make(TestCategory.boundary, '${e.key} $suffix', assertions: rejected, body: _bodyOf({...body, e.key: value})));
         }

@@ -250,7 +250,7 @@ void main() {
 
     List<String> pathsSince(int before) => [for (final r in world.odoo.requests.skip(before)) Uri.parse(r.url).path];
 
-    test('with the collection's re-login set, the Log in request runs and the call is sent again, once', () async {
+    test("with the collection's re-login set, the Log in request runs and the call is sent again, once", () async {
       await setUpCollection(relogin: true);
       final send = world.sender();
       expect((await send(login)).statusCode, 200);
@@ -304,7 +304,7 @@ final class _Forgetful implements ApiClient {
   @override
   Future<ApiHttpResponse> send(ApiRequestSpec spec) async {
     if (spec.url.contains('/call_kw/')) inner.expireSessions();
-    final headers = {...spec.headers, if (cookie != null) 'Cookie': cookie!};
+    final headers = {...spec.headers, 'Cookie': ?cookie};
     final r = await inner.send(ApiRequestSpec(method: spec.method, url: spec.url, headers: headers, body: spec.body, options: spec.options));
     for (final c in r.setCookies) {
       final m = RegExp(r'^session_id=([^;]+)').firstMatch(c);

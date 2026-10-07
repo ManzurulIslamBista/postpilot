@@ -1,4 +1,4 @@
-/// Two realistic documents for the generator tests, small enough for the expected cases to be worked out by hand.
+// Two realistic documents for the generator tests, small enough for the expected cases to be worked out by hand.
 
 /// OpenAPI 3.0 as YAML: `$ref`, `allOf` with required lists in two members, enums, ranges, lengths, a global bearer
 /// scheme, one public operation (`security: []`), a 204 with no body and a text response.

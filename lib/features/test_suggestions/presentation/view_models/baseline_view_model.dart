@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../../../documentation/domain/services/secret_masker.dart';
 import '../../../request_builder/domain/entities/api_response_entity.dart';
@@ -32,16 +31,12 @@ final class BaselineViewModel with ChangeNotifier {
   BaselineViewModel({
     required this.requestId,
     required this.response,
-    required RequestBaselineRepository baselines,
-    required RequestSettingsRepository settings,
-    Future<BaselineFile> Function()? export,
+    required this._baselines,
+    required this._settings,
+    this._export,
     StabilityReport? Function()? stability,
-    required Future<String?> Function(String fileName, Uint8List bytes) saveFile,
-  })  : _baselines = baselines,
-        _settings = settings,
-        _export = export,
-        _stability = stability ?? (() => null),
-        _saveFile = saveFile;
+    required this._saveFile,
+  }) : _stability = stability ?? (() => null);
 
   StoredBaseline? stored;
 

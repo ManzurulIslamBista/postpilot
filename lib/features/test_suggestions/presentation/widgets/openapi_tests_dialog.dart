@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -66,7 +65,8 @@ class _OpenApiTestsDialogState extends State<OpenApiTestsDialog> {
     _url.dispose();
     _spec.dispose();
     _cap.dispose();
-    _vm.dispose();
+    // A view model that was handed in belongs to whoever made it.
+    if (widget.viewModel == null) _vm.dispose();
     super.dispose();
   }
 

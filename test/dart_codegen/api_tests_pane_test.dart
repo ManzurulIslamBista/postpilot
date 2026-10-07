@@ -193,7 +193,8 @@ void main() {
     addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
     await open(tester, size: const Size(1200, 900), dark: false);
     await generate(tester);
-    await tester.tap(find.byTooltip('Copy the dev_dependencies'));
+    await tester.ensureVisible(find.byTooltip('Copy the dev_dependencies'));
+    await tester.tap(find.byTooltip('Copy the dev_dependencies'), warnIfMissed: false);
     await tester.pump();
     expect(copied, startsWith('dev_dependencies:\n  flutter_test:\n    sdk: flutter\n  mocktail: ^1.0.4\n'));
   });

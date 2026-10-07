@@ -346,7 +346,7 @@ void main() {
       final empty = OdooStudioViewModel(OdooClient(odoo), repos.environmentRepository, CreateOdooWorkspaceUseCase(repos.environmentRepository, repos.collectionRepository, repos.requestRepository));
       final vm = OdooCheckViewModel(empty, body: '{"vals": {"name": "A"}}')..setTarget(model: 'res.partner', method: 'create');
       await vm.run();
-      expect(vm.error, 'Enter the server URL and an API key first.');
+      expect(vm.error, 'Enter the server URL first.');
       expect(vm.problems!.map((p) => p.code), contains('param_name'));
       expect(odoo.requests, isEmpty);
       vm.dispose();

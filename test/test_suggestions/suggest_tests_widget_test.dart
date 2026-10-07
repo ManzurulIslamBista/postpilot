@@ -152,7 +152,8 @@ void main() {
           await _pump(tester, SuggestTestsPanel(suggestions: suggestions, baseline: baseline), size: size, dark: dark);
           await tester.scrollUntilVisible(find.text('body.queueDepth equals 12'), 300, scrollable: find.byType(Scrollable).first, maxScrolls: 60);
           expect(find.text('body.queueDepth equals 12'), findsOneWidget);
-          await tester.scrollUntilVisible(find.text('Send again to detect changing values'), -300, scrollable: find.byType(Scrollable).first, maxScrolls: 60);
+          await tester.drag(find.byType(Scrollable).first, const Offset(0, 100000)); // back to the probe card at the top
+          await tester.pump();
           await tester.tap(find.text('Send again to detect changing values'));
           await _settle(tester);
           expect(find.text('Compared two answers'), findsOneWidget);

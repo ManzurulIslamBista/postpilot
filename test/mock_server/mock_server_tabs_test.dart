@@ -108,8 +108,11 @@ void main() {
 
   /// Taps [finder] after scrolling it into view, so a button below the fold of a small tab is really hit.
   Future<void> tapVisible(WidgetTester tester, Finder finder) async {
+    // Let a focus or scroll animation from the last interaction finish first: it would move the target while the pointer goes down.
+    await tester.pumpAndSettle();
     await tester.ensureVisible(finder);
-    await tester.tap(finder, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(finder);
     await tester.pump();
   }
 
@@ -120,10 +123,20 @@ void main() {
     await tester.pump();
   }
 
-  /// Brings [finder] into view inside the scrollable of the tab [tabType].
+  /// Brings [finder] into view inside the list of the tab [tabType]. The list is moved directly, not dragged: a drag from the middle of
+  /// the tab would land on a text field and scroll that instead. A list builds only what is near the screen, so it moves from the top
+  /// a little at a time until the widget exists.
   Future<void> scrollTo(WidgetTester tester, Type tabType, Finder finder) async {
     final scrollable = find.descendant(of: find.byType(tabType), matching: find.byType(Scrollable)).first;
-    await tester.scrollUntilVisible(finder, 150, scrollable: scrollable, maxScrolls: 60);
+    final position = tester.state<ScrollableState>(scrollable).position;
+    if (finder.evaluate().isEmpty) {
+      position.jumpTo(position.minScrollExtent);
+      await tester.pump();
+      for (var i = 0; i < 200 && finder.evaluate().isEmpty && position.pixels < position.maxScrollExtent; i++) {
+        position.jumpTo((position.pixels + 100).clamp(position.minScrollExtent, position.maxScrollExtent).toDouble());
+        await tester.pump();
+      }
+    }
     await tester.ensureVisible(finder);
     await tester.pump();
   }

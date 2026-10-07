@@ -60,46 +60,7 @@ class _OdooPayloadTabState extends State<OdooPayloadTab> {
   }
 
   Future<void> _loadRecord() async {
-    final controller = TextEditingController();
-    final id = await showDialog<int>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text('Load a record of ${_vm.model}'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Record id', hintText: '42'),
-                  onChanged: (_) => setState(() {}),
-                  onSubmitted: (v) => int.tryParse(v.trim()) == null ? null : Navigator.pop(context, int.parse(v.trim())),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'The record is read and becomes the values of the payload: read-only, computed and Odoo-managed fields are dropped, '
-                  'a many2one pair [id, name] becomes its id, and a list of ids becomes [6, 0, ids].',
-                  style: context.textStyles.caption.copyWith(color: context.colors.secondaryText),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            FilledButton(
-              onPressed: int.tryParse(controller.text.trim()) == null ? null : () => Navigator.pop(context, int.parse(controller.text.trim())),
-              child: const Text('Load'),
-            ),
-          ],
-        ),
-      ),
-    );
-    controller.dispose();
+    final id = await showDialog<int>(context: context, builder: (_) => _LoadRecordDialog(model: _vm.model));
     if (id != null) await _vm.loadRecord(id);
   }
 
@@ -369,6 +330,62 @@ class _OdooPayloadTabState extends State<OdooPayloadTab> {
               Text('Create a collection to save this as a request.', style: context.textStyles.caption.copyWith(color: colors.secondaryText)),
           ],
         ),
+      ],
+    );
+  }
+}
+
+/// Asks for the id of the record to load. The dialog owns its text box, so the box lives until the dialog's closing
+/// animation has finished (a controller disposed by the caller right after `showDialog` returns is still being built).
+class _LoadRecordDialog extends StatefulWidget {
+  final String model;
+  const _LoadRecordDialog({required this.model});
+
+  @override
+  State<_LoadRecordDialog> createState() => _LoadRecordDialogState();
+}
+
+class _LoadRecordDialogState extends State<_LoadRecordDialog> {
+  final _id = TextEditingController();
+
+  @override
+  void dispose() {
+    _id.dispose();
+    super.dispose();
+  }
+
+  int? get _value => int.tryParse(_id.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Load a record of ${widget.model}'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _id,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Record id', hintText: '42'),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) => _value == null ? null : Navigator.pop(context, _value),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'The record is read and becomes the values of the payload: read-only, computed and Odoo-managed fields are dropped, '
+              'a many2one pair [id, name] becomes its id, and a list of ids becomes [6, 0, ids].',
+              style: context.textStyles.caption.copyWith(color: context.colors.secondaryText),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _value == null ? null : () => Navigator.pop(context, _value), child: const Text('Load')),
       ],
     );
   }

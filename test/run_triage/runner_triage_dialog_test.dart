@@ -413,6 +413,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.textContaining('Triage'));
     // Not pumpAndSettle: a spinner is turning for as long as the request hangs.
+    await tester.pump(); // the tab animation starts on the first frame
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.textContaining('appears when the run has finished'), findsOneWidget);
     server.gate!.complete();

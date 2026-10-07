@@ -272,14 +272,14 @@ void main() {
         'dup.csv': 'appears more than once',
         'bad col.csv': "can't be used as a variable",
         'broken.json': 'Invalid JSON',
-        'scalar.json': 'must be an array of objects',
+        'scalar.json': 'is not an object',
       };
       dataFile('empty.csv', '');
       dataFile('header-only.csv', 'id');
       dataFile('dup.csv', 'id,id\n1,2');
       dataFile('bad col.csv', 'a b\n1');
       dataFile('broken.json', '[{"id":1},');
-      dataFile('scalar.json', '5');
+      dataFile('scalar.json', '[1, 2]');
       for (final entry in cases.entries) {
         final path = entry.key == 'missing' ? p.join(dir.path, 'nope.csv') : p.join(dir.path, entry.key);
         final r = await cli(['--data', path]);

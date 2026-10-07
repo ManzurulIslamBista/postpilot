@@ -199,11 +199,12 @@ void main() {
         await _settle(tester);
         expect(writer.saves, [false]);
         expect(find.textContaining('Saved .github/workflows/postpilot.yml'), findsOneWidget);
-        expect(find.textContaining('Commit and push it'), findsOneWidget);
+        expect(find.textContaining('Saved .github/workflows/postpilot.yml. Commit and push it'), findsOneWidget);
       });
 
       testWidgets('a different file is only replaced after the person confirms ($label)', (tester) async {
-        final writer = _Writer(results: const [WorkflowNeedsConfirmation('.github/workflows/postpilot.yml'), WorkflowSaved('.github/workflows/postpilot.yml', replaced: true)]);
+        final needs = const WorkflowNeedsConfirmation('.github/workflows/postpilot.yml');
+        final writer = _Writer(results: [needs, needs, const WorkflowSaved('.github/workflows/postpilot.yml', replaced: true)]);
         final vm = makeVm(writer);
         await launch(tester, vm, size: size, dark: dark);
 

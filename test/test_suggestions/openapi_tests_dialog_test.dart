@@ -81,8 +81,16 @@ void main() {
   }
 
   /// Scrolls the dialog until [finder] is built and on screen: the lower parts of the preview are lazy at phone height.
-  Future<void> reveal(WidgetTester tester, Finder finder) =>
-      tester.scrollUntilVisible(finder, 300, scrollable: find.byType(Scrollable).first, maxScrolls: 60);
+  Future<void> reveal(WidgetTester tester, Finder finder) async {
+    final scrollable = find.byType(Scrollable).first;
+    // Back to the top first: the item may be above what is built now, and scrolling only goes one way.
+    await tester.drag(scrollable, const Offset(0, 100000), warnIfMissed: false);
+    await tester.pump();
+    await tester.scrollUntilVisible(finder, 300, scrollable: scrollable, maxScrolls: 60);
+    // Built is not yet on screen: bring it fully into view so a tap on it lands.
+    await tester.ensureVisible(finder);
+    await tester.pump();
+  }
 
   Future<void> paste(WidgetTester tester, String text) async {
     await tester.enterText(find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText?.startsWith('Or paste') == true), text);

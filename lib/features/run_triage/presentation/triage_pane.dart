@@ -64,7 +64,7 @@ class TriagePane extends StatelessWidget {
         if (!report.hasFailures)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
-            child: EmptyHint(icon: Icons.check_circle_outline, title: 'Nothing failed', message: 'Every request that was sent passed its checks.'),
+            child: EmptyHint(icon: Icons.check_circle_outline, title: 'No failures to triage', message: 'Every request that was sent passed its checks.'),
           )
         else
           for (final group in report.groups) _GroupCard(group: group, analysis: a),

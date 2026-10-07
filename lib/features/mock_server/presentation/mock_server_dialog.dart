@@ -260,27 +260,26 @@ class _MockServerDialogState extends State<MockServerDialog> {
     );
   }
 
-  /// The server controls above, the tabs below. On a phone the controls take at most two fifths of the height and scroll, so the tabs
-  /// never end up squeezed to nothing by a row of chips.
+  /// The server controls above, the tabs below. The controls take at most two fifths of the height and scroll beyond that, so the tabs
+  /// are never squeezed to a sliver by a row of chips and two banners (on a phone or on a desktop).
   Widget _layout(BuildContext context, {required List<Widget> controls, required Widget tabs}) {
-    final narrow = MediaQuery.sizeOf(context).width < 600;
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: narrow
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Flexible(
-                  flex: 2,
-                  child: SingleChildScrollView(
-                    primary: false,
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: controls),
-                  ),
-                ),
-                Expanded(flex: 3, child: tabs),
-              ],
-            )
-          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...controls, Expanded(child: tabs)]),
+      child: LayoutBuilder(
+        builder: (context, box) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: box.maxHeight * 0.4),
+              child: SingleChildScrollView(
+                primary: false,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: controls),
+              ),
+            ),
+            Expanded(child: tabs),
+          ],
+        ),
+      ),
     );
   }
 

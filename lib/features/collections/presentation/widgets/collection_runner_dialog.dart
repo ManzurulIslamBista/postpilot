@@ -320,10 +320,13 @@ class _Settings extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Checkbox(value: vm.stopOnFailure, onChanged: (value) => vm.setStopOnFailure(value ?? false)),
-                  const Tooltip(
-                    message: 'Requests marked "Always run" in their Flow tab (cleanups) are still sent afterwards. '
-                        'Pressing Stop yourself stops them too. A skipped request is not a failure.',
-                    child: Text('Stop on first failure'),
+                  // Flexible: on a narrow screen the label wraps instead of running out of the dialog.
+                  const Flexible(
+                    child: Tooltip(
+                      message: 'Requests marked "Always run" in their Flow tab (cleanups) are still sent afterwards. '
+                          'Pressing Stop yourself stops them too. A skipped request is not a failure.',
+                      child: Text('Stop on first failure'),
+                    ),
                   ),
                   const SizedBox(width: 8),
                 ],

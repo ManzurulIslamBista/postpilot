@@ -61,7 +61,8 @@ void main() {
       final e = _error('odoo.exceptions.MissingError', 'Record does not exist or has been deleted.\n(Record: res.partner(999999,), User: 2)');
       expect(e.title, 'Record not found');
       final d = e.diagnosis!;
-      expect((d.kind, d.model, d.recordIds, d.userId), (OdooErrorKind.missingRecord, 'res.partner', [999999], 2));
+      expect((d.kind, d.model, d.userId), (OdooErrorKind.missingRecord, 'res.partner', 2));
+      expect(d.recordIds, [999999]);
       expect(e.hint, contains('Record 999999 of res.partner does not exist'));
       expect(e.hint, contains('{{xmlid:module.name}}'));
     });
@@ -100,7 +101,8 @@ void main() {
       expect(inUse.hint, contains('Archive it instead'));
       final missing = _error('psycopg2.errors.ForeignKeyViolation', 'insert or update on table "res_partner" violates foreign key constraint "res_partner_parent_id_fkey"\nDETAIL:  Key (parent_id)=(9999) is not present in table "res_partner".');
       expect(missing.title, 'Unknown referenced record');
-      expect((missing.diagnosis!.field, missing.diagnosis!.recordIds), ('parent_id', [9999]));
+      expect(missing.diagnosis!.field, 'parent_id');
+      expect(missing.diagnosis!.recordIds, [9999]);
     });
 
     test('an unknown field, a wrong selection value and a bad date', () {

@@ -80,7 +80,7 @@ class OdooProblemsView extends StatelessWidget {
                             style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
                             onPressed: () => onFix!(p),
                             icon: const Icon(Icons.build_circle_outlined, size: 16),
-                            label: Flexible(child: Text(p.fix!.label, overflow: TextOverflow.ellipsis)),
+                            label: Text(p.fix!.label, overflow: TextOverflow.ellipsis),
                           ),
                         ),
                     ],

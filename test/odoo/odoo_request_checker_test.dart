@@ -451,7 +451,8 @@ void main() {
       expect(OdooNames.suggest('emial', names), ['email']);
       expect(OdooNames.suggest('parnter_id', names), ['parent_id']);
       expect(OdooNames.suggest('partner', names), contains('commercial_partner_id'), reason: 'a name that contains the word');
-      expect(OdooNames.suggest('categ', names), ['category_id']);
+      expect(OdooNames.suggest('categor', names), ['category_id'], reason: 'it only appears inside the name');
+      expect(OdooNames.suggest('categ', names), contains('category_id'));
       expect(OdooNames.suggest('name', names), isNot(contains('name')));
       expect(OdooNames.suggest('zzzzzz', names), isEmpty);
       expect(OdooNames.suggest('', names), isEmpty);

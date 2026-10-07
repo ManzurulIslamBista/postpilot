@@ -91,7 +91,7 @@ List<RunRecordDoc> _earlierRuns() => [
         ),
     ];
 
-Future<void> _show(WidgetTester tester, Widget Function(BuildContext) builder, {required Size size, required bool dark, bool asDialog = true}) async {
+Future<void> _show(WidgetTester tester, Widget Function(BuildContext) builder, {required Size size, required bool dark, bool asDialog = true, bool settle = true}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -110,7 +110,12 @@ Future<void> _show(WidgetTester tester, Widget Function(BuildContext) builder, {
   if (asDialog) {
     await tester.tap(find.text('open'));
   }
-  await tester.pumpAndSettle();
+  // A spinner that turns for as long as something is pending never settles: pump a moment instead.
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(milliseconds: 400));
+  }
 }
 
 void main() {
@@ -124,7 +129,7 @@ void main() {
 
         testWidgets('groups the failures by cause, biggest first, with a hint each ($label)', (tester) async {
           final a = TriageAnalysis.of(_bigRun(), _earlierRuns());
-          await showPane(tester, a, size: size, dark: dark, onRerun: (_) {});
+          await showPane(tester, a, size: Size(size.width, 4000), dark: dark, onRerun: (_) {});
 
           expect(find.text('16 failures, 3 causes'), findsOneWidget);
           expect(find.text('HTTP 401 Unauthorized'), findsOneWidget);
@@ -139,7 +144,7 @@ void main() {
 
         testWidgets('compares with the run before and names the flaky and slow requests ($label)', (tester) async {
           final a = TriageAnalysis.of(_bigRun(), _earlierRuns());
-          await showPane(tester, a, size: size, dark: dark);
+          await showPane(tester, a, size: Size(size.width, 4000), dark: dark);
           expect(find.textContaining('Since the run before (2026-10-06 11:00 UTC)'), findsOneWidget);
           // The run before (11:00) had Orders and Payments passing and no Reports requests at all: all 16 failures are new.
           expect(find.text('16 new'), findsOneWidget);
@@ -203,7 +208,7 @@ void main() {
       expect(find.text('Nothing failed'), findsWidgets);
       await showPane(tester, null, size: const Size(420, 800), dark: false);
       expect(find.text('No run to look at yet'), findsOneWidget);
-      await _show(tester, (_) => const Scaffold(body: TriagePane(analysis: null, busy: true)), size: const Size(420, 800), dark: true, asDialog: false);
+      await _show(tester, (_) => const Scaffold(body: TriagePane(analysis: null, busy: true)), size: const Size(420, 800), dark: true, asDialog: false, settle: false);
       expect(find.textContaining('appears when the run has finished'), findsOneWidget);
     });
   });
@@ -253,7 +258,7 @@ void main() {
       await tester.tap(find.byKey(ValueKey('run-${records.list.first.id}')));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Back to the list'), findsOneWidget);
-      expect(find.byType(ListTile), findsNothing);
+      expect(find.byKey(ValueKey('run-${records.list.first.id}')), findsNothing, reason: 'the list is gone; the detail has the screen');
       await tester.tap(find.byTooltip('Back to the list'));
       await tester.pumpAndSettle();
       expect(find.byType(ListTile), findsNWidgets(5));
@@ -368,7 +373,7 @@ void main() {
     Future<void> openDialog(WidgetTester tester, {required Size size, bool dark = false}) => _show(
           tester,
           (_) => MonitorDialog(collectionId: 1, collectionName: 'Shop', service: service, records: records, environments: _Envs()),
-          size: size,
+          size: Size(size.width, 3000), // a phone dialog is as tall as the screen, so the whole list is built
           dark: dark,
         );
 

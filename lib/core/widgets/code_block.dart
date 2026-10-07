@@ -73,16 +73,19 @@ class _CodeBlockState extends State<CodeBlock> {
             ),
             child: Row(
               children: [
-                Text(
-                  (widget.label ?? '').toUpperCase(),
-                  style: context.textStyles.caption.copyWith(
-                    color: colors.secondaryText,
-                    fontSize: 10.5,
-                    letterSpacing: 0.8,
-                    fontWeight: FontWeight.w600,
+                // The label gives way (and ends in "…") when a long one, such as a file path, meets a narrow screen.
+                Expanded(
+                  child: Text(
+                    (widget.label ?? '').toUpperCase(),
+                    overflow: TextOverflow.ellipsis,
+                    style: context.textStyles.caption.copyWith(
+                      color: colors.secondaryText,
+                      fontSize: 10.5,
+                      letterSpacing: 0.8,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 ...widget.actions,
                 TextButton.icon(
                   style: TextButton.styleFrom(

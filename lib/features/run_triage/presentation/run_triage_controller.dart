@@ -6,6 +6,7 @@ import '../domain/entities/run_record_doc.dart';
 import '../domain/repositories/run_record_repository.dart';
 import '../domain/services/app_run_mapper.dart';
 import '../domain/services/request_history_stats.dart';
+import '../domain/services/run_record_codec.dart';
 import '../domain/services/triage_analysis.dart';
 
 /// What a record needs to know about the run that the runner itself does not: names, the active environment, and
@@ -121,7 +122,8 @@ final class RunTriageController with ChangeNotifier {
       }
       entries.add(AppRunMapper.entryOf(result, folder: AppRunMapper.folderPath(context.folders, result.request.folderId), url: urls[id]!));
     }
-    final doc = AppRunMapper.docOf(
+    // Masked and trimmed once, here: the triage on screen, the copied issue and the stored record all read this copy.
+    final doc = RunRecordCodec.sanitize(AppRunMapper.docOf(
       collection: context.collectionName,
       environment: context.environmentName,
       startedAt: _startedAt,
@@ -130,7 +132,7 @@ final class RunTriageController with ChangeNotifier {
       trigger: trigger,
       iterations: iterations,
       stoppedOnFailure: stoppedOnFailure,
-    );
+    ));
 
     int? savedId;
     String? failure;

@@ -11,6 +11,7 @@ import '../../domain/entities/workplace_entity.dart';
 import '../../domain/entities/workplace_exception.dart';
 import '../../domain/repositories/workplace_repository.dart';
 import '../../domain/services/secret_splitter.dart';
+import '../../domain/services/credential_keeper.dart';
 
 /// Owns which workplace is open and keeps its `workspace.json` in step with the
 /// database.
@@ -280,8 +281,10 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
     try {
       // A network or auth failure ends here with the database untouched.
       final content = await repository.pullFromGit(active);
+      // The repository's copy has credentials blank: what this device already has is kept, never erased.
+      final text = await _keepingLocalCredentials(content);
       try {
-        await _replaceDatabase(content, activeEnvironment: active.activeEnvironment);
+        await _replaceDatabase(content, restoreText: text, activeEnvironment: active.activeEnvironment);
       } catch (_) {
         // The file now holds the pulled content, so it is what to restore.
         await _recover(active);
@@ -290,6 +293,8 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
       // The database is what the file says again: nothing is waiting to be saved.
       _unsaved = false;
       _writeMarker(false, workplace: active);
+      // The file still holds the repository's blanks where credentials were kept: write what the database has.
+      if (text != content.toJsonString()) await _persistActive();
       _workplaces = await repository.getWorkplaces();
       _activeWorkplace = await repository.getActiveWorkplace();
       _statusMessage = 'Pulled updates from Git!';
@@ -370,9 +375,22 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
 
   /// Makes the database hold [content]. A workspace file does not say which environment was
   /// active, so [activeEnvironment] (the name saved with the workplace) is selected again.
-  Future<void> _replaceDatabase(WorkplaceContent content, {String? activeEnvironment}) async {
+  /// [content]'s text with every credential it has blank filled from the database as it is now.
+  Future<String> _keepingLocalCredentials(WorkplaceContent content) async {
+    final pulled = content.toJsonString();
+    try {
+      final current = jsonDecode(BackupCodec.encode(await backupService.snapshot(), includeGit: true)) as Map<String, dynamic>;
+      final kept = CredentialKeeper.keep(jsonDecode(pulled) as Map<String, dynamic>, current);
+      final text = const JsonEncoder.withIndent('  ').convert(kept);
+      return jsonEncode(kept) == jsonEncode(jsonDecode(pulled)) ? pulled : text;
+    } catch (_) {
+      return pulled; // the safeguard must never stop a pull
+    }
+  }
+
+  Future<void> _replaceDatabase(WorkplaceContent content, {String? activeEnvironment, String? restoreText}) async {
     await database.clearWorkplaceData();
-    if (!_isEmpty(content)) await backupService.restore(content.toJsonString(), restoreGit: true);
+    if (!_isEmpty(content)) await backupService.restore(restoreText ?? content.toJsonString(), restoreGit: true);
     await _selectEnvironment(activeEnvironment);
     shellViewModel.closeRequest();
   }

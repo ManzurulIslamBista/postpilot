@@ -34,9 +34,11 @@ abstract final class SecretFields {
   static bool looksSecretKey(String key) => SecretNames.looksSecretKey(key);
 
   /// [auth] (a `RequestAuth.toJson()` map) without its credential keys.
+  /// A value that is only a `{{variable}}` reference is not a secret (the variable holds it) and stays, so a
+  /// collection's `access-token: {{accessToken}}` survives a push and a pull.
   static Map<String, Object?> stripAuth(Map<String, Object?> auth) => {
         for (final e in auth.entries)
-          if (!authKeys.contains(e.key)) e.key: e.value,
+          if (!authKeys.contains(e.key) || (e.value is String && SecretNames.isTemplateOnly(e.value as String))) e.key: e.value,
       };
 
   /// [doc] without credentials: its `auth` map loses [authKeys], on the

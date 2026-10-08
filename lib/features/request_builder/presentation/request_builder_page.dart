@@ -14,6 +14,7 @@ import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/resizable_split.dart';
 import '../../cors_proxy/presentation/cors_error_help.dart';
 import '../../documentation/presentation/widgets/request_docs_tab.dart';
+import '../../auth_doctor/presentation/auth_doctor_banner.dart';
 import '../../odoo/presentation/widgets/odoo_error_banner.dart';
 import '../../request_flow/presentation/widgets/flow_report_strip.dart';
 import '../../request_flow/presentation/widgets/request_flow_tab.dart';
@@ -459,6 +460,7 @@ class _RequestPane extends StatelessWidget {
                         auth: request.auth,
                         collectionId: request.collectionId,
                         folderId: request.folderId,
+                        previewRequest: request,
                         onChanged: vm.updateAuth,
                       ),
                     ],
@@ -530,6 +532,7 @@ class _ResponsePane extends StatelessWidget {
         if (vm.errorMessage != null && vm.errorHelp != null) CorsErrorHelp(help: vm.errorHelp!),
         if (vm.response != null) AuthNotesBanner(notes: vm.response!.authNotes),
         if (vm.response != null) OdooErrorBanner(response: vm.response!, request: request),
+        if (vm.response != null) AuthDoctorBanner(response: vm.response!, request: request),
         if (vm.isSending && vm.flowStatus != null) _FlowStatusLine(text: vm.flowStatus!),
         if (vm.lastFlow != null) FlowReportStrip(report: vm.lastFlow!),
         if (vm.lastScriptResult != null) ScriptResultsView(result: vm.lastScriptResult!),

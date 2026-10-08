@@ -11,6 +11,9 @@ import '../../../run_triage/presentation/run_results_tabs.dart';
 import '../../../run_triage/presentation/run_triage_controller.dart';
 import '../../../run_triage/presentation/run_triage_wiring.dart';
 import '../view_models/collection_runner_view_model.dart';
+import '../../../cleanup_ledger/presentation/view_models/cleanup_ledger.dart';
+import '../../../cleanup_ledger/presentation/widgets/auto_cleanup_option.dart';
+import '../../../cleanup_ledger/presentation/widgets/run_cleanup_panel.dart';
 
 class CollectionRunnerDialog extends StatefulWidget {
   final int collectionId;
@@ -39,6 +42,9 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
   final _delay = TextEditingController(text: '0');
   final _data = TextEditingController();
   bool _showSetup = true;
+  // The cleanup ledger as the run started, so the panel under the results knows which records this run created.
+  int? _ledgerMark;
+  int _runSerial = 0;
 
   @override
   void initState() {
@@ -80,6 +86,8 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
       final ok = await confirmProductionSend(context, warning, onSilence: () => guard?.silenceForSession(warning.environmentName));
       if (!ok || !mounted) return;
     }
+    _ledgerMark = locator.isRegistered<CleanupLedger>() ? locator<CleanupLedger>().mark : null;
+    _runSerial++;
     _viewModel.start(widget.collectionId);
     setState(() => _showSetup = false);
   }
@@ -131,6 +139,9 @@ class _CollectionRunnerDialogState extends State<CollectionRunnerDialog> {
                         ? _Setup(vm: vm, iterations: _iterations, delay: _delay, data: _data)
                         : RunResultsTabs(results: _Results(vm: vm), triage: _triage, onRerunFailed: _rerunFailed),
                   ),
+                  // What the run created on the server, with the choice to delete it (only when something was made).
+                  if (!_showSetup && !vm.isRunning && _ledgerMark != null)
+                    RunCleanupPanel(key: ValueKey('run-cleanup-$_runSerial'), since: _ledgerMark!),
                   const SizedBox(height: 8),
                   _buildActions(vm),
                 ],
@@ -332,6 +343,7 @@ class _Settings extends StatelessWidget {
                 ],
               ),
             ),
+            const AutoCleanupOption(),
           ],
         ),
         const SizedBox(height: 12),

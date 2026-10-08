@@ -237,6 +237,22 @@ abstract final class PostmanCollectionExporter {
               {'key': 'headerPrefix', 'value': auth.jwtHeaderPrefix},
             ],
           },
+        // Postman has no HMAC auth: this block is read back by PostPilot, and Postman itself shows the request without auth.
+        AuthType.hmac => {
+            'type': 'hmac',
+            'hmac': [
+              {'key': 'preset', 'value': auth.hmacPreset.name},
+              {'key': 'secret', 'value': auth.hmacSecret},
+              {'key': 'algorithm', 'value': auth.hmacAlgorithm.name},
+              {'key': 'encoding', 'value': auth.hmacEncoding.name},
+              {'key': 'payload', 'value': auth.hmacPayloadTemplate},
+              {'key': 'headerName', 'value': auth.hmacHeaderName},
+              {'key': 'headerValue', 'value': auth.hmacHeaderTemplate},
+              {'key': 'timestampHeader', 'value': auth.hmacTimestampHeader},
+              {'key': 'timestampSource', 'value': auth.hmacTimestampSource.name},
+              {'key': 'timestamp', 'value': auth.hmacTimestampValue},
+            ],
+          },
         // The cached access token is deliberately left out: it is short-lived
         // and Postman re-fetches its own anyway.
         AuthType.oauth2 => {
@@ -280,6 +296,7 @@ final class _SecretRedactor {
     'apikey': {'value': 'apiKey'},
     'awsv4': {'secretKey': 'awsSecretKey', 'sessionToken': 'awsSessionToken'},
     'jwt': {'secret': 'jwtSecret'},
+    'hmac': {'secret': 'hmacSecret'},
     'oauth2': {'clientSecret': 'oauth2ClientSecret', 'password': 'oauth2Password'},
   };
 

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../cleanup_ledger/presentation/view_models/cleanup_section_view_model.dart';
+import '../../../cleanup_ledger/presentation/widgets/cleanup_section.dart';
 import '../view_models/request_settings_view_model.dart';
 import 'setting_row.dart';
 import 'synced_text_field.dart';
@@ -130,6 +132,9 @@ class _RequestSettingsTabState extends State<RequestSettingsTab> {
                   onPressed: overrides.hasOverrides ? vm.clear : null,
                 ),
               ),
+              // Not an override of a global setting: what to delete from the server once a run is done.
+              if (locator.isRegistered<CleanupSectionViewModel>())
+                CleanupSection(requestId: widget.requestId, cleanup: overrides.flow.cleanup, onChanged: vm.setCleanup),
             ],
           );
         },

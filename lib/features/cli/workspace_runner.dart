@@ -32,6 +32,7 @@ import '../request_builder/domain/services/digest_auth_challenge.dart';
 import '../request_builder/domain/services/oauth2_token_service.dart';
 import '../request_builder/domain/services/request_spec_builder.dart';
 import '../request_builder/domain/services/resolved_request_spec.dart';
+import '../matrix_run/domain/services/matrix_read_only.dart';
 import '../safety/domain/services/production_detector.dart';
 import '../scripting/data/models/scripts_json_codec.dart';
 import '../scripting/domain/entities/assertion_result.dart';
@@ -109,6 +110,9 @@ final class RunOptions {
   /// `--fail-on-skip`: a skipped request makes the run fail.
   final bool failOnSkip;
 
+  /// Only GET, HEAD and OPTIONS requests are selected (`--matrix` without `--include-writes`).
+  final bool readOnly;
+
   const RunOptions({
     this.environment,
     this.variables = const {},
@@ -122,6 +126,7 @@ final class RunOptions {
     this.delay = Duration.zero,
     this.production = const ProductionLock(),
     this.failOnSkip = false,
+    this.readOnly = false,
   });
 }
 
@@ -379,6 +384,7 @@ final class WorkspaceRunner {
         final folder = _folderPath(collection, item.request.folderId);
         if (options.folder != null && folder != options.folder && !folder.startsWith('${options.folder}/')) continue;
         if (options.requests.isNotEmpty && !options.requests.any((s) => _matchesRequest(s, folder, item.request.name))) continue;
+        if (options.readOnly && !MatrixReadOnly.allows(item.request.method)) continue;
         yield (collection, item);
       }
     }

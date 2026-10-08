@@ -8,6 +8,7 @@ import '../../../../core/widgets/method_badge.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../ci/presentation/ci_setup_dialog.dart';
 import '../../../run_triage/presentation/monitor_dialog.dart';
+import '../../../matrix_run/presentation/matrix_run_entry.dart';
 import '../../../run_triage/presentation/monitor_status_panel.dart';
 import '../../../run_triage/presentation/run_history_dialog.dart';
 import '../../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
@@ -403,6 +404,7 @@ class _CollectionTile extends StatelessWidget {
                 PopupMenuItem(value: 'run', child: Text('Run collection')),
                 PopupMenuItem(value: 'run_history', child: Text('Run history…')),
                 PopupMenuItem(value: 'monitor', child: Text('Monitor…')),
+                PopupMenuItem(value: 'matrix_run', child: Text('Matrix run…')),
                 PopupMenuItem(value: 'variables', child: Text('Variables')),
                 PopupMenuItem(value: 'auth', child: Text('Collection auth')),
                 PopupMenuItem(value: 'defaults', child: Text('Defaults (headers, tests)…')),
@@ -466,6 +468,8 @@ class _CollectionTile extends StatelessWidget {
         await RunHistoryDialog.show(context, collectionId: collection.id, collectionName: collection.name);
       case 'monitor':
         await MonitorDialog.show(context, collectionId: collection.id, collectionName: collection.name);
+      case 'matrix_run':
+        await showMatrixRun(context, collectionId: collection.id);
       case 'variables':
         await CollectionVariablesDialog.show(context, collectionId: collection.id, collectionName: collection.name);
       case 'auth':

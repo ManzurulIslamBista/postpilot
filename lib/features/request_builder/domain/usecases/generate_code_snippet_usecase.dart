@@ -5,6 +5,7 @@ import '../../../settings/domain/repositories/request_settings_repository.dart';
 import '../../../settings/domain/repositories/settings_repository.dart';
 import '../entities/api_request_entity.dart';
 import '../services/code_generators/code_generator.dart';
+import '../services/code_generators/hmac_snippet_note.dart';
 import '../services/request_spec_builder.dart';
 import 'build_variable_resolver_usecase.dart';
 import 'prepare_request_usecase.dart';
@@ -43,6 +44,9 @@ final class GenerateCodeSnippetUseCase implements UseCase<String, GenerateCodeSn
         );
 
   @override
-  Future<String> call(GenerateCodeSnippetParams params) async =>
-      params.generator.generate((await _prepareRequestUseCase(params.request)).spec);
+  Future<String> call(GenerateCodeSnippetParams params) async {
+    final prepared = await _prepareRequestUseCase(params.request);
+    // An HMAC signature that covers the clock is only good for a few minutes: the snippet says so.
+    return HmacSnippetNote.append(params.generator.generate(prepared.spec), params.generator.id, prepared.auth);
+  }
 }

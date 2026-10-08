@@ -221,7 +221,8 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
       child: Container(
         color: selected ? colors.mainAccent.withValues(alpha: 0.13) : null,
         padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Row(
+        // A narrow dialog (a phone) keeps the icon and the text: the category tag and the key hint would not fit next to them.
+        child: LayoutBuilder(builder: (context, box) => Row(
           children: [
             SizedBox(
               width: 44,
@@ -250,14 +251,14 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
                 ],
               ),
             ),
-            if (showHeader || !empty)
+            if ((showHeader || !empty) && box.maxWidth >= 460)
               Padding(
                 padding: const EdgeInsets.only(left: 8),
                 child: Text(item.category.label, style: context.textStyles.caption.copyWith(color: colors.secondaryText, fontSize: 10.5)),
               ),
-            if (item.shortcut != null) Padding(padding: const EdgeInsets.only(left: 8), child: _KeyCap(item.shortcut!)),
+            if (item.shortcut != null && box.maxWidth >= 460) Padding(padding: const EdgeInsets.only(left: 8), child: _KeyCap(item.shortcut!)),
           ],
-        ),
+        )),
       ),
     );
   }

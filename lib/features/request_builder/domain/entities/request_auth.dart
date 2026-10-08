@@ -30,6 +30,31 @@ final class RequestAuth {
   final String jwtPayload;
   final String jwtHeaderPrefix;
 
+  // HMAC signature (webhooks: GitHub, Stripe, Shopify, Slack, or a scheme of one's own). The defaults are the
+  // GitHub preset; see `HmacPresets`.
+  final HmacPreset hmacPreset;
+  final String hmacSecret;
+  final HmacAlgorithm hmacAlgorithm;
+  final HmacEncoding hmacEncoding;
+
+  /// What is signed: text with `{body}` `{timestamp}` `{method}` `{path}` `{query}` `{url}` in it.
+  final String hmacPayloadTemplate;
+  final String hmacHeaderName;
+
+  /// What the header holds: text with `{signature}` and `{timestamp}` in it.
+  final String hmacHeaderTemplate;
+
+  /// A header that carries the timestamp on its own (Slack's `X-Slack-Request-Timestamp`); empty for none.
+  final String hmacTimestampHeader;
+  final HmacTimestampSource hmacTimestampSource;
+
+  /// The timestamp used with [HmacTimestampSource.fixed].
+  final String hmacTimestampValue;
+
+  static const hmacDefaultPayloadTemplate = '{body}';
+  static const hmacDefaultHeaderName = 'X-Hub-Signature-256';
+  static const hmacDefaultHeaderTemplate = 'sha256={signature}';
+
   // OAuth 2.0
   final OAuth2GrantType oauth2GrantType;
   final String oauth2AccessTokenUrl;
@@ -72,6 +97,16 @@ final class RequestAuth {
     this.jwtAlgorithm = JwtAlgorithm.hs256,
     this.jwtPayload = '{}',
     this.jwtHeaderPrefix = 'Bearer',
+    this.hmacPreset = HmacPreset.github,
+    this.hmacSecret = '',
+    this.hmacAlgorithm = HmacAlgorithm.sha256,
+    this.hmacEncoding = HmacEncoding.hex,
+    this.hmacPayloadTemplate = hmacDefaultPayloadTemplate,
+    this.hmacHeaderName = hmacDefaultHeaderName,
+    this.hmacHeaderTemplate = hmacDefaultHeaderTemplate,
+    this.hmacTimestampHeader = '',
+    this.hmacTimestampSource = HmacTimestampSource.now,
+    this.hmacTimestampValue = '',
     this.oauth2GrantType = OAuth2GrantType.clientCredentials,
     this.oauth2AccessTokenUrl = '',
     this.oauth2AuthorizationUrl = '',
@@ -107,6 +142,16 @@ final class RequestAuth {
     JwtAlgorithm? jwtAlgorithm,
     String? jwtPayload,
     String? jwtHeaderPrefix,
+    HmacPreset? hmacPreset,
+    String? hmacSecret,
+    HmacAlgorithm? hmacAlgorithm,
+    HmacEncoding? hmacEncoding,
+    String? hmacPayloadTemplate,
+    String? hmacHeaderName,
+    String? hmacHeaderTemplate,
+    String? hmacTimestampHeader,
+    HmacTimestampSource? hmacTimestampSource,
+    String? hmacTimestampValue,
     OAuth2GrantType? oauth2GrantType,
     String? oauth2AccessTokenUrl,
     String? oauth2AuthorizationUrl,
@@ -137,6 +182,16 @@ final class RequestAuth {
         jwtAlgorithm: jwtAlgorithm ?? this.jwtAlgorithm,
         jwtPayload: jwtPayload ?? this.jwtPayload,
         jwtHeaderPrefix: jwtHeaderPrefix ?? this.jwtHeaderPrefix,
+        hmacPreset: hmacPreset ?? this.hmacPreset,
+        hmacSecret: hmacSecret ?? this.hmacSecret,
+        hmacAlgorithm: hmacAlgorithm ?? this.hmacAlgorithm,
+        hmacEncoding: hmacEncoding ?? this.hmacEncoding,
+        hmacPayloadTemplate: hmacPayloadTemplate ?? this.hmacPayloadTemplate,
+        hmacHeaderName: hmacHeaderName ?? this.hmacHeaderName,
+        hmacHeaderTemplate: hmacHeaderTemplate ?? this.hmacHeaderTemplate,
+        hmacTimestampHeader: hmacTimestampHeader ?? this.hmacTimestampHeader,
+        hmacTimestampSource: hmacTimestampSource ?? this.hmacTimestampSource,
+        hmacTimestampValue: hmacTimestampValue ?? this.hmacTimestampValue,
         oauth2GrantType: oauth2GrantType ?? this.oauth2GrantType,
         oauth2AccessTokenUrl: oauth2AccessTokenUrl ?? this.oauth2AccessTokenUrl,
         oauth2AuthorizationUrl: oauth2AuthorizationUrl ?? this.oauth2AuthorizationUrl,
@@ -173,6 +228,16 @@ final class RequestAuth {
         jwtAlgorithm: jwtAlgorithm,
         jwtPayload: jwtPayload,
         jwtHeaderPrefix: jwtHeaderPrefix,
+        hmacPreset: hmacPreset,
+        hmacSecret: hmacSecret,
+        hmacAlgorithm: hmacAlgorithm,
+        hmacEncoding: hmacEncoding,
+        hmacPayloadTemplate: hmacPayloadTemplate,
+        hmacHeaderName: hmacHeaderName,
+        hmacHeaderTemplate: hmacHeaderTemplate,
+        hmacTimestampHeader: hmacTimestampHeader,
+        hmacTimestampSource: hmacTimestampSource,
+        hmacTimestampValue: hmacTimestampValue,
         oauth2GrantType: oauth2GrantType,
         oauth2AccessTokenUrl: oauth2AccessTokenUrl,
         oauth2AuthorizationUrl: oauth2AuthorizationUrl,
@@ -211,6 +276,16 @@ final class RequestAuth {
         jwtAlgorithm: jwtAlgorithm,
         jwtPayload: jwtPayload,
         jwtHeaderPrefix: jwtHeaderPrefix,
+        hmacPreset: hmacPreset,
+        hmacSecret: hmacSecret,
+        hmacAlgorithm: hmacAlgorithm,
+        hmacEncoding: hmacEncoding,
+        hmacPayloadTemplate: hmacPayloadTemplate,
+        hmacHeaderName: hmacHeaderName,
+        hmacHeaderTemplate: hmacHeaderTemplate,
+        hmacTimestampHeader: hmacTimestampHeader,
+        hmacTimestampSource: hmacTimestampSource,
+        hmacTimestampValue: hmacTimestampValue,
         oauth2GrantType: oauth2GrantType,
         oauth2AccessTokenUrl: oauth2AccessTokenUrl,
         oauth2AuthorizationUrl: oauth2AuthorizationUrl,
@@ -257,6 +332,31 @@ final class RequestAuth {
   /// every other type is already concrete.
   RequestAuth resolveInherited(RequestAuth? parent) => type == AuthType.inherit && parent != null ? parent : this;
 
+  bool get _hasDefaultHmac =>
+      hmacPreset == HmacPreset.github &&
+      hmacSecret.isEmpty &&
+      hmacAlgorithm == HmacAlgorithm.sha256 &&
+      hmacEncoding == HmacEncoding.hex &&
+      hmacPayloadTemplate == hmacDefaultPayloadTemplate &&
+      hmacHeaderName == hmacDefaultHeaderName &&
+      hmacHeaderTemplate == hmacDefaultHeaderTemplate &&
+      hmacTimestampHeader.isEmpty &&
+      hmacTimestampSource == HmacTimestampSource.now &&
+      hmacTimestampValue.isEmpty;
+
+  Map<String, dynamic> _hmacToJson() => {
+        'hmacPreset': hmacPreset.name,
+        'hmacSecret': hmacSecret,
+        'hmacAlgorithm': hmacAlgorithm.name,
+        'hmacEncoding': hmacEncoding.name,
+        'hmacPayloadTemplate': hmacPayloadTemplate,
+        'hmacHeaderName': hmacHeaderName,
+        'hmacHeaderTemplate': hmacHeaderTemplate,
+        'hmacTimestampHeader': hmacTimestampHeader,
+        'hmacTimestampSource': hmacTimestampSource.name,
+        'hmacTimestampValue': hmacTimestampValue,
+      };
+
   Map<String, dynamic> toJson() => {
         'type': type.name,
         'apiKeyName': apiKeyName,
@@ -274,6 +374,9 @@ final class RequestAuth {
         'jwtAlgorithm': jwtAlgorithm.name,
         'jwtPayload': jwtPayload,
         'jwtHeaderPrefix': jwtHeaderPrefix,
+        // Written only when they differ from the defaults, so auth saved before they existed (and any auth of
+        // another type) reads back identical and a synced document does not change.
+        if (!_hasDefaultHmac) ..._hmacToJson(),
         'oauth2GrantType': oauth2GrantType.name,
         'oauth2AccessTokenUrl': oauth2AccessTokenUrl,
         'oauth2AuthorizationUrl': oauth2AuthorizationUrl,
@@ -312,6 +415,16 @@ final class RequestAuth {
         jwtAlgorithm: _enumByName(JwtAlgorithm.values, map['jwtAlgorithm'], JwtAlgorithm.hs256),
         jwtPayload: map['jwtPayload'] as String? ?? '{}',
         jwtHeaderPrefix: map['jwtHeaderPrefix'] as String? ?? 'Bearer',
+        hmacPreset: _enumByName(HmacPreset.values, map['hmacPreset'], HmacPreset.github),
+        hmacSecret: map['hmacSecret'] as String? ?? '',
+        hmacAlgorithm: _enumByName(HmacAlgorithm.values, map['hmacAlgorithm'], HmacAlgorithm.sha256),
+        hmacEncoding: _enumByName(HmacEncoding.values, map['hmacEncoding'], HmacEncoding.hex),
+        hmacPayloadTemplate: map['hmacPayloadTemplate'] as String? ?? hmacDefaultPayloadTemplate,
+        hmacHeaderName: map['hmacHeaderName'] as String? ?? hmacDefaultHeaderName,
+        hmacHeaderTemplate: map['hmacHeaderTemplate'] as String? ?? hmacDefaultHeaderTemplate,
+        hmacTimestampHeader: map['hmacTimestampHeader'] as String? ?? '',
+        hmacTimestampSource: _enumByName(HmacTimestampSource.values, map['hmacTimestampSource'], HmacTimestampSource.now),
+        hmacTimestampValue: map['hmacTimestampValue'] as String? ?? '',
         oauth2GrantType: _enumByName(OAuth2GrantType.values, map['oauth2GrantType'], OAuth2GrantType.clientCredentials),
         oauth2AccessTokenUrl: map['oauth2AccessTokenUrl'] as String? ?? '',
         oauth2AuthorizationUrl: map['oauth2AuthorizationUrl'] as String? ?? '',

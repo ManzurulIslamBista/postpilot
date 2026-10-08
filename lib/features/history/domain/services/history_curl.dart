@@ -79,7 +79,7 @@ abstract final class HistoryCurl {
       for (final field in formFields) '--form ${shellQuote(field)}',
     ];
     final note = switch (auth.type) {
-      AuthType.basic || AuthType.digest || AuthType.awsSignatureV4 || AuthType.jwtBearer || AuthType.oauth2 =>
+      AuthType.basic || AuthType.digest || AuthType.awsSignatureV4 || AuthType.jwtBearer || AuthType.hmac || AuthType.oauth2 =>
         '\n# ${auth.type.label} credentials are not part of History: add them before running this.',
       _ => '',
     };

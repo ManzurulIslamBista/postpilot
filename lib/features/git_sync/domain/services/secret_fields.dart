@@ -22,6 +22,7 @@ abstract final class SecretFields {
     'awsSecretKey',
     'awsSessionToken',
     'jwtSecret',
+    'hmacSecret',
     'oauth2ClientSecret',
     'oauth2Password',
     'oauth2AccessToken',

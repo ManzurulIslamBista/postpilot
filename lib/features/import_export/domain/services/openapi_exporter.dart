@@ -498,6 +498,18 @@ final class _Exporter {
           'in': 'header',
           'x-amazon-apigateway-authtype': 'awsSigv4',
         });
+      case AuthType.hmac:
+        // The signature travels in a header; OpenAPI has no scheme for "the HMAC of the body", so it is the closest
+        // thing, an API key in that header, with the how in its description.
+        final header = _resolveVariables(auth.hmacHeaderName).trim();
+        if (header.isEmpty) return null;
+        return _register('hmacAuth', {
+          'type': 'apiKey',
+          'name': header,
+          'in': 'header',
+          'description': 'HMAC-signed request: ${auth.hmacAlgorithm.label} (${auth.hmacEncoding.label.toLowerCase()}) '
+              'over ${_resolveVariables(auth.hmacPayloadTemplate)}.',
+        });
       case AuthType.oauth2:
         return _oauth2Scheme(auth);
     }

@@ -1,4 +1,7 @@
 // Pure Dart.
+import '../../../auth_doctor/domain/entities/auth_doctor_input.dart';
+import '../../../auth_doctor/domain/entities/auth_finding.dart';
+import '../../../auth_doctor/domain/services/auth_doctor.dart';
 import '../entities/run_record_doc.dart';
 import 'failure_fingerprinter.dart';
 
@@ -9,7 +12,8 @@ final class FailureGroup {
   /// Every failed result with this cause, in the order the run sent them.
   final List<RunResultEntry> results;
 
-  /// One plain-language sentence saying what probably broke and what to do about it.
+  /// One plain-language sentence saying what probably broke and what to do about it. For a 401 or 403 it ends with what
+  /// the 401/403 doctor makes of the run, when that is more than a guess (see `AuthDoctor.diagnoseRun`).
   final String hint;
 
   const FailureGroup({required this.fingerprint, required this.results, required this.hint});
@@ -50,7 +54,9 @@ final class TriageReport {
 /// Groups the failures of a run by cause, biggest first, so twelve failures that are one expired token read as one
 /// line instead of twelve.
 abstract final class FailureTriage {
-  static TriageReport analyse(List<RunResultEntry> results) {
+  /// [environment] is the name of the environment the run used; with it the doctor can tell that a 401 came from a production
+  /// host reached with a staging environment, or the other way round.
+  static TriageReport analyse(List<RunResultEntry> results, {String environment = ''}) {
     final byKey = <String, List<RunResultEntry>>{};
     final fingerprints = <String, FailureFingerprint>{};
     final firstSeen = <String, int>{};
@@ -76,7 +82,7 @@ abstract final class FailureTriage {
           FailureGroup(
             fingerprint: fingerprints[key]!,
             results: byKey[key]!,
-            hint: hintFor(fingerprints[key]!, byKey[key]!.length),
+            hint: hintFor(fingerprints[key]!, byKey[key]!.length, failed: byKey[key]!, run: results, environment: environment),
           ),
       ],
       totalResults: results.length,
@@ -85,8 +91,15 @@ abstract final class FailureTriage {
     );
   }
 
-  /// What probably happened and what to do, for [count] requests that failed with [fingerprint].
-  static String hintFor(FailureFingerprint fingerprint, int count) {
+  /// What probably happened and what to do, for [count] requests that failed with [fingerprint]. [failed] are those
+  /// requests and [run] every result of the run, which the 401/403 doctor compares them with.
+  static String hintFor(
+    FailureFingerprint fingerprint,
+    int count, {
+    List<RunResultEntry> failed = const [],
+    List<RunResultEntry> run = const [],
+    String environment = '',
+  }) {
     final many = count != 1;
     final subject = many ? '$count requests' : '1 request';
     final verb = many ? 'were' : 'was';
@@ -94,7 +107,7 @@ abstract final class FailureTriage {
     final where = host ?? 'the server';
     switch (fingerprint.kind) {
       case FailureKind.auth:
-        return switch (fingerprint.status) {
+        final base = switch (fingerprint.status) {
           401 => '$subject failed with 401 (Unauthorized): the token or API key was probably rejected or has expired. '
               'Renew the auth (or run the login request again) and re-run the failed requests.',
           403 => '$subject failed with 403 (Forbidden): the credentials were accepted but are not allowed to do this. '
@@ -102,6 +115,7 @@ abstract final class FailureTriage {
           _ => '$subject could not be sent because the access token could not be renewed. '
               'Check the OAuth settings (token URL, client id and secret) and sign in again if needed.',
         };
+        return _withDoctor(base, fingerprint.status, count, failed, run, environment);
       case FailureKind.network:
         return switch (fingerprint.detail) {
           'timeout' => '$subject timed out waiting for $where: the service is slow or down. '
@@ -137,6 +151,31 @@ abstract final class FailureTriage {
       case FailureKind.other:
         return '$subject failed with the same message. Open the first one to read the full text.';
     }
+  }
+
+  /// [hint] followed by the top finding of the 401/403 doctor for these requests, when it is at least a likely cause. A run
+  /// record keeps no headers and no body, so the doctor can only say what the status, the host, the environment and the
+  /// rest of the run show; a hedged finding is left out and the hint stays as it was.
+  static String _withDoctor(
+    String hint,
+    int? status,
+    int count,
+    List<RunResultEntry> failed,
+    List<RunResultEntry> run,
+    String environment,
+  ) {
+    if (status == null || (status != 401 && status != 403) || failed.isEmpty) return hint;
+    final first = failed.first;
+    final host = Uri.tryParse(first.url)?.host.toLowerCase() ?? '';
+    final passed = host.isEmpty
+        ? 0
+        : run.where((r) => r.passed && !r.isSkipped && (r.status ?? 0) >= 200 && (r.status ?? 0) < 300 && Uri.tryParse(r.url)?.host.toLowerCase() == host).length;
+    final findings = AuthDoctor.diagnoseRun(
+      AuthRunFacts(status: status, url: first.url, environment: environment, rejected: count, passedOnSameHost: passed),
+    );
+    final top = findings.firstOrNull;
+    if (top == null || top.confidence == FindingConfidence.possible) return hint;
+    return '$hint ${top.explanation} ${top.fix}';
   }
 
   static String _httpHint(int status, String subject) {

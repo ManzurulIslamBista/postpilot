@@ -171,6 +171,11 @@ import '../../features/settings/domain/repositories/settings_repository.dart';
 import '../../features/settings/presentation/view_models/request_settings_view_model.dart';
 import '../../features/settings/presentation/view_models/settings_view_model.dart';
 import '../../features/shell/presentation/shell_view_model.dart';
+import '../../features/workspace_refactor/domain/entities/refactor_receipt.dart';
+import '../../features/workspace_refactor/domain/services/refactor_applier.dart';
+import '../../features/workspace_refactor/domain/services/refactor_writer.dart';
+import '../../features/workspace_refactor/domain/services/workspace_reader.dart';
+import '../../features/workspace_refactor/presentation/view_models/workspace_refactor_view_model.dart';
 import '../../features/workplace/data/repositories/workplace_repository_impl.dart';
 import '../../features/workplace/domain/repositories/workplace_repository.dart';
 import '../../features/workplace/presentation/view_models/workplace_view_model.dart';
@@ -179,6 +184,15 @@ import '../../features/run_triage/data/settings_monitor_config_store.dart';
 import '../../features/run_triage/domain/repositories/run_record_repository.dart';
 import '../../features/run_triage/domain/services/monitor_runner.dart';
 import '../../features/run_triage/presentation/monitor_service.dart';
+import '../../features/matrix_run/data/cookie_session_isolation.dart';
+import '../../features/matrix_run/data/settings_matrix_identity_store.dart';
+import '../../features/matrix_run/domain/repositories/matrix_identity_store.dart';
+import '../../features/matrix_run/domain/services/matrix_run_service.dart';
+import '../../features/matrix_run/presentation/matrix_run_view_model.dart';
+import '../../features/safety/domain/services/production_detector.dart';
+import '../../features/cleanup_ledger/data/app_cleanup_sender.dart';
+import '../../features/cleanup_ledger/presentation/view_models/cleanup_ledger.dart';
+import '../../features/cleanup_ledger/presentation/view_models/cleanup_section_view_model.dart';
 
 final locator = GetIt.instance;
 
@@ -207,6 +221,38 @@ void setupDependencies({AppDatabase? database}) {
   _registerGitSync();
   _registerWorkplace();
   _registerDevTools();
+  _registerWorkspaceRefactor();
+  _registerMatrixRun();
+  _registerCleanupLedger();
+}
+
+/// Matrix run: one collection against several environments or identities, compared on a grid. The identities are kept
+/// per workplace in the settings table, on this device only.
+void _registerMatrixRun() {
+  locator.registerLazySingleton<MatrixIdentityStore>(
+    () => SettingsMatrixIdentityStore(
+      locator<AppDatabase>().settingsDao,
+      () async => (await locator<WorkplaceRepository>().getActiveWorkplace())?.id,
+    ),
+  );
+  locator.registerLazySingleton<MatrixRunner>(
+    () => MatrixRunService(
+      locator<CollectionRunnerService>(),
+      locator<EnvironmentRepository>(),
+      guard: locator<ProductionGuard>(),
+      sessions: CookieSessionIsolation(locator<CookieJar>()),
+    ),
+  );
+  locator.registerFactory<MatrixRunViewModel>(
+    () => MatrixRunViewModel(
+      runner: locator<MatrixRunner>(),
+      identities: locator<MatrixIdentityStore>(),
+      environments: locator<EnvironmentRepository>(),
+      collections: locator<CollectionRepository>(),
+      picker: locator<CollectionRunnerViewModel>(),
+      isProduction: (name) => ProductionDetector.isProduction(name, extraWords: locator<SafetyPrefs>().extraWords),
+    ),
+  );
 }
 
 /// Developer tools: generators and helpers that sit beside the request builder.
@@ -296,6 +342,74 @@ void _registerDevTools() {
       locator<EnvironmentRepository>(),
       locator<CreateOdooWorkspaceUseCase>(),
     ),
+  );
+}
+
+/// The cleanup ledger: the records this session's requests created, and the way to delete them again. In memory only.
+void _registerCleanupLedger() {
+  locator.registerLazySingleton<CleanupLedger>(
+    () => CleanupLedger(
+      AppCleanupSender(
+        environmentName: () async => (await locator<EnvironmentRepository>().watchActive().first)?.name,
+        candidates: locator<ReloginUseCase>().candidates,
+        findRequest: locator<RequestRepository>().findById,
+        // The normal send path (variables, authentication, History, the console); the production lock is asked by the caller.
+        send: (request, variables) async {
+          final outcome = await locator<RequestFlowService>().send(request, dataVariables: variables);
+          final error = outcome.error;
+          if (error != null) throw error;
+          return outcome.response ?? (throw StateError('The server sent no response.'));
+        },
+      ),
+    ),
+  );
+  locator.registerFactory<CleanupSectionViewModel>(
+    () => CleanupSectionViewModel(
+      findRequest: locator<RequestRepository>().findById,
+      candidates: locator<ReloginUseCase>().candidates,
+      lastResponse: (requestId) => locator<ResponseHistory>().of(requestId).firstOrNull,
+    ),
+  );
+}
+
+/// Workspace refactoring: find and replace, rename a variable and the unused-variables report. They read and write through
+/// the repositories the screens use, so autosave, Git sync and open lists see every change. The undo of the last change
+/// is one object for the whole session (memory only), so a dialog opened again still offers it.
+void _registerWorkspaceRefactor() {
+  locator.registerLazySingleton<WorkspaceReader>(
+    () => WorkspaceReader(
+      locator<CollectionLoader>(),
+      locator<EnvironmentRepository>(),
+      locator<GlobalVariableRepository>(),
+      locator<RequestScriptsRepository>(),
+      locator<ResponseExampleRepository>(),
+      locator<DocumentationRepository>(),
+      locator<TagRepository>(),
+    ),
+  );
+  locator.registerLazySingleton<RefactorUndoStore>(RefactorUndoStore.new);
+  locator.registerLazySingleton<RefactorApplier>(
+    () => RefactorApplier(
+      locator<WorkspaceReader>(),
+      RepositoryRefactorWriter(
+        locator<RequestRepository>(),
+        locator<RequestScriptsRepository>(),
+        locator<ResponseExampleRepository>(),
+        locator<CollectionRepository>(),
+        locator<CollectionAuthRepository>(),
+        locator<CollectionVariableRepository>(),
+        locator<DefaultsRepository>(),
+        locator<EnvironmentRepository>(),
+        locator<GlobalVariableRepository>(),
+        locator<DocumentationRepository>(),
+        locator<TagRepository>(),
+      ),
+      // One transaction: a failure rolls every change back, and the autosave hears of one change, not thousands.
+      atomically: locator<AppDatabase>().transaction,
+    ),
+  );
+  locator.registerFactory<WorkspaceRefactorViewModel>(
+    () => WorkspaceRefactorViewModel(locator<WorkspaceReader>(), locator<RefactorApplier>(), locator<RefactorUndoStore>()),
   );
 }
 
@@ -455,6 +569,8 @@ void _registerRequestBuilder() {
       locator<SendRequestUseCase>(),
       AppFlowEnvironment(locator<BuildVariableResolverUseCase>(), locator<EnvironmentRepository>()),
       onNote: locator<RequestConsoleLog>().addNote,
+      // The cleanup ledger records what a request with "Clean up what this request creates" made.
+      onSent: locator<CleanupLedger>().recordSend,
     ),
   );
   locator.registerLazySingleton<CollectionRunnerService>(
@@ -721,7 +837,10 @@ void _registerImportExport() {
       locator<EnvironmentRepository>(),
     ),
   );
-  locator.registerLazySingleton<ImportHarUseCase>(() => ImportHarUseCase(locator<ImportedCollectionWriter>()));
+  locator.registerLazySingleton<ImportHarUseCase>(
+    // "Clean up" writes the clean collection the way the traffic recorder does: its environment, examples and checks too.
+    () => ImportHarUseCase(locator<ImportedCollectionWriter>(), recorded: locator<CreateCollectionFromRecordingUseCase>()),
+  );
   locator.registerLazySingleton<ImportCurlScriptUseCase>(
     () => ImportCurlScriptUseCase(locator<ImportedCollectionWriter>()),
   );

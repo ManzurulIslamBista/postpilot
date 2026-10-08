@@ -7,6 +7,7 @@ import '../../../request_builder/domain/usecases/send_request_usecase.dart';
 import '../../../settings/domain/entities/request_settings.dart';
 import '../../../settings/domain/repositories/request_settings_repository.dart';
 import '../entities/flow_report.dart';
+import '../entities/sent_request.dart';
 import '../services/flow_environment.dart';
 import '../services/flow_executor.dart';
 import '../services/run_if_evaluator.dart';
@@ -24,12 +25,16 @@ final class RequestFlowService {
   /// Told about every try after the first (`attempt 2/3 after 1.2 s`, `page 3`): the console shows them.
   final FlowNote? _observer;
 
+  /// Told about every send that got an answer, with the request's settings: the cleanup ledger records what it created.
+  final SendObserver? _onSent;
+
   RequestFlowService(
     this._settings,
     this._send,
     this._environment, {
     FlowExecutor? executor,
     FlowNote? onNote,
+    this._onSent,
   })  : _executor = executor ?? FlowExecutor(),
         _observer = onNote;
 
@@ -50,6 +55,48 @@ final class RequestFlowService {
   /// [FlowOutcome.error] (so the report of the earlier tries is not lost) and only a cancelled or unbuildable
   /// request throws. [dataVariables] and [historyRun] are a collection run's, handed on to every try.
   Future<FlowOutcome> send(
+    ApiRequestEntity request, {
+    ApiCancelToken? cancelToken,
+    Map<String, String> dataVariables = const {},
+    HistoryRunBudget? historyRun,
+    FlowNote? onNote,
+    RequestSettings? settings,
+  }) async {
+    final stored = settings ?? await settingsOf(request.id);
+    final outcome = await _sendWith(
+      request,
+      cancelToken: cancelToken,
+      dataVariables: dataVariables,
+      historyRun: historyRun,
+      onNote: onNote,
+      settings: stored,
+    );
+    await _announce(request, outcome, stored, dataVariables);
+    return outcome;
+  }
+
+  /// Tells the [SendObserver] about an answer. It never fails the send: a record that cannot be kept is not a reason to
+  /// lose a response that was received.
+  Future<void> _announce(ApiRequestEntity request, FlowOutcome outcome, RequestSettings stored, Map<String, String> dataVariables) async {
+    final observer = _onSent;
+    final response = outcome.response;
+    if (observer == null || response == null || outcome.error != null) return;
+    try {
+      String? environment;
+      try {
+        environment = await _environment.environmentName();
+      } catch (_) {
+        environment = null;
+      }
+      await observer(
+        SentRequest(request: request, response: response, settings: stored, dataVariables: dataVariables, environment: environment),
+      );
+    } catch (_) {
+      // The observer's own trouble.
+    }
+  }
+
+  Future<FlowOutcome> _sendWith(
     ApiRequestEntity request, {
     ApiCancelToken? cancelToken,
     Map<String, String> dataVariables = const {},

@@ -6,6 +6,7 @@ import '../entities/import_format.dart';
 import '../entities/import_summary.dart';
 import '../services/import_format_detector.dart';
 import 'import_curl_script_usecase.dart';
+import 'import_har_usecase.dart';
 import 'summarizing_importer.dart';
 
 final class ImportAnyParams {
@@ -19,7 +20,10 @@ final class ImportAnyParams {
   final int? collectionId;
   final int? folderId;
 
-  const ImportAnyParams({required this.text, this.format, this.collectionId, this.folderId});
+  /// "Clean up (recommended)" for a HAR recording: only the HAR importer reads it. Off imports every call exactly as recorded.
+  final bool cleanHar;
+
+  const ImportAnyParams({required this.text, this.format, this.collectionId, this.folderId, this.cleanHar = false});
 }
 
 /// The one import entry point: detects what was pasted (see
@@ -63,6 +67,7 @@ final class ImportAnyUseCase implements UseCase<ImportSummary, ImportAnyParams> 
       case ImportFormat.insomnia:
         return _importInsomnia(text);
       case ImportFormat.har:
+        if (_importHar case final CleanableHarImporter cleaner when params.cleanHar) return cleaner.importCleaned(text);
         return _importHar(text);
       case ImportFormat.backup:
         return _restoreBackup(text);

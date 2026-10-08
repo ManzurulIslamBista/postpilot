@@ -60,7 +60,7 @@ final class BuildApiLayerUseCase {
         if (apiKey != null && auth.apiKeyLocation == ApiKeyLocation.header) apiKey,
       ],
       unsupportedAuth: switch (auth.type) {
-        AuthType.basic || AuthType.digest || AuthType.awsSignatureV4 || AuthType.jwtBearer || AuthType.oauth2 => auth.type.label,
+        AuthType.basic || AuthType.digest || AuthType.awsSignatureV4 || AuthType.jwtBearer || AuthType.hmac || AuthType.oauth2 => auth.type.label,
         _ => null,
       },
       bodyKind: kind,

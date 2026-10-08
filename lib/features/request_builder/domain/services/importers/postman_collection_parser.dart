@@ -548,6 +548,9 @@ final class _Parser {
       return {for (final e in list) (e['key'] as String? ?? ''): e['value']};
     }
 
+    T byName<T extends Enum>(List<T> values, Object? name, T fallback) =>
+        values.firstWhere((v) => v.name == name, orElse: () => fallback);
+
     switch (type) {
       case 'noauth':
         return const RequestAuth(type: AuthType.none);
@@ -588,6 +591,21 @@ final class _Parser {
             orElse: () => JwtAlgorithm.hs256,
           ),
           jwtHeaderPrefix: '${f['headerPrefix'] ?? 'Bearer'}',
+        );
+      case 'hmac': // not a Postman type: the block this app writes (see the exporter)
+        final f = field('hmac');
+        return RequestAuth(
+          type: AuthType.hmac,
+          hmacPreset: byName(HmacPreset.values, f['preset'], HmacPreset.generic),
+          hmacSecret: '${f['secret'] ?? ''}',
+          hmacAlgorithm: byName(HmacAlgorithm.values, f['algorithm'], HmacAlgorithm.sha256),
+          hmacEncoding: byName(HmacEncoding.values, f['encoding'], HmacEncoding.hex),
+          hmacPayloadTemplate: '${f['payload'] ?? RequestAuth.hmacDefaultPayloadTemplate}',
+          hmacHeaderName: '${f['headerName'] ?? RequestAuth.hmacDefaultHeaderName}',
+          hmacHeaderTemplate: '${f['headerValue'] ?? RequestAuth.hmacDefaultHeaderTemplate}',
+          hmacTimestampHeader: '${f['timestampHeader'] ?? ''}',
+          hmacTimestampSource: byName(HmacTimestampSource.values, f['timestampSource'], HmacTimestampSource.now),
+          hmacTimestampValue: '${f['timestamp'] ?? ''}',
         );
       case 'oauth2':
         final f = field('oauth2');

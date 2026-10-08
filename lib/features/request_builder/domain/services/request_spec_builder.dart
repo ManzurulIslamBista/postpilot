@@ -11,6 +11,7 @@ import '../entities/key_value_item.dart';
 import '../entities/request_auth.dart';
 import '../entities/request_body.dart';
 import 'aws_sigv4_signer.dart';
+import 'hmac_signer.dart';
 import 'jwt_signer.dart';
 import 'resolved_request_spec.dart';
 import 'undefined_variables.dart';
@@ -25,10 +26,13 @@ import 'undefined_variables.dart';
 /// "what gets sent" and "what gets printed as a snippet" can never drift apart.
 final class RequestSpecBuilder {
   /// [boundary] makes the separator of a multipart body; replaced in tests to get a body that can be compared byte
-  /// for byte.
-  const RequestSpecBuilder({this._boundary = _newBoundary});
+  /// for byte. [now] is the clock an HMAC signature reads its `{timestamp}` from; replaced in tests.
+  const RequestSpecBuilder({this._boundary = _newBoundary, this._now = _systemNow});
 
   final String Function() _boundary;
+  final DateTime Function() _now;
+
+  static DateTime _systemNow() => DateTime.now();
 
   static String _newBoundary() {
     final random = Random.secure().nextInt(1 << 32).toRadixString(16).padLeft(8, '0');
@@ -137,6 +141,13 @@ final class RequestSpecBuilder {
         scan(auth.jwtSecret, 'the JWT secret');
         scan(auth.jwtPayload, 'the JWT payload');
         scan(auth.jwtHeaderPrefix, 'the JWT header prefix');
+      case AuthType.hmac:
+        scan(auth.hmacSecret, 'the HMAC secret');
+        scan(auth.hmacPayloadTemplate, 'the HMAC signed payload');
+        scan(auth.hmacHeaderName, 'the HMAC header name');
+        scan(auth.hmacHeaderTemplate, 'the HMAC header value');
+        scan(auth.hmacTimestampHeader, 'the HMAC timestamp header');
+        if (auth.hmacTimestampSource == HmacTimestampSource.fixed) scan(auth.hmacTimestampValue, 'the HMAC fixed timestamp');
       case AuthType.oauth2: // the cached token is sent as it is, not resolved
       case AuthType.none:
       case AuthType.inherit:
@@ -259,7 +270,7 @@ final class RequestSpecBuilder {
         !headers.keys.any((name) => name.toLowerCase() == 'x-amz-content-sha256')) {
       headers['X-Amz-Content-Sha256'] = 'UNSIGNED-PAYLOAD';
     }
-    _applyAuth(auth, headers, resolver, uri, body.bytes, method);
+    _applyAuth(auth, headers, resolver, uri, body.bytes, method, carriesFile: body.upload != null);
     return headers;
   }
 
@@ -269,8 +280,9 @@ final class RequestSpecBuilder {
     VariableResolver resolver,
     Uri uri,
     List<int>? body,
-    String method,
-  ) {
+    String method, {
+    bool carriesFile = false,
+  }) {
     switch (auth.type) {
       case AuthType.apiKey:
         if (auth.apiKeyLocation == ApiKeyLocation.header && auth.apiKeyName.isNotEmpty) {
@@ -299,11 +311,83 @@ final class RequestSpecBuilder {
           payload: _jwtPayload(resolver.resolve(auth.jwtPayload)),
         );
         headers['Authorization'] = '${auth.jwtHeaderPrefix} $token'.trim();
+      case AuthType.hmac:
+        final signed = _hmacSign(auth, resolver, uri, body, carriesFile, method);
+        for (final header in signed.headers.entries) {
+          // The header of the signature replaces a row of the same name, whatever its letter case, instead of repeating it.
+          headers.removeWhere((name, _) => name.toLowerCase() == header.key.toLowerCase());
+          headers[header.key] = header.value;
+        }
       case AuthType.oauth2:
         if (auth.oauth2AccessToken.isNotEmpty) headers['Authorization'] = 'Bearer ${auth.oauth2AccessToken}';
       case AuthType.none:
       case AuthType.inherit:
         break;
+    }
+  }
+
+  /// Signs the body exactly as it is sent ([body] is the bytes handed to the HTTP client, none meaning the
+  /// empty string). The timestamp is read once here, so the payload, the signature header and the timestamp
+  /// header of one send agree. A body that sends a file cannot be signed: it is read in chunks only while the
+  /// request goes out, so its bytes are not known here, and a signature over anything else would be wrong.
+  HmacSignature _hmacSign(
+    RequestAuth auth,
+    VariableResolver resolver,
+    Uri uri,
+    List<int>? body,
+    bool carriesFile,
+    String method,
+  ) {
+    if (carriesFile) {
+      throw const InvalidRequestException(
+        'HMAC signature cannot sign a body that sends a file (a form-data file part or a binary body): the file is '
+        'only read while the request is sent, so what to sign is not known. Use a text body, or another auth type.',
+      );
+    }
+    final signer = HmacSigner(
+      secret: resolver.resolve(auth.hmacSecret),
+      algorithm: auth.hmacAlgorithm,
+      encoding: auth.hmacEncoding,
+      payloadTemplate: resolver.resolve(auth.hmacPayloadTemplate),
+      headerName: resolver.resolve(auth.hmacHeaderName),
+      headerTemplate: resolver.resolve(auth.hmacHeaderTemplate),
+      timestampHeader: resolver.resolve(auth.hmacTimestampHeader),
+    );
+    var timestamp = '';
+    if (signer.usesTimestamp) {
+      if (auth.hmacTimestampSource == HmacTimestampSource.fixed) {
+        timestamp = resolver.resolve(auth.hmacTimestampValue).trim();
+        if (timestamp.isEmpty) {
+          throw const InvalidRequestException('The HMAC signature uses a timestamp, but the fixed timestamp is empty.');
+        }
+      } else {
+        timestamp = HmacSigner.unixSeconds(_now());
+      }
+    }
+    return signer.sign(method: method, uri: uri, body: body ?? const [], timestamp: timestamp);
+  }
+
+  /// What [build] would sign for [request], for the live preview of the Auth tab: the signature, its headers
+  /// and the signed payload, or why there is none yet (a body that sends a file, an empty fixed timestamp...).
+  /// Nothing is signed, and nothing signed or unsigned is returned, for a request whose auth is not
+  /// [AuthType.hmac]; [request] has to carry the auth to show, not [AuthType.inherit].
+  ({HmacSignature? signed, String? problem}) previewHmac(
+    ApiRequestEntity request,
+    VariableResolver resolver, {
+    bool trimKeysAndValues = false,
+  }) {
+    final auth = request.auth;
+    if (auth.type != AuthType.hmac) return (signed: null, problem: null);
+    final tidy = trimKeysAndValues ? _trim : _keep;
+    try {
+      final uri = Uri.parse(_buildUrl(request, auth, resolver, tidy));
+      final body = _buildBody(request, resolver, tidy);
+      final signed = _hmacSign(auth, resolver, uri, body.bytes, body.upload != null, request.method.label);
+      return (signed: signed, problem: null);
+    } on AppException catch (e) {
+      return (signed: null, problem: e.message);
+    } on FormatException {
+      return (signed: null, problem: 'The URL cannot be read, so there is nothing to sign yet.');
     }
   }
 

@@ -31,12 +31,17 @@ final class ParsedHar {
 abstract final class HarParser {
   static const _transportHeaders = {'host', 'content-length', 'connection', 'accept-encoding', 'transfer-encoding', 'keep-alive'};
 
-  static ParsedHar parse(String text) {
+  /// The `log.entries` of a HAR file, as the file has them. Throws an [ImportException] when the text has none, so it is no HAR file.
+  static List<Object?> entriesOf(String text) {
     final root = jsonDecode(text.replaceFirst('﻿', '').trim());
     final log = root is Map ? root['log'] : null;
     final entries = log is Map ? log['entries'] : null;
     if (entries is! List) throw const ImportException('no "log.entries" array found, so this is not a HAR file.');
+    return entries;
+  }
 
+  static ParsedHar parse(String text) {
+    final entries = entriesOf(text);
     final requests = <ImportedRequest>[];
     var skipped = 0;
     for (final entry in entries) {

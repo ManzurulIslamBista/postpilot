@@ -118,6 +118,9 @@ final class CollectionRunResult {
 
 Future<void> _sleep(Duration duration) => Future<void>.delayed(duration);
 
+/// Told of every answer a run receives, body included, before the result drops the body (see `CollectionRunnerService.run`).
+typedef RunResponseObserver = void Function(RequestSummaryEntity request, ApiResponseEntity response);
+
 /// Runs every request in a collection sequentially — Postman's "Collection
 /// Runner" — streaming one [CollectionRunResult] per request as it finishes
 /// so the UI can show live progress rather than waiting for the whole batch.
@@ -218,11 +221,15 @@ final class CollectionRunnerService {
 
   /// Cancelling [cancelToken] aborts the request in flight (it produces no
   /// result) or the wait between requests, then ends the stream.
+  ///
+  /// [onResponse] sees each answer in full, before its tests run and before the result sheds the body, for a caller
+  /// that compares bodies (the matrix run); a run without it behaves exactly as before.
   Stream<CollectionRunResult> run(
     int collectionId, {
     CollectionRunOptions options = const CollectionRunOptions(),
     ApiCancelToken? cancelToken,
     RunSelection selection = RunSelection.all,
+    RunResponseObserver? onResponse,
   }) async* {
     final summaries = await requestsIn(collectionId, selection: selection);
     final flow = _flow;
@@ -252,7 +259,7 @@ final class CollectionRunnerService {
         if (sentAny && options.delay > Duration.zero && !await _pause(options.delay, cancelToken)) return;
         sentAny = true;
 
-        final result = await _sendOne(summary, full, iteration, data, cancelToken, historyBudget, settings);
+        final result = await _sendOne(summary, full, iteration, data, cancelToken, historyBudget, settings, onResponse);
         if (result == null) return;
         yield result;
         _afterResult(pass, summary, result, options);
@@ -312,8 +319,9 @@ final class CollectionRunnerService {
     Map<String, String> data,
     ApiCancelToken? cancelToken,
     HistoryRunBudget historyBudget,
-    RequestSettings? settings,
-  ) async {
+    RequestSettings? settings, [
+    RunResponseObserver? onResponse,
+  ]) async {
     FlowReport? report;
     try {
       final ApiResponseEntity response;
@@ -338,6 +346,7 @@ final class CollectionRunnerService {
         if (outcome.error != null) throw outcome.error!;
         response = outcome.response!;
       }
+      onResponse?.call(summary, response);
       final scripts = await _runRequestScriptsUseCase(
         RunRequestScriptsParams(
           requestId: full.id,

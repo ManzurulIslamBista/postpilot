@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import '../../../cleanup_ledger/domain/entities/cleanup_settings.dart';
 import '../../domain/entities/app_settings.dart';
 import '../../domain/entities/request_settings.dart';
 import '../../domain/repositories/request_settings_repository.dart';
@@ -70,6 +71,10 @@ final class RequestSettingsViewModel with ChangeNotifier {
   void setTimeoutSeconds(int? seconds) => _update(
         _overrides.withTimeoutSeconds(seconds == null ? null : math.min(math.max(seconds, 0), AppSettings.maxTimeoutSeconds)),
       );
+
+  /// "Clean up what this request creates" (under `flow.cleanup`). Saved here, with the overrides, because this view model is
+  /// the one writer of the row while the Settings tab is open: a second one would write over the other with a stale copy.
+  void setCleanup(CleanupSettings value) => _update(_overrides.withFlow(_overrides.flow.copyWith(cleanup: value)));
 
   /// Drops the four overrides. The request's flow and pagination are not settings to reset: they stay.
   void clear() => _update(_overrides.withoutOverrides());

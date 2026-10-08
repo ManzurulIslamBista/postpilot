@@ -40,6 +40,9 @@ import 'package:postpilot/features/realtime/presentation/realtime_view_model.dar
 import 'package:postpilot/features/response_tools/domain/services/response_history.dart';
 import 'package:postpilot/features/run_triage/domain/repositories/run_record_repository.dart';
 import 'package:postpilot/features/run_triage/presentation/monitor_service.dart';
+import 'package:postpilot/features/matrix_run/domain/repositories/matrix_identity_store.dart';
+import 'package:postpilot/features/matrix_run/domain/services/matrix_run_service.dart';
+import 'package:postpilot/features/matrix_run/presentation/matrix_run_view_model.dart';
 import 'package:postpilot/features/safety/data/safety_prefs.dart';
 import 'package:postpilot/features/safety/domain/services/production_guard.dart';
 import 'package:postpilot/features/test_suggestions/domain/repositories/request_baseline_repository.dart';
@@ -141,11 +144,17 @@ import 'package:postpilot/features/settings/domain/repositories/request_settings
 import 'package:postpilot/features/settings/domain/repositories/settings_repository.dart';
 import 'package:postpilot/features/request_flow/domain/usecases/request_flow_service.dart';
 import 'package:postpilot/features/request_flow/presentation/view_models/request_flow_view_model.dart';
+import 'package:postpilot/features/cleanup_ledger/presentation/view_models/cleanup_ledger.dart';
+import 'package:postpilot/features/cleanup_ledger/presentation/view_models/cleanup_section_view_model.dart';
 import 'package:postpilot/features/settings/presentation/view_models/request_settings_view_model.dart';
 import 'package:postpilot/features/settings/presentation/view_models/settings_view_model.dart';
 import 'package:postpilot/features/shell/presentation/shell_view_model.dart';
 import 'package:postpilot/features/workplace/domain/repositories/workplace_repository.dart';
 import 'package:postpilot/features/workplace/presentation/view_models/workplace_view_model.dart';
+import 'package:postpilot/features/workspace_refactor/domain/entities/refactor_receipt.dart';
+import 'package:postpilot/features/workspace_refactor/domain/services/refactor_applier.dart';
+import 'package:postpilot/features/workspace_refactor/domain/services/workspace_reader.dart';
+import 'package:postpilot/features/workspace_refactor/presentation/view_models/workspace_refactor_view_model.dart';
 
 final class _Wiring {
   final String name;
@@ -172,6 +181,10 @@ final _wirings = <_Wiring>[
   // run history and the monitor
   _wire<RunRecordRepository>(),
   _wire<MonitorService>(),
+  // matrix run (one collection against several environments or identities)
+  _wire<MatrixIdentityStore>(),
+  _wire<MatrixRunner>(),
+  _wire<MatrixRunViewModel>(),
   // request builder
   _wire<RequestRepository>(),
   _wire<RequestScriptsRepository>(),
@@ -223,6 +236,9 @@ final _wirings = <_Wiring>[
   // retry, poll until, run if, fetch all pages
   _wire<RequestFlowService>(),
   _wire<RequestFlowViewModel>(),
+  // the cleanup ledger (records a session created, and deleting them again)
+  _wire<CleanupLedger>(),
+  _wire<CleanupSectionViewModel>(),
   // documentation
   _wire<DocumentationRepository>(),
   _wire<TagRepository>(),
@@ -309,6 +325,11 @@ final _wirings = <_Wiring>[
   _wire<OdooDoctor>(),
   _wire<CreateOdooWorkspaceUseCase>(),
   _wire<OdooStudioViewModel>(),
+  // workspace refactoring
+  _wire<WorkspaceReader>(),
+  _wire<RefactorUndoStore>(),
+  _wire<RefactorApplier>(),
+  _wire<WorkspaceRefactorViewModel>(),
 ];
 
 final _registration = RegExp(r'\bregister(?:Lazy)?(?:Singleton|Factory|FactoryParam)<(\w+)');

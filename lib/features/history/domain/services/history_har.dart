@@ -131,7 +131,8 @@ abstract final class HistoryHar {
       AuthType.digest => const HarHeader('Authorization', 'Digest $mask'),
       AuthType.awsSignatureV4 => const HarHeader('Authorization', 'AWS4-HMAC-SHA256 $mask'),
       AuthType.jwtBearer => HarHeader('Authorization', '${auth.jwtHeaderPrefix} $mask'.trim()),
-      AuthType.apiKey || AuthType.none || AuthType.inherit => null,
+      AuthType.hmac when auth.hmacHeaderName.trim().isNotEmpty => HarHeader(ex(auth.hmacHeaderName.trim()), mask),
+      AuthType.hmac || AuthType.apiKey || AuthType.none || AuthType.inherit => null,
     };
   }
 

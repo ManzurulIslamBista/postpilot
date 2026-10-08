@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../../core/utils/dynamic_variables.dart';
+import '../../../../core/utils/variable_resolver.dart';
 import '../../domain/entities/variable_info.dart';
 import '../../domain/usecases/list_variables_usecase.dart';
 
@@ -86,6 +87,13 @@ final class VariableScope extends ChangeNotifier {
       // Colouring and hover are conveniences; a failed read just leaves the last known state.
     }
   }
+
+  /// A resolver over the variables the request sees right now, to preview what a send would produce (the
+  /// signature of an HMAC auth, say). The values are never put on screen by it, only used.
+  VariableResolver get resolver => VariableResolver({
+        for (final entry in _variables.entries)
+          if (entry.value.value != null) entry.key: entry.value.value!,
+      });
 
   /// Whether `{{name}}` resolves to something when the request is sent.
   bool isDefined(String name) => _variables.containsKey(name) || DynamicVariables.names.contains(name);

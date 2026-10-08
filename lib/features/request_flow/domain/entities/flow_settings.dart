@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../../../scripting/data/models/scripts_json_codec.dart';
 import '../../../scripting/domain/entities/assertion_entity.dart';
 import '../../../settings/domain/entities/settings_json.dart';
+import '../../../cleanup_ledger/domain/entities/cleanup_settings.dart';
 
 /// How long the retry waits grow: the same every time, or doubling (up to a ceiling).
 enum BackoffKind {
@@ -360,12 +361,16 @@ final class FlowSettings {
   /// DELETE, which can change data each time.
   final bool repeatUnsafe;
 
+  /// "Clean up what this request creates": delete the records it made once a run is done (see `CleanupLedger`).
+  final CleanupSettings cleanup;
+
   const FlowSettings({
     this.retry = const RetryPolicy(),
     this.poll = const PollPolicy(),
     this.runIf = const RunIfPolicy(),
     this.alwaysRun = false,
     this.repeatUnsafe = false,
+    this.cleanup = CleanupSettings.none,
   });
 
   static const none = FlowSettings();
@@ -378,6 +383,7 @@ final class FlowSettings {
       runIf: RunIfPolicy.fromJson(map['runIf']),
       alwaysRun: SettingsJson.boolOr(map['alwaysRun'], false),
       repeatUnsafe: SettingsJson.boolOr(map['repeatUnsafe'], false),
+      cleanup: CleanupSettings.fromJson(map['cleanup']),
     );
   }
 
@@ -388,6 +394,7 @@ final class FlowSettings {
         if (runIf != const RunIfPolicy()) 'runIf': runIf.toJson(),
         if (alwaysRun) 'alwaysRun': true,
         if (repeatUnsafe) 'repeatUnsafe': true,
+        if (!cleanup.isEmpty) 'cleanup': cleanup.toJson(),
       };
 
   bool get isEmpty => this == none;
@@ -398,6 +405,7 @@ final class FlowSettings {
     RunIfPolicy? runIf,
     bool? alwaysRun,
     bool? repeatUnsafe,
+    CleanupSettings? cleanup,
   }) =>
       FlowSettings(
         retry: retry ?? this.retry,
@@ -405,6 +413,7 @@ final class FlowSettings {
         runIf: runIf ?? this.runIf,
         alwaysRun: alwaysRun ?? this.alwaysRun,
         repeatUnsafe: repeatUnsafe ?? this.repeatUnsafe,
+        cleanup: cleanup ?? this.cleanup,
       );
 
   /// Whether retry or poll is on (what a send does by itself; Run if and Always run only matter in a run).

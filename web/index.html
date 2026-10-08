@@ -18,7 +18,10 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Design, send and test APIs - on desktop and mobile.">
+  <meta name="theme-color" content="#0D0F14" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F3F4F8" media="(prefers-color-scheme: light)">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,8 +34,136 @@
 
   <title>PostPilot</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    The start-up screen. Flutter only draws its first frame after the database engine (sqlite3.wasm) is downloaded and the
+    workplace is read, which used to leave a blank page. Everything here is inline, so it shows at once, with no request of
+    its own. It fades out on the `flutter-first-frame` event (see the script at the end of the body).
+  -->
+  <style>
+    :root {
+      --pp-bg: #0D0F14;
+      --pp-text: #E9EBF1;
+      --pp-muted: #8E95A6;
+      --pp-track: rgba(255, 255, 255, 0.09);
+      --pp-glow-a: rgba(255, 108, 55, 0.30);
+      --pp-glow-b: rgba(240, 62, 126, 0.16);
+      --pp-shadow: rgba(0, 0, 0, 0.45);
+      --pp-accent: #FF6C37;
+      --pp-accent-2: #F03E7E;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --pp-bg: #F3F4F8;
+        --pp-text: #181B22;
+        --pp-muted: #677085;
+        --pp-track: rgba(24, 27, 34, 0.10);
+        --pp-glow-a: rgba(255, 108, 55, 0.22);
+        --pp-glow-b: rgba(240, 62, 126, 0.12);
+        --pp-shadow: rgba(24, 27, 34, 0.22);
+      }
+    }
+    html, body { margin: 0; height: 100%; background: var(--pp-bg); }
+
+    #pp-splash {
+      position: fixed; inset: 0; z-index: 2147483647;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: var(--pp-bg); color: var(--pp-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      opacity: 1; visibility: visible;
+      transition: opacity 0.4s ease, visibility 0s linear 0s;
+    }
+    #pp-splash.pp-done { opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0s linear 0.4s; }
+
+    .pp-stage { position: relative; width: 132px; height: 132px; display: grid; place-items: center; }
+    .pp-halo {
+      position: absolute; inset: -46px; border-radius: 50%;
+      background: radial-gradient(closest-side, var(--pp-glow-a), var(--pp-glow-b) 55%, transparent 100%);
+      animation: pp-pulse 2.8s ease-in-out infinite;
+    }
+    .pp-ring {
+      position: absolute; inset: -17px; border-radius: 50%;
+      background: conic-gradient(from 0deg, transparent 0 38%, var(--pp-accent) 84%, var(--pp-accent-2) 100%);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+      animation: pp-spin 1.7s linear infinite;
+    }
+    .pp-logo {
+      position: relative; width: 104px; height: 104px;
+      filter: drop-shadow(0 14px 22px var(--pp-shadow));
+      animation: pp-float 3.2s ease-in-out infinite;
+    }
+    .pp-name { margin-top: 44px; font-size: 22px; font-weight: 650; letter-spacing: 0.04em; }
+    .pp-bar { position: relative; width: 168px; height: 3px; margin-top: 18px; border-radius: 3px; background: var(--pp-track); overflow: hidden; }
+    .pp-bar i {
+      position: absolute; top: 0; bottom: 0; left: 0; width: 42%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--pp-accent), var(--pp-accent-2));
+      animation: pp-slide 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+    }
+    #pp-status { margin: 16px 24px 0; min-height: 18px; max-width: 360px; text-align: center; font-size: 13px; line-height: 1.4; color: var(--pp-muted); }
+    #pp-reload {
+      display: none; margin-top: 14px; padding: 8px 18px; border: 0; border-radius: 8px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 600; color: #fff;
+      background: linear-gradient(90deg, var(--pp-accent), var(--pp-accent-2));
+    }
+
+    @keyframes pp-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+    @keyframes pp-pulse { 0%, 100% { opacity: 0.55; transform: scale(0.94); } 50% { opacity: 1; transform: scale(1.06); } }
+    @keyframes pp-spin { to { transform: rotate(360deg); } }
+    @keyframes pp-slide { 0% { transform: translateX(-105%); } 100% { transform: translateX(260%); } }
+    @media (prefers-reduced-motion: reduce) {
+      .pp-logo, .pp-halo, .pp-ring { animation: none; }
+      .pp-bar i { animation-duration: 2.6s; }
+      #pp-splash, #pp-splash.pp-done { transition-duration: 0.01s; }
+    }
+  </style>
 </head>
 <body>
+  <div id="pp-splash" role="status" aria-live="polite" aria-label="PostPilot is loading">
+    <div class="pp-stage">
+      <div class="pp-halo"></div>
+      <div class="pp-ring"></div>
+      <!-- tool/logo.svg, ids prefixed so they cannot clash with anything else on the page -->
+      <svg class="pp-logo" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="ppl-bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#232842"/><stop offset="0.55" stop-color="#12141E"/><stop offset="1" stop-color="#0A0B11"/>
+          </linearGradient>
+          <radialGradient id="ppl-halo" cx="0.72" cy="0.28" r="0.75">
+            <stop offset="0" stop-color="#FF6C37" stop-opacity="0.34"/><stop offset="0.55" stop-color="#FF4D8D" stop-opacity="0.10"/><stop offset="1" stop-color="#FF4D8D" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="ppl-sheen" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="ppl-wing" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FF4D8D"/><stop offset="1" stop-color="#FF8A3D"/></linearGradient>
+          <linearGradient id="ppl-body" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF6C37"/><stop offset="1" stop-color="#E0306F"/></linearGradient>
+          <linearGradient id="ppl-tail" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C21F66"/><stop offset="1" stop-color="#8E1A5B"/></linearGradient>
+          <filter id="ppl-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="34"/></filter>
+          <clipPath id="ppl-tile"><rect x="0" y="0" width="1024" height="1024" rx="232"/></clipPath>
+        </defs>
+        <g clip-path="url(#ppl-tile)">
+          <rect width="1024" height="1024" fill="url(#ppl-bg)"/>
+          <rect width="1024" height="1024" fill="url(#ppl-halo)"/>
+          <rect width="1024" height="560" fill="url(#ppl-sheen)"/>
+          <g filter="url(#ppl-glow)" opacity="0.7">
+            <polygon points="800,236 236,486 446,586" fill="#FF6C37"/>
+            <polygon points="800,236 446,586 592,810" fill="#FF4D8D"/>
+          </g>
+          <polygon points="800,236 236,486 446,586" fill="url(#ppl-wing)"/>
+          <polygon points="800,236 446,586 592,810" fill="url(#ppl-body)"/>
+          <polygon points="446,586 592,810 396,742" fill="url(#ppl-tail)"/>
+          <polyline points="800,236 446,586" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="5" stroke-linecap="round"/>
+        </g>
+        <rect x="1.5" y="1.5" width="1021" height="1021" rx="231" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="3"/>
+      </svg>
+    </div>
+    <div class="pp-name">PostPilot</div>
+    <div class="pp-bar"><i></i></div>
+    <div id="pp-status">Preparing your workspace…</div>
+    <button id="pp-reload" type="button" onclick="location.reload()">Reload</button>
+    <noscript><div style="margin-top:16px;font-size:13px;color:var(--pp-muted)">PostPilot needs JavaScript to run.</div></noscript>
+  </div>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -42,5 +173,28 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <script>
+    (function () {
+      var splash = document.getElementById('pp-splash');
+      if (!splash) return;
+      var status = document.getElementById('pp-status');
+      var reload = document.getElementById('pp-reload');
+      var slow = setTimeout(function () {
+        status.textContent = 'Still loading. The first start also downloads the database engine.';
+      }, 8000);
+      var stuck = setTimeout(function () {
+        status.textContent = 'This is taking longer than usual. Check your connection, then reload.';
+        reload.style.display = 'inline-block';
+      }, 30000);
+      // The engine fires this on `window` once the app has drawn its first frame.
+      window.addEventListener('flutter-first-frame', function () {
+        clearTimeout(slow);
+        clearTimeout(stuck);
+        splash.classList.add('pp-done');
+        setTimeout(function () { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 600);
+      }, { once: true });
+    })();
+  </script>
 </body>
 </html>

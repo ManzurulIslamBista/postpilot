@@ -19,7 +19,9 @@ enum AppShortcut {
   duplicateRequest(LogicalKeyboardKey.keyD, 'Duplicate the current request', browserReserved: true),
   saveResponseExample(LogicalKeyboardKey.keyS, 'Save the response as an example', shift: true, browserReserved: true),
   switchEnvironment(LogicalKeyboardKey.keyE, 'Switch environment', shift: true, browserReserved: true),
-  runCollection(LogicalKeyboardKey.keyR, 'Run the current collection', shift: true, browserReserved: true);
+  runCollection(LogicalKeyboardKey.keyR, 'Run the current collection', shift: true, browserReserved: true),
+  // Ctrl+Shift+H, the usual "replace in files", is the history; Ctrl+Shift+F is "find in files" in every editor.
+  findReplaceInWorkspace(LogicalKeyboardKey.keyF, 'Find and replace in the whole workspace', shift: true);
 
   const AppShortcut(this.key, this.description, {this.shift = false, this.browserReserved = false});
 
@@ -70,6 +72,7 @@ final class ShortcutHandlers {
   final VoidCallback? saveResponseExample;
   final VoidCallback? switchEnvironment;
   final VoidCallback? runCollection;
+  final VoidCallback? findReplaceInWorkspace;
 
   const ShortcutHandlers({
     required this.sendRequest,
@@ -88,6 +91,7 @@ final class ShortcutHandlers {
     this.saveResponseExample,
     this.switchEnvironment,
     this.runCollection,
+    this.findReplaceInWorkspace,
   });
 
   VoidCallback handlerFor(AppShortcut shortcut) => switch (shortcut) {
@@ -107,6 +111,7 @@ final class ShortcutHandlers {
     AppShortcut.saveResponseExample => saveResponseExample ?? () {},
     AppShortcut.switchEnvironment => switchEnvironment ?? () {},
     AppShortcut.runCollection => runCollection ?? () {},
+    AppShortcut.findReplaceInWorkspace => findReplaceInWorkspace ?? () {},
   };
 }
 

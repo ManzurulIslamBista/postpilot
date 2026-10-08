@@ -7,13 +7,21 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/di/injector.dart';
 import '../../../../core/enums/auth_type.dart';
+import '../../../../core/enums/body_type.dart';
+import '../../../../core/enums/http_method.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../../core/utils/variable_resolver.dart';
 import '../../../auth_renewal/domain/services/token_status.dart';
 import '../../../auth_renewal/presentation/view_models/relogin_section_view_model.dart';
 import '../../../auth_renewal/presentation/widgets/relogin_section.dart';
+import '../../domain/entities/api_request_entity.dart';
 import '../../domain/entities/request_auth.dart';
+import '../../domain/entities/request_body.dart';
+import '../../domain/services/hmac_presets.dart';
 import '../../domain/services/oauth2_token_service.dart';
+import '../../domain/services/request_spec_builder.dart';
 import '../view_models/request_oauth2_view_model.dart';
+import '../view_models/variable_scope.dart';
 
 class AuthEditor extends StatelessWidget {
   final RequestAuth auth;
@@ -34,6 +42,10 @@ class AuthEditor extends StatelessWidget {
   /// applies to. Needs a [collectionId]; not shown while the auth only inherits, which holds no settings.
   final bool showRelogin;
 
+  /// The request this auth belongs to, so that an HMAC auth can show the signature it would put on that
+  /// request's body. Null for the auth of a collection or a folder: the preview then signs a sample body typed in.
+  final ApiRequestEntity? previewRequest;
+
   const AuthEditor({
     super.key,
     required this.auth,
@@ -42,6 +54,7 @@ class AuthEditor extends StatelessWidget {
     this.collectionId,
     this.folderId,
     this.showRelogin = false,
+    this.previewRequest,
   });
 
   @override
@@ -70,6 +83,7 @@ class AuthEditor extends StatelessWidget {
               AuthType.basic || AuthType.digest => _basicFields(),
               AuthType.awsSignatureV4 => _awsFields(),
               AuthType.jwtBearer => _jwtFields(),
+              AuthType.hmac => [_HmacFields(auth: auth, onChanged: onChanged, previewRequest: previewRequest)],
               AuthType.oauth2 => [
                 ChangeNotifierProvider<RequestOAuth2ViewModel>(
                   create: (_) => locator<RequestOAuth2ViewModel>(),
@@ -198,6 +212,280 @@ class AuthEditor extends StatelessWidget {
       onChanged: (v) => onChanged(auth.copyWith(jwtHeaderPrefix: v)),
     ),
   ];
+}
+
+/// The fields of an HMAC signature, and a live preview of the signature they give. Stateful for two things: a
+/// preset that fills the fields in has to make their text fields start again from the new values (typing in one
+/// must not, or it would lose its focus), and the sample body of the preview is typed in here.
+class _HmacFields extends StatefulWidget {
+  final RequestAuth auth;
+  final ValueChanged<RequestAuth> onChanged;
+  final ApiRequestEntity? previewRequest;
+
+  const _HmacFields({required this.auth, required this.onChanged, required this.previewRequest});
+
+  @override
+  State<_HmacFields> createState() => _HmacFieldsState();
+}
+
+class _HmacFieldsState extends State<_HmacFields> {
+  int _generation = 0;
+  String _sampleBody = '';
+
+  /// Every edit goes through here: one that takes the fields away from the preset they were started from makes
+  /// the auth a generic one.
+  void _edit(RequestAuth next) => widget.onChanged(HmacPresets.settled(next));
+
+  void _applyPreset(HmacPreset preset) {
+    setState(() => _generation++);
+    widget.onChanged(HmacPresets.apply(widget.auth, preset));
+  }
+
+  Widget _field(
+    String name,
+    String label,
+    String value,
+    RequestAuth Function(RequestAuth auth, String text) change, {
+    bool obscure = false,
+    bool mono = false,
+    String? helper,
+  }) => VariableTextFormField(
+    key: ValueKey('hmac-$name-$_generation'),
+    initialValue: value,
+    obscureText: obscure,
+    style: mono ? context.textStyles.mono : null,
+    decoration: InputDecoration(labelText: label, helperText: helper, helperMaxLines: 3),
+    onChanged: (text) => _edit(change(widget.auth, text)),
+  );
+
+  /// A dropdown that looks like the text fields around it (label on top) and takes the width it is given, so a long
+  /// choice is cut instead of overflowing a narrow pane.
+  Widget _picker<T>(String label, T value, List<T> values, String Function(T) text, ValueChanged<T> onPicked) =>
+      InputDecorator(
+        isEmpty: false,
+        decoration: InputDecoration(labelText: label),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            value: value,
+            isExpanded: true,
+            isDense: true,
+            onChanged: (picked) => picked == null ? null : onPicked(picked),
+            items: [
+              for (final v in values)
+                DropdownMenuItem(value: v, child: Text(text(v), maxLines: 1, overflow: TextOverflow.ellipsis)),
+            ],
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = widget.auth;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _picker<HmacPreset>(
+          'Provider preset',
+          auth.hmacPreset,
+          HmacPreset.values,
+          (p) => p.label,
+          _applyPreset,
+        ),
+        const SizedBox(height: 8),
+        _field('secret', 'Secret', auth.hmacSecret, (a, v) => a.copyWith(hmacSecret: v), obscure: true),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _picker<HmacAlgorithm>(
+                'Algorithm',
+                auth.hmacAlgorithm,
+                HmacAlgorithm.values,
+                (a) => a.label,
+                (a) => _edit(widget.auth.copyWith(hmacAlgorithm: a)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _picker<HmacEncoding>(
+                'Encoding',
+                auth.hmacEncoding,
+                HmacEncoding.values,
+                (e) => e.label,
+                (e) => _edit(widget.auth.copyWith(hmacEncoding: e)),
+              ),
+            ),
+          ],
+        ),
+        _field(
+          'payload',
+          'Signed payload',
+          auth.hmacPayloadTemplate,
+          (a, v) => a.copyWith(hmacPayloadTemplate: v),
+          mono: true,
+          helper: 'Placeholders: {body} {timestamp} {method} {path} {query} {url}',
+        ),
+        _field(
+          'header-name',
+          'Signature header',
+          auth.hmacHeaderName,
+          (a, v) => a.copyWith(hmacHeaderName: v),
+        ),
+        _field(
+          'header-value',
+          'Header value',
+          auth.hmacHeaderTemplate,
+          (a, v) => a.copyWith(hmacHeaderTemplate: v),
+          mono: true,
+          helper: 'Placeholders: {signature} {timestamp}',
+        ),
+        _field(
+          'timestamp-header',
+          'Timestamp header (optional)',
+          auth.hmacTimestampHeader,
+          (a, v) => a.copyWith(hmacTimestampHeader: v),
+        ),
+        const SizedBox(height: 8),
+        _picker<HmacTimestampSource>(
+          'Timestamp',
+          auth.hmacTimestampSource,
+          HmacTimestampSource.values,
+          (s) => s.label,
+          (s) => _edit(widget.auth.copyWith(hmacTimestampSource: s)),
+        ),
+        if (auth.hmacTimestampSource == HmacTimestampSource.fixed)
+          _field(
+            'timestamp-value',
+            'Fixed timestamp',
+            auth.hmacTimestampValue,
+            (a, v) => a.copyWith(hmacTimestampValue: v),
+            helper: 'The same value on every send, so a signature can be repeated and compared.',
+          ),
+        const Divider(),
+        if (widget.previewRequest == null)
+          TextFormField(
+            key: const ValueKey('hmac-sample-body'),
+            initialValue: _sampleBody,
+            minLines: 1,
+            maxLines: 4,
+            style: context.textStyles.mono,
+            decoration: const InputDecoration(
+              labelText: 'Sample body for the preview',
+              helperText: 'Each request signs its own body; this is only to see a signature here.',
+              helperMaxLines: 2,
+            ),
+            onChanged: (text) => setState(() => _sampleBody = text),
+          ),
+        _HmacPreview(auth: auth, previewRequest: widget.previewRequest, sampleBody: _sampleBody),
+      ],
+    );
+  }
+}
+
+/// What the HMAC auth would put on the request: the headers with the signature, and the exact text that was
+/// signed. Read-only and selectable, to be compared with what the receiver computes.
+class _HmacPreview extends StatelessWidget {
+  final RequestAuth auth;
+  final ApiRequestEntity? previewRequest;
+  final String sampleBody;
+
+  const _HmacPreview({required this.auth, required this.previewRequest, required this.sampleBody});
+
+  static const _maxPayloadChars = 600;
+
+  ApiRequestEntity _request() =>
+      previewRequest?.copyWith(auth: auth) ??
+      ApiRequestEntity(
+        id: 0,
+        collectionId: 0,
+        folderId: null,
+        name: 'Sample',
+        method: HttpMethod.post,
+        url: 'https://example.com/webhook',
+        headers: const [],
+        queryParams: const [],
+        body: RequestBody(type: BodyType.raw, rawContentType: RawContentType.text, rawText: sampleBody),
+        auth: auth,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = context.watch<VariableScope?>();
+    final resolver = scope?.resolver ?? VariableResolver(const {});
+    final request = _request();
+    const builder = RequestSpecBuilder();
+    final preview = builder.previewHmac(request, resolver);
+    final signed = preview.signed;
+    final missing = scope == null || !scope.isLoaded
+        ? const <String>[]
+        : [
+            for (final v in builder.undefinedVariables(request, resolver))
+              if (v.inBody || v.places.any((place) => place.startsWith('the HMAC'))) v.token,
+          ];
+    final caption = context.textStyles.caption;
+    final quiet = caption.copyWith(color: context.colors.secondaryText);
+
+    return Column(
+      key: const ValueKey('hmac-signature-preview'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Signature preview', style: caption.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(
+          previewRequest == null
+              ? 'Computed from the sample body above.'
+              : "Computed from this request's URL and body, with the variables in use now.",
+          style: quiet,
+        ),
+        const SizedBox(height: 8),
+        if (preview.problem != null)
+          Text(preview.problem!, style: caption.copyWith(color: context.colors.statusError))
+        else if (signed != null) ...[
+          for (final header in signed.headers.entries) ...[
+            Text(header.key, style: quiet),
+            SelectableText(header.value, style: context.textStyles.mono),
+            const SizedBox(height: 6),
+          ],
+          if (signed.headers.isEmpty)
+            Text(
+              'No header name is set, so no signature would be sent.',
+              style: caption.copyWith(color: context.colors.statusWarning),
+            ),
+          Text('Signature (${auth.hmacEncoding.label}), computed over ${signed.payload.length} bytes', style: quiet),
+          SelectableText(signed.signature, style: context.textStyles.mono),
+          const SizedBox(height: 6),
+          Text('Text that was signed', style: quiet),
+          SelectableText(_clip(signed.payloadText), style: context.textStyles.mono),
+          if (signed.timestamp.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              auth.hmacTimestampSource == HmacTimestampSource.fixed
+                  ? 'Timestamp ${signed.timestamp} (fixed).'
+                  : 'Timestamp ${signed.timestamp} is the current time: the signature changes on every send.',
+              style: quiet,
+            ),
+          ],
+          if (auth.hmacSecret.isEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'The secret is empty, so this is the signature of an empty key.',
+              style: caption.copyWith(color: context.colors.statusWarning),
+            ),
+          ],
+        ],
+        if (missing.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Not defined: ${missing.join(', ')}. The preview takes them as written.',
+            style: caption.copyWith(color: context.colors.statusWarning),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _clip(String text) =>
+      text.length <= _maxPayloadChars ? text : '${text.substring(0, _maxPayloadChars)}…';
 }
 
 class _OAuth2Fields extends StatefulWidget {

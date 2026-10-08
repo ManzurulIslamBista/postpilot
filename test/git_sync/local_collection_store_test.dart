@@ -325,6 +325,17 @@ RequestAuth authFor(AuthType type) => switch (type) {
           jwtPayload: '{"sub":"1"}',
           jwtHeaderPrefix: 'JWT',
         ),
+      AuthType.hmac => const RequestAuth(
+          type: AuthType.hmac,
+          hmacPreset: HmacPreset.generic,
+          hmacSecret: 'hmac-secret',
+          hmacAlgorithm: HmacAlgorithm.sha512,
+          hmacEncoding: HmacEncoding.base64,
+          hmacPayloadTemplate: 'v0:{timestamp}:{body}',
+          hmacHeaderName: 'X-Signature',
+          hmacHeaderTemplate: 'v0={signature}',
+          hmacTimestampHeader: 'X-Timestamp',
+        ),
       AuthType.oauth2 => RequestAuth(
           type: AuthType.oauth2,
           oauth2GrantType: OAuth2GrantType.password,

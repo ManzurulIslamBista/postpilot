@@ -23,6 +23,10 @@ final class ImportAnyViewModel with ChangeNotifier {
   bool isImporting = false;
   String? error;
 
+  /// "Clean up (recommended)", offered for a HAR recording only: drop what is not the app's API, merge repeated calls, make
+  /// ids and credentials variables. Off imports every call as it was recorded.
+  bool cleanHar = true;
+
   String _text = '';
   int _detectGeneration = 0;
   bool _disposed = false;
@@ -48,6 +52,11 @@ final class ImportAnyViewModel with ChangeNotifier {
     });
   }
 
+  void setCleanHar(bool value) {
+    cleanHar = value;
+    notifyListeners();
+  }
+
   void selectFormat(ImportFormat? format) {
     selected = format;
     error = null;
@@ -63,7 +72,13 @@ final class ImportAnyViewModel with ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final summary = await _importAny(ImportAnyParams(text: _text, format: selected, collectionId: collectionId, folderId: folderId));
+      final summary = await _importAny(ImportAnyParams(
+        text: _text,
+        format: selected,
+        collectionId: collectionId,
+        folderId: folderId,
+        cleanHar: cleanHar && format == ImportFormat.har,
+      ));
       isImporting = false;
       _notify();
       return summary;

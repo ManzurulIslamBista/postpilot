@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import '../cleanup_ledger/data/cli_cleanup.dart';
+import '../matrix_run/cli/matrix_command.dart';
 import '../request_builder/domain/services/collection_run_options.dart';
 import '../request_builder/domain/services/run_data_parser.dart';
 import '../test_suggestions/domain/services/baseline_file.dart';
@@ -46,7 +48,14 @@ Options for run and mcp:
                         that turned on "Enforce baseline in runs" fails when its response drifted in a breaking
                         way, e.g. a field was removed or changed type
   --fail-on-skip       Fail the run when any request was skipped (for example OAuth 2.0 Authorization Code without a token)
+  --cleanup             After the run, delete the records it created, newest first (see "Cleanup" below)
   --no-color            Plain output
+  --matrix <a,b,c>      Send the same requests in each of these environments (two or more) and show where they
+                        differ, in one grid; only GET, HEAD and OPTIONS requests go out. Replaces --env, --iterations
+                        and --data; --report may be console, markdown or csv
+  --include-writes      With --matrix: send the data-changing requests too (the production lock still applies)
+  --fail-on-diff        With --matrix: exit 1 when a request gets another status, or a body that differs (ids and
+                        timestamps ignored), in any environment than in the first one
 
 Requests run in the order the app shows them: folders and requests as arranged in
 the sidebar, a folder's content right after it. --folder and --request only pick
@@ -79,6 +88,15 @@ Run if skips a request (shown as skipped with the reason, never as failed) unles
 the --env name, or how the previous request ended. A skipped request is not sent, so the production lock is not
 asked about it, and --fail-on-skip does not count it. "Always run" requests (cleanups) still run after --bail
 stopped the run, with their own Run if still applying.
+
+Cleanup: a request with "Clean up what this request creates" switched on (Settings tab) names where the created id is in
+its response and how to undo it: an Odoo unlink, a REST DELETE of its URL plus the id, or another request of the same
+collection that gets {{created.id}}. With --cleanup, once the run is done every record those requests created is deleted,
+newest first, through the same runner, so the environment, variables, authentication and the production lock apply: in
+production a delete needs --allow-production, as the create did, and nothing an MCP agent passes can lift it (the mcp
+command has no cleanup). A delete that fails is printed with its reason and the others still go; a create whose record
+cannot be cleaned up is printed too, and any of them makes the exit code 1. The summary goes to stderr when the report
+is junit, json or markdown on stdout.
 
 GitHub Actions: when \$GITHUB_STEP_SUMMARY is set, a Markdown summary of the run (what broke, grouped by cause)
 is appended to the job summary by itself, whatever --report says.
@@ -203,6 +221,11 @@ Future<int> runCli(
   final options = optionsFor(const {});
 
   if (command == 'mcp') {
+    // An agent must never be able to delete anything: cleanup is something only the person running a command asks for.
+    if (parsed.flags.contains('cleanup')) {
+      stderrSink.writeln('--cleanup is for "postpilot run". The MCP server does not delete what requests create.');
+      return 2;
+    }
     try {
       await McpServer(runner, options, processVariables).serve(stdin, stdoutSink, stderrSink);
       return 0;
@@ -210,6 +233,46 @@ Future<int> runCli(
       stderrSink.writeln(e.message);
       return 2;
     }
+  }
+
+  // --matrix: the same requests once per environment, compared in one grid (see MatrixCommand).
+  final matrix = parsed.options['matrix'];
+  if (matrix != null || parsed.flags.contains('fail-on-diff') || parsed.flags.contains('include-writes')) {
+    if (matrix == null) {
+      stderrSink.writeln('--include-writes and --fail-on-diff belong to --matrix, for example --matrix Dev,Staging,Prod.');
+      return 2;
+    }
+    if (parsed.flags.contains('cleanup')) {
+      stderrSink.writeln('--cleanup belongs to a plain run: --matrix compares environments and does not delete what it creates.');
+      return 2;
+    }
+    return MatrixCommand.run(
+      matrix: matrix,
+      // Each environment starts from the workspace as it is: its own cookies, renewed tokens and saved variables.
+      newRunner: () {
+        final localFile = File('${file.parent.path}${Platform.pathSeparator}workspace.local.json');
+        return WorkspaceRunner.parse(
+          file.readAsStringSync(),
+          sender ?? sendWithDartIo,
+          localSecrets: localFile.existsSync() ? localFile.readAsStringSync() : null,
+          baseDir: file.absolute.parent.path,
+          baselines: baselines,
+        );
+      },
+      base: options,
+      processVariables: processVariables,
+      conflicting: [
+        for (final name in const ['env', 'iterations', 'data'])
+          if (parsed.options.containsKey(name)) '--$name',
+      ],
+      report: parsed.options['report'] ?? 'console',
+      outPath: parsed.options['out'],
+      failOnDiff: parsed.flags.contains('fail-on-diff'),
+      includeWrites: parsed.flags.contains('include-writes'),
+      workspacePath: path,
+      out: stdoutSink,
+      err: stderrSink,
+    );
   }
 
   final report = parsed.options['report'] ?? 'console';
@@ -305,7 +368,14 @@ Future<int> runCli(
       final unplanned = summary.skipped - summary.skippedByRule;
       stderrSink.writeln('--fail-on-skip: $unplanned request${unplanned == 1 ? ' was' : 's were'} skipped.');
     }
-    return summary.ok ? 0 : 1;
+    // --cleanup: delete what the run created, through the same runner and the same production lock.
+    var cleanupFailed = false;
+    if (parsed.flags.contains('cleanup')) {
+      final cleanup = await runCliCleanup(runner: runner, run: run, optionsFor: optionsFor, processVariables: processVariables);
+      (report == 'console' ? stdoutSink : stderrSink).write(cleanup.text);
+      cleanupFailed = cleanup.hasFailures;
+    }
+    return summary.ok && !cleanupFailed ? 0 : 1;
   } on ArgumentError catch (e) {
     stderrSink.writeln(e.message);
     return 2;
@@ -437,9 +507,10 @@ final class _Args {
     'data',
     'records-dir',
     'baseline-file',
+    'matrix',
   };
   static const _repeatable = {'production-word', 'production-host', 'request'};
-  static const _boolean = {'bail', 'insecure', 'no-color', 'allow-production', 'fail-on-skip'};
+  static const _boolean = {'bail', 'insecure', 'no-color', 'allow-production', 'fail-on-skip', 'include-writes', 'fail-on-diff', 'cleanup'};
 
   static _Args parse(List<String> args) {
     final result = _Args();

@@ -30,6 +30,7 @@ import '../../workplace/presentation/widgets/push_to_git.dart';
 import 'new_request_action.dart';
 import 'shell_view_model.dart';
 import '../../import_export/presentation/import_any_dialog.dart';
+import '../../workspace_refactor/presentation/workspace_refactor_launcher.dart';
 import 'widgets/empty_workspace.dart';
 import 'widgets/request_tab_bar.dart';
 
@@ -128,6 +129,7 @@ class _ShellPageState extends State<ShellPage> {
       saveResponseExample: shell.saveResponseExample,
       switchEnvironment: () => _switchEnvironment(context),
       runCollection: () => _runCollection(context),
+      findReplaceInWorkspace: () => showWorkspaceRefactorDialog(context),
       toggleSidebar: () {
         if (narrow) {
           final scaffold = _scaffoldKey.currentState;

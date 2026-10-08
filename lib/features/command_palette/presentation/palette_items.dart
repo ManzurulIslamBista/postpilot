@@ -11,6 +11,7 @@ import '../../cookies/presentation/widgets/cookies_dialog.dart';
 import '../../ai_assistant/presentation/ai_request_dialog.dart';
 import '../../ci/presentation/ci_setup_dialog.dart';
 import '../../run_triage/presentation/current_collection_actions.dart';
+import '../../matrix_run/presentation/matrix_run_entry.dart';
 import '../../dart_codegen/presentation/widgets/dart_studio_dialog.dart';
 import '../../device_helper/presentation/device_helper_launcher.dart';
 import '../../flavor_export/presentation/flavor_export_dialog.dart';
@@ -27,8 +28,12 @@ import '../../odoo/presentation/widgets/odoo_studio_dialog.dart';
 import '../../settings/presentation/widgets/settings_dialog.dart';
 import '../../templates/presentation/templates_dialog.dart';
 import '../../tour/presentation/tour_dialog.dart';
+import '../../cleanup_ledger/presentation/widgets/cleanup_ledger_dialog.dart';
 import '../../shell/presentation/shell_view_model.dart';
+import '../../auth_doctor/presentation/auth_doctor_launcher.dart';
 import '../../test_suggestions/presentation/test_intelligence_palette.dart';
+import '../../workspace_refactor/presentation/workspace_refactor_dialog.dart';
+import '../../workspace_refactor/presentation/workspace_refactor_launcher.dart';
 import '../domain/entities/palette_item.dart';
 
 /// Where the palette's content comes from. Adding a tool to the app means
@@ -66,6 +71,14 @@ abstract final class PaletteItems {
           icon: Icons.monitor_heart_outlined,
           keywords: const ['monitor', 'schedule', 'uptime', 'watch', 'health', 'cron', 'every'],
           run: (c) => showCurrentCollectionMonitor(c),
+        ),
+        PaletteItem(
+          id: 'matrix.run',
+          title: 'Matrix run: compare environments or users',
+          subtitle: 'The same requests against dev, staging and production, or as admin, user and anonymous, on one grid',
+          icon: Icons.grid_on_outlined,
+          keywords: const ['matrix', 'compare', 'environments', 'diff', 'permissions', 'roles', 'users', 'access', 'dev', 'staging', 'prod', 'anonymous'],
+          run: (c) => showMatrixRun(c),
         ),
         PaletteItem(
           id: 'templates',
@@ -152,8 +165,28 @@ abstract final class PaletteItems {
           keywords: const ['openapi', 'swagger', 'spec', 'refresh', 'sync', 'endpoints'],
           run: (c) => OpenApiRefreshDialog.show(c),
         ),
+        // Change something across every collection at once: find and replace, rename a variable, unused variables.
+        PaletteItem(
+          id: 'refactor.findReplace',
+          title: 'Find and replace in workspace',
+          subtitle: 'URLs, headers, bodies, auth, tests, notes, variables across every collection, with a preview and an undo',
+          icon: Icons.find_replace,
+          keywords: const ['find', 'replace', 'search', 'regex', 'refactor', 'bulk', 'change', 'everywhere', 'all requests', 'host', 'domain'],
+          shortcut: AppShortcut.findReplaceInWorkspace.keyLabel,
+          run: (c) => showWorkspaceRefactorDialog(c),
+        ),
+        PaletteItem(
+          id: 'refactor.rename',
+          title: 'Rename a variable everywhere',
+          subtitle: 'The definitions and every {{reference}} in every collection, environment and default, previewed first',
+          icon: Icons.drive_file_rename_outline,
+          keywords: const ['rename', 'variable', 'refactor', 'baseUrl', 'environment', 'global', 'unused', 'undefined', 'cleanup'],
+          run: (c) => showWorkspaceRefactorDialog(c, initialTab: RefactorTab.rename),
+        ),
         // Test suggestions and baselines for the open request's response (only while it has one), and the generator.
         ...testIntelligencePaletteItems(),
+        // Why the open request's last response was a 401/403/407 (only while it was one).
+        ...authDoctorPaletteItems(),
         PaletteItem(
           id: 'graphql.explorer',
           title: 'GraphQL explorer',
@@ -249,6 +282,14 @@ abstract final class PaletteItems {
           icon: Icons.phone_android,
           keywords: const ['odoo', 'flutter', 'dart', 'client', 'repository', 'provider', 'riverpod', 'bloc', 'json-2', 'domain', 'command'],
           run: (c) => OdooStudioDialog.show(c, initialTab: OdooStudioTab.flutterClient.index),
+        ),
+        PaletteItem(
+          id: 'cleanup.ledger',
+          title: 'Cleanup ledger: records created in this session',
+          subtitle: 'Delete what requests with "Clean up what this request creates" made on the server; kept until you close PostPilot',
+          icon: Icons.cleaning_services_outlined,
+          keywords: const ['cleanup', 'clean up', 'delete', 'unlink', 'undo', 'junk', 'staging', 'created', 'records', 'teardown'],
+          run: (c) => CleanupLedgerDialog.show(c),
         ),
       ];
 

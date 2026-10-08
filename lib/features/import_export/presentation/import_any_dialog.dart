@@ -81,6 +81,16 @@ class _ImportAnyDialogState extends State<ImportAnyDialog> {
     );
   }
 
+  /// What was detected, and the picker that overrides it: side by side, and one above the other on a phone, where the picker
+  /// (as wide as its longest format name) leaves the detected format no room.
+  Widget _formatRow(BuildContext context, ImportAnyViewModel vm) {
+    final detected = _DetectedFormat(vm: vm, importsIntoNewCollection: widget.collectionId == null);
+    if (MediaQuery.sizeOf(context).width < 600) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [detected, const SizedBox(height: 4), _FormatPicker(vm: vm, expanded: true)]);
+    }
+    return Row(children: [Expanded(child: detected), const SizedBox(width: 8), _FormatPicker(vm: vm)]);
+  }
+
   Widget _buildForm(BuildContext context, ImportAnyViewModel vm) {
     return AlertDialog(
       title: const Text('Import'),
@@ -104,15 +114,8 @@ class _ImportAnyDialogState extends State<ImportAnyDialog> {
               onChanged: vm.setText,
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _DetectedFormat(vm: vm, importsIntoNewCollection: widget.collectionId == null),
-                ),
-                const SizedBox(width: 8),
-                _FormatPicker(vm: vm),
-              ],
-            ),
+            _formatRow(context, vm),
+            if (vm.format == ImportFormat.har) _CleanUpOption(vm: vm),
             if (vm.error != null) ...[
               const SizedBox(height: 8),
               Text(vm.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -182,6 +185,33 @@ class _ImportResultDialog extends StatelessWidget {
 }
 
 
+/// "Clean up (recommended)": what a HAR recording gets before it becomes a collection. Off, every call is imported as recorded.
+class _CleanUpOption extends StatelessWidget {
+  final ImportAnyViewModel vm;
+  const _CleanUpOption({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: CheckboxListTile(
+        value: vm.cleanHar,
+        onChanged: vm.isImporting ? null : (value) => vm.setCleanHar(value ?? false),
+        controlAffinity: ListTileControlAffinity.leading,
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        title: const Text('Clean up (recommended)'),
+        subtitle: Text(
+          'Drops static files, analytics, trackers and CORS preflights. Repeated calls become one request, with ids in the path as '
+          'variables, in folders by the first path segment. Tokens and keys become empty secret variables of a new environment. '
+          'Off: every call is imported exactly as recorded.',
+          style: context.textStyles.caption,
+        ),
+      ),
+    );
+  }
+}
+
 class _DetectedFormat extends StatelessWidget {
   final ImportAnyViewModel vm;
   final bool importsIntoNewCollection;
@@ -222,17 +252,21 @@ class _DetectedFormat extends StatelessWidget {
 /// show the hint instead of a selected item.
 class _FormatPicker extends StatelessWidget {
   final ImportAnyViewModel vm;
-  const _FormatPicker({required this.vm});
+
+  /// Fills the width it is given, with long names cut short, instead of being as wide as the longest name.
+  final bool expanded;
+  const _FormatPicker({required this.vm, this.expanded = false});
 
   @override
   Widget build(BuildContext context) {
     return DropdownButton<ImportFormat>(
       value: vm.selected ?? ImportFormat.unknown,
       isDense: true,
+      isExpanded: expanded,
       items: [
-        const DropdownMenuItem(value: ImportFormat.unknown, child: Text('Auto-detect')),
+        const DropdownMenuItem(value: ImportFormat.unknown, child: Text('Auto-detect', overflow: TextOverflow.ellipsis)),
         for (final format in ImportFormat.values)
-          if (format != ImportFormat.unknown) DropdownMenuItem(value: format, child: Text(format.label)),
+          if (format != ImportFormat.unknown) DropdownMenuItem(value: format, child: Text(format.label, overflow: TextOverflow.ellipsis)),
       ],
       onChanged: vm.isImporting ? null : (format) => vm.selectFormat(format == ImportFormat.unknown ? null : format),
     );

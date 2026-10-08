@@ -25,6 +25,7 @@ const _labels = {
   AppShortcut.saveResponseExample: ('Ctrl+Shift+S', 'Cmd+Shift+S'),
   AppShortcut.switchEnvironment: ('Ctrl+Shift+E', 'Cmd+Shift+E'),
   AppShortcut.runCollection: ('Ctrl+Shift+R', 'Cmd+Shift+R'),
+  AppShortcut.findReplaceInWorkspace: ('Ctrl+Shift+F', 'Cmd+Shift+F'),
 };
 
 /// A widget test that runs as Windows and puts the platform back before the framework checks it was left alone
@@ -122,6 +123,7 @@ void main() {
               saveResponseExample: record('saveExample'),
               switchEnvironment: record('switchEnvironment'),
               runCollection: record('runCollection'),
+              findReplaceInWorkspace: record('findReplace'),
             ),
             // A focused text field, like the URL bar, must not swallow any of them.
             child: const Scaffold(body: TextField(autofocus: true)),
@@ -149,6 +151,7 @@ void main() {
       'saveExample': (LogicalKeyboardKey.keyS, true),
       'switchEnvironment': (LogicalKeyboardKey.keyE, true),
       'runCollection': (LogicalKeyboardKey.keyR, true),
+      'findReplace': (LogicalKeyboardKey.keyF, true),
       // The older ones are still where they were.
       'send': (LogicalKeyboardKey.enter, false),
       'new': (LogicalKeyboardKey.keyN, false),

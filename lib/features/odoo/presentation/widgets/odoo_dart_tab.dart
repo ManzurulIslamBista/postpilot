@@ -56,7 +56,7 @@ class _OdooDartTabState extends State<OdooDartTab> {
                 ],
               ),
               const SizedBox(height: 10),
-              Expanded(child: GeneratedFilesView(files: files)),
+              Expanded(child: GeneratedFilesView(files: files, downloadName: 'odoo-models')),
             ],
           ),
         );

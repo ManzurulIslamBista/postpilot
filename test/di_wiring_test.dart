@@ -25,6 +25,8 @@ import 'package:postpilot/features/dart_codegen/presentation/view_models/api_tes
 import 'package:postpilot/features/graphql/presentation/graphql_explorer_view_model.dart';
 import 'package:postpilot/features/import_export/domain/usecases/refresh_openapi_usecase.dart';
 import 'package:postpilot/features/device_helper/domain/services/device_detector.dart';
+import 'package:postpilot/features/cors_proxy/presentation/cors_proxy_server_view_model.dart';
+import 'package:postpilot/features/cors_proxy/presentation/cors_proxy_settings_view_model.dart';
 import 'package:postpilot/features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
 import 'package:postpilot/features/mock_server/presentation/mock_server_view_model.dart';
 import 'package:postpilot/features/traffic_recorder/domain/usecases/create_collection_from_recording_usecase.dart';
@@ -297,6 +299,8 @@ final _wirings = <_Wiring>[
   _wire<MockServerViewModel>(),
   _wire<CreateCollectionFromRecordingUseCase>(),
   _wire<TrafficRecorderViewModel>(),
+  _wire<CorsProxySettingsViewModel>(),
+  _wire<CorsProxyServerViewModel>(),
   _wire<DeviceDetector>(),
   _wire<GraphqlExplorerViewModel>(),
   _wire<RealtimeViewModel>(),

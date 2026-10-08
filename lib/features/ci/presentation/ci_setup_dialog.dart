@@ -1,6 +1,9 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
+import '../../../core/utils/file_download.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../../core/widgets/busy_label.dart';
 import '../../../core/widgets/code_block.dart';
@@ -97,6 +100,20 @@ class _CiSetupDialogState extends State<CiSetupDialog> {
     }
   }
 
+  /// A browser cannot write into the repository: the file of the chosen kind is downloaded for the person to commit.
+  Future<void> _download() async {
+    final text = _vm.text;
+    if (text == null) return;
+    final name = _vm.target.fileName.split('/').last;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await downloadFile(fileName: name, bytes: Uint8List.fromList(utf8.encode(text)), mimeType: 'text/plain');
+      messenger.showSnackBar(SnackBar(content: Text('Downloaded $name. Put it at ${_vm.target.fileName} in your repository.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text("Couldn't make the download: $e")));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -111,7 +128,13 @@ class _CiSetupDialogState extends State<CiSetupDialog> {
           height: 740,
           footerLeading: _footerText(context),
           actions: [
-            if (github)
+            if (!_vm.canWriteFiles)
+              FilledButton.icon(
+                onPressed: _vm.text == null ? null : _download,
+                icon: const Icon(Icons.download_outlined, size: 18),
+                label: Text('Download ${_vm.target.fileName.split('/').last}'),
+              )
+            else if (github)
               FilledButton(
                 onPressed: _vm.canSaveToRepository ? _save : null,
                 child: BusyLabel(

@@ -12,6 +12,15 @@ final class NotFoundException extends AppException {
 
 enum NetworkErrorKind { timeout, connectionError, badResponse, cancelled, other }
 
+/// What the screen can offer next to a network error, when the failure has a known way out (the web version only).
+enum NetworkHelp {
+  /// The browser's opaque network error with the CORS proxy off: the server may simply not allow web pages.
+  corsBlocked,
+
+  /// The CORS proxy was on and could not be used (not running, wrong token, a page it does not allow).
+  corsProxy,
+}
+
 final class NetworkException extends AppException {
   final NetworkErrorKind kind;
 
@@ -20,7 +29,10 @@ final class NetworkException extends AppException {
   /// technical detail. Never holds a secret: it names the host, not the URL.
   final String? summary;
 
-  const NetworkException(super.message, {this.kind = NetworkErrorKind.other, this.summary});
+  /// The action that fits this failure, when there is one.
+  final NetworkHelp? help;
+
+  const NetworkException(super.message, {this.kind = NetworkErrorKind.other, this.summary, this.help});
 }
 
 final class InvalidUrlException extends AppException {

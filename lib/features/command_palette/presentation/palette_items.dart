@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
+import '../../../core/platform/platform_support.dart';
 import '../../../core/shortcuts/app_shortcuts.dart';
 import '../../console/presentation/widgets/console_dialog.dart';
+import '../../cors_proxy/presentation/cors_proxy_dialog.dart';
 import '../../defaults/presentation/defaults_dialog.dart';
 import '../../cookies/presentation/widgets/cookies_dialog.dart';
 import '../../ai_assistant/presentation/ai_request_dialog.dart';
@@ -110,6 +113,7 @@ abstract final class PaletteItems {
           subtitle: 'Saved examples answer real HTTP calls on this computer',
           icon: Icons.dns_outlined,
           keywords: const ['mock', 'backend', 'fake', 'stub', 'server', 'examples'],
+          requires: PlatformFeature.mockServer,
           run: (c) => MockServerDialog.show(c),
         ),
         PaletteItem(
@@ -118,8 +122,28 @@ abstract final class PaletteItems {
           subtitle: 'Point the app at a local recorder, then turn the calls into a collection. No certificate or proxy setting',
           icon: Icons.sensors,
           keywords: const ['traffic', 'record', 'recorder', 'proxy', 'capture', 'charles', 'mitmproxy', 'har', 'sniff', 'intercept', 'flutter'],
+          requires: PlatformFeature.trafficRecorder,
           run: (c) => TrafficRecorderDialog.show(c),
         ),
+        PaletteItem(
+          id: 'cors.proxy',
+          title: 'CORS proxy…: let the web version call any API',
+          subtitle: 'Starts the proxy on this computer, no terminal needed; paste its URL and token into the web app',
+          icon: Icons.swap_horiz,
+          keywords: const ['cors', 'proxy', 'web', 'browser', 'blocked', 'access-control', 'origin', 'preflight'],
+          requires: PlatformFeature.trafficRecorder,
+          run: (c) => CorsProxyDialog.show(c),
+        ),
+        // In the browser the same proxy is switched on in Settings, and has to be started on the desktop or in a terminal.
+        if (kIsWeb)
+          PaletteItem(
+            id: 'cors.proxy.settings',
+            title: 'CORS proxy settings: send calls through a local proxy',
+            subtitle: 'For servers that block web pages; shows the command that starts it',
+            icon: Icons.swap_horiz,
+            keywords: const ['cors', 'proxy', 'web', 'browser', 'blocked', 'access-control', 'origin', 'settings'],
+            run: (c) => SettingsDialog.show(c, corsProxy: true),
+          ),
         PaletteItem(
           id: 'openapi.refresh',
           title: 'Update a collection from OpenAPI',

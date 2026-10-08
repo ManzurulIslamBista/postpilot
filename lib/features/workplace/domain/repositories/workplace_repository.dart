@@ -1,4 +1,5 @@
 import '../entities/push_preview.dart';
+import '../entities/storage_usage.dart';
 import '../entities/workplace_content.dart';
 import '../entities/workplace_entity.dart';
 
@@ -89,4 +90,11 @@ abstract interface class WorkplaceRepository {
 abstract interface class WorkplaceDirtyTracking {
   Future<bool> hasUnsavedChanges(WorkplaceEntity workplace);
   Future<void> setUnsavedChanges(WorkplaceEntity workplace, bool unsaved);
+}
+
+/// How full the store behind a workplace is, for a repository whose store has a cap (the browser's). Kept apart from
+/// [WorkplaceRepository] like [WorkplaceDirtyTracking]: a repository without it simply has nothing to warn about.
+abstract interface class WorkplaceStorageBudget {
+  /// The size of [workplace]'s saved file against the cap; null when the store has none (real folders).
+  Future<StorageUsage?> storageUsage(WorkplaceEntity workplace);
 }

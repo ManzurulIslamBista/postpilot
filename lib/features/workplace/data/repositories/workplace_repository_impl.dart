@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../domain/entities/workplace_content.dart';
 import '../../domain/entities/workplace_entity.dart';
 import '../../domain/entities/push_preview.dart';
+import '../../domain/entities/storage_usage.dart';
 import '../../domain/entities/workplace_exception.dart';
 import '../../domain/repositories/workplace_repository.dart';
 import '../../domain/services/secret_splitter.dart';
@@ -17,7 +18,7 @@ import '../storage/workplace_token_store.dart';
 /// The repository holds no file-system code of its own: all reads and writes go
 /// through a [WorkplaceStorage], real files on desktop/mobile and browser
 /// storage on the web. Tests pass a storage pointed at a temp directory.
-final class WorkplaceRepositoryImpl implements WorkplaceRepository, WorkplaceDirtyTracking {
+final class WorkplaceRepositoryImpl implements WorkplaceRepository, WorkplaceDirtyTracking, WorkplaceStorageBudget {
   final Dio _dio;
   final WorkplaceStorage _storage;
   final WorkplaceTokenStore _tokens;
@@ -351,6 +352,12 @@ final class WorkplaceRepositoryImpl implements WorkplaceRepository, WorkplaceDir
   Future<void> saveWorkplaceContent(WorkplaceEntity workplace, WorkplaceContent content) async {
     await _writeWorkspaceFile(workplace.folderPath, content.toJsonString());
     await updateWorkplace(workplace.copyWith(updatedAt: DateTime.now()));
+  }
+
+  @override
+  Future<StorageUsage?> storageUsage(WorkplaceEntity workplace) async {
+    final storage = _storage;
+    return storage is CappedWorkplaceStorage ? (storage as CappedWorkplaceStorage).workspaceUsage(workplace.folderPath) : null;
   }
 
   @override

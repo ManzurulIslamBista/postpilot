@@ -6,6 +6,7 @@ import '../test_suggestions/domain/services/baseline_file.dart';
 import 'dart_io_sender.dart';
 import 'iterated_run.dart';
 import 'markdown_reporter.dart';
+import 'cli_proxy.dart';
 import 'mcp_server.dart';
 import 'production_lock.dart';
 import 'reporters.dart';
@@ -21,6 +22,7 @@ Usage:
   postpilot run  <workspace.json> [options]    Send requests and check their tests
   postpilot list <workspace.json>              List environments, collections and requests
   postpilot mcp  <workspace.json> [options]    Serve the workspace to AI agents (Model Context Protocol, stdio)
+  postpilot proxy [options]                    CORS proxy so the web version can call any API ("postpilot proxy --help")
 
 Options for run and mcp:
   --env <name>          Environment whose variables are used
@@ -109,6 +111,10 @@ Future<int> runCli(
   }
 
   final command = args.first;
+  // The CORS proxy of the web version: its own options, nothing to do with a workspace file.
+  if (command == 'proxy') {
+    return runProxyCommand(args.skip(1).toList(), out: stdoutSink, err: stderrSink, environment: env);
+  }
   if (!const {'run', 'list', 'mcp'}.contains(command)) {
     stderrSink.writeln('Unknown command "$command".\n');
     stderrSink.write(_usage);

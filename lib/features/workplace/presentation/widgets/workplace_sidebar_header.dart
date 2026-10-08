@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../../../ci/presentation/ci_setup_dialog.dart';
+import '../../../import_export/presentation/backup_dialog.dart';
 import '../view_models/workplace_view_model.dart';
 import 'add_workplace_dialog.dart';
 import 'push_to_git.dart';
@@ -213,6 +214,36 @@ class WorkplaceSidebarHeader extends StatelessWidget {
                         ],
                       ],
                     ),
+                    // Browser storage is capped: say so while there is room left, and offer a backup to take away.
+                    if (vm.storageWarning case final usage?)
+                      Tooltip(
+                        message: 'Browser storage holds about 4 MB of workspace. Past that, saving to it is refused: export a '
+                            'backup now (Settings, Data), or use the desktop app, which saves to a file on disk.',
+                        child: InkWell(
+                          onTap: () => BackupDialog.show(context),
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 1),
+                                  child: Icon(Icons.warning_amber_rounded, size: 12, color: colors.statusWarning),
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    'Workspace is ${usage.label}. Export a backup',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textStyles.caption.copyWith(fontSize: 10, color: colors.statusWarning),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     // The data is safe in the database, but the file (what Git pushes) is behind: say so.
                     if (vm.saveError != null)
                       Tooltip(

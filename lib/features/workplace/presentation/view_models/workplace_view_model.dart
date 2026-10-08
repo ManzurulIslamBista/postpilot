@@ -6,6 +6,7 @@ import '../../../import_export/domain/services/backup_codec.dart';
 import '../../../import_export/domain/services/backup_service.dart';
 import '../../../shell/presentation/shell_view_model.dart';
 import '../../domain/entities/push_preview.dart';
+import '../../domain/entities/storage_usage.dart';
 import '../../domain/entities/workplace_content.dart';
 import '../../domain/entities/workplace_entity.dart';
 import '../../domain/entities/workplace_exception.dart';
@@ -68,6 +69,8 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
   /// Why the workspace file could not be written, until a write succeeds again.
   String? _saveError;
 
+  StorageUsage? _storageUsage;
+
   /// Whether the "database has changes the file may not have" marker is set for the open
   /// workplace, so it is written once per period of changes and not at every change.
   bool _unsaved = false;
@@ -89,6 +92,10 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
   /// failed. The data is safe in the database and the next save retries, but the file (what
   /// Git pushes, and what a restart can rebuild from) is behind, and the user must know.
   String? get saveError => _saveError;
+
+  /// How much of the browser's storage the open workplace's file takes, once it is close to the cap (see
+  /// [StorageUsage.isNearLimit]) so the UI can warn before a save is refused; null otherwise, and always on a real folder.
+  StorageUsage? get storageWarning => _storageUsage != null && _storageUsage!.isNearLimit ? _storageUsage : null;
 
   /// What the current platform can do with workplace folders.
   bool get usesRealFolders => repository.usesRealFolders;
@@ -129,6 +136,7 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
       }
       _activeWorkplace = active;
       _errorMessage = null;
+      await _refreshStorageUsage();
       _startAutosave();
       // The restored rows have new ids; write them back so the next start finds
       // the file and the database identical again. The same when the database was
@@ -352,6 +360,8 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
     _saveError = null;
     _unsaved = false;
     _writeMarker(false, workplace: target);
+    _storageUsage = null;
+    await _refreshStorageUsage();
     _startAutosave();
   }
 
@@ -589,10 +599,27 @@ final class WorkplaceViewModel with ChangeNotifier, WidgetsBindingObserver {
     }
     final markers = _markerChain;
     if (markers != null) await markers;
+    await _refreshStorageUsage();
     if (_saveError != null) {
       _saveError = null;
       if (!_disposed) notifyListeners();
     }
+  }
+
+  /// Measures the open workplace's file where the store has a cap, and tells the UI when the size changed.
+  Future<void> _refreshStorageUsage() async {
+    final repo = repository;
+    final workplace = _activeWorkplace;
+    if (repo is! WorkplaceStorageBudget || workplace == null) return;
+    StorageUsage? usage;
+    try {
+      usage = await (repo as WorkplaceStorageBudget).storageUsage(workplace);
+    } catch (_) {
+      return; // a reading that failed is no reason to alarm anyone; the next save measures again
+    }
+    if (usage == _storageUsage) return;
+    _storageUsage = usage;
+    if (!_disposed) notifyListeners();
   }
 
   String _cleanError(Object error) {

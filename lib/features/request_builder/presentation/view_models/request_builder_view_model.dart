@@ -64,6 +64,9 @@ final class RequestBuilderViewModel with ChangeNotifier {
   String? errorMessage;
   String? errorDetail;
 
+  /// The action that fits the failure of the last send, when it has one (the CORS proxy, in the browser).
+  NetworkHelp? errorHelp;
+
   /// Asked before a send leaves the app; returning false cancels it. The page
   /// sets this (the production lock lives there) so the view model stays free of dialogs.
   Future<bool> Function(ApiRequestEntity request)? confirmSend;
@@ -81,6 +84,7 @@ final class RequestBuilderViewModel with ChangeNotifier {
     fetchAllPages = false;
     errorMessage = null;
     errorDetail = null;
+    errorHelp = null;
     notifyListeners();
     _requestSubscription?.cancel();
     _requestSubscription = _requestRepository.watchById(requestId).listen(_mergeExternalName);
@@ -109,6 +113,7 @@ final class RequestBuilderViewModel with ChangeNotifier {
     isSending = true;
     errorMessage = null;
     errorDetail = null;
+    errorHelp = null;
     lastScriptResult = null;
     lastFlow = null;
     flowStatus = null;
@@ -136,6 +141,7 @@ final class RequestBuilderViewModel with ChangeNotifier {
         response = null;
         errorMessage = _describeError(e);
         errorDetail = _detailOf(e, errorMessage!);
+        errorHelp = e is NetworkException ? e.help : null;
       }
     }
     // A poll that never held, a page that failed: the response (the last, or what was merged so far) stays on screen.

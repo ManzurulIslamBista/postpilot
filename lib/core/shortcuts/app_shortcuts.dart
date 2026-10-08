@@ -130,7 +130,10 @@ class AppShortcuts extends StatelessWidget {
 }
 
 class ShortcutsHelpDialog extends StatelessWidget {
-  const ShortcutsHelpDialog({super.key});
+  /// Whether the app runs in a browser, which keeps some shortcuts for itself (see [AppShortcut.browserReserved]).
+  final bool web;
+
+  const ShortcutsHelpDialog({super.key, this.web = kIsWeb});
 
   static Future<void> show(BuildContext context) =>
       showDialog(context: context, builder: (_) => const ShortcutsHelpDialog());
@@ -155,6 +158,15 @@ class ShortcutsHelpDialog extends StatelessWidget {
                     const SizedBox(width: 16),
                     _KeyCap(label: shortcut.keyLabel),
                   ],
+                ),
+              ),
+            if (web)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'A browser keeps Ctrl+N, Ctrl+W, Ctrl+T and Ctrl+Shift+T for itself, and a page cannot take them. '
+                  'In the browser version PostPilot uses Alt for the shortcuts that would clash with them.',
+                  style: context.textStyles.caption.copyWith(color: context.colors.secondaryText),
                 ),
               ),
           ],

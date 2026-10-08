@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/platform/platform_support.dart';
 import '../../../../core/shared_features/prompt_dialog.dart';
 import '../../../../core/widgets/method_badge.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
@@ -337,6 +339,30 @@ Map<CustomSemanticsAction, VoidCallback> _moveActions(
     const CustomSemanticsAction(label: 'Move down'): () => _step(context, vm, item, 1),
 };
 
+/// The collection menu entries that need the desktop app, with the label shown while they cannot run.
+const _desktopOnlyEntries = {
+  'mock_server': ('Mock server…', PlatformFeature.mockServer),
+  'traffic_recorder': ('Traffic recorder…', PlatformFeature.trafficRecorder),
+};
+
+/// A browser cannot run the entries of [_desktopOnlyEntries]: they stay in the menu, greyed out, and their tooltip says why,
+/// instead of opening a dialog that cannot work.
+List<PopupMenuEntry<String>> _gateForPlatform(List<PopupMenuEntry<String>> entries, {bool web = kIsWeb}) =>
+    [for (final entry in entries) _gateEntry(entry, web)];
+
+PopupMenuEntry<String> _gateEntry(PopupMenuEntry<String> entry, bool web) {
+  if (entry is! PopupMenuItem<String>) return entry;
+  final desktopOnly = _desktopOnlyEntries[entry.value];
+  if (desktopOnly == null) return entry;
+  final (label, feature) = desktopOnly;
+  if (feature.isSupported(web: web)) return entry;
+  return PopupMenuItem<String>(
+    value: entry.value,
+    enabled: false,
+    child: Tooltip(message: feature.reason(web: web)!, child: Text('$label (desktop app)')),
+  );
+}
+
 class _CollectionTile extends StatelessWidget {
   final CollectionEntity collection;
   const _CollectionTile({required this.collection});
@@ -369,7 +395,7 @@ class _CollectionTile extends StatelessWidget {
             onTap: () => vm.toggleExpand(collection.id),
             trailing: PopupMenuButton<String>(
               onSelected: (action) => _handleAction(context, vm, action),
-              itemBuilder: (context) => const [
+              itemBuilder: (context) => _gateForPlatform(const [
                 PopupMenuItem(value: 'add_request', child: Text('Add request')),
                 PopupMenuItem(value: 'add_folder', child: Text('Add folder')),
                 PopupMenuItem(value: 'import_curl', child: Text('Import cURL')),
@@ -399,7 +425,7 @@ class _CollectionTile extends StatelessWidget {
                 PopupMenuItem(value: 'rename', child: Text('Rename')),
                 PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
                 PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
+              ]),
             ),
           ),
         ),

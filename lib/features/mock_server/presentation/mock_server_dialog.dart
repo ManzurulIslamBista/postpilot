@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
+import '../../../core/platform/platform_support.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/info_banner.dart';
@@ -114,10 +115,10 @@ class _MockServerDialogState extends State<MockServerDialog> {
               ),
           ],
           child: !_vm.isSupported
-              ? const EmptyHint(
+              ? EmptyHint(
                   icon: Icons.web_asset_off,
                   title: 'Not available in the browser',
-                  message: 'A browser cannot listen on a port. Use the desktop or mobile app to run a mock server.',
+                  message: PlatformFeature.mockServer.reason(web: true)!,
                 )
               : collections.isEmpty && !fromSpec && _vm.spec == null
                   ? _noCollections(context)

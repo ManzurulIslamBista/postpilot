@@ -169,6 +169,7 @@ class _ApiLayerPaneState extends State<ApiLayerPane> {
         ];
         final files = GeneratedFilesView(
           files: _vm.files,
+          downloadName: 'api-layer',
           emptyTitle: 'Pick a collection and press Generate',
           emptyMessage: 'Tip: send a request and use "Save as example" so its response gets a typed DTO.',
           // The version written to disk is the one the next generation is compared with.

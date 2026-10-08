@@ -55,6 +55,9 @@ import '../../features/graphql/presentation/graphql_explorer_view_model.dart';
 import '../../features/import_export/domain/usecases/refresh_openapi_usecase.dart';
 import '../../features/device_helper/data/device_host.dart';
 import '../../features/device_helper/domain/services/device_detector.dart';
+import '../../features/cors_proxy/data/cors_proxy_settings_store.dart';
+import '../../features/cors_proxy/presentation/cors_proxy_server_view_model.dart';
+import '../../features/cors_proxy/presentation/cors_proxy_settings_view_model.dart';
 import '../../features/mock_server/domain/usecases/build_mock_routes_usecase.dart';
 import '../../features/mock_server/presentation/mock_server_view_model.dart';
 import '../../features/traffic_recorder/domain/usecases/create_collection_from_recording_usecase.dart';
@@ -254,6 +257,10 @@ void _registerDevTools() {
   locator.registerLazySingleton<TrafficRecorderViewModel>(
     () => TrafficRecorderViewModel(locator<CreateCollectionFromRecordingUseCase>()),
   );
+  // The CORS proxy: the web app's choices (read by the HTTP client for every call) and, on the desktop, the proxy itself,
+  // which keeps answering after its dialog closes.
+  locator.registerLazySingleton<CorsProxySettingsViewModel>(() => CorsProxySettingsViewModel(SecureCorsProxySettingsStore()));
+  locator.registerLazySingleton<CorsProxyServerViewModel>(CorsProxyServerViewModel.new);
   // Finds running emulators and phones with adb / simctl; runs nothing until the device helper asks.
   locator.registerLazySingleton<DeviceDetector>(createSystemDeviceDetector);
   locator.registerFactory<GraphqlExplorerViewModel>(
@@ -314,7 +321,14 @@ void _registerCore(AppDatabase database) {
   locator.registerSingleton<RequestConsoleLog>(RequestConsoleLog());
   locator.registerSingleton<CookieJar>(kIsWeb ? CookieJar() : StrictCookieJar());
   locator.registerSingleton<ApiClient>(
-    LoggingApiClient(DioApiClient(cookieJar: locator<CookieJar>()), locator<RequestConsoleLog>()),
+    LoggingApiClient(
+      DioApiClient(
+        cookieJar: locator<CookieJar>(),
+        // The web version sends calls through the CORS proxy while it is switched on (Settings > CORS proxy).
+        corsProxy: kIsWeb ? () => locator<CorsProxySettingsViewModel>().route() : null,
+      ),
+      locator<RequestConsoleLog>(),
+    ),
   );
 }
 

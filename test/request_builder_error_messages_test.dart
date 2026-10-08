@@ -90,6 +90,37 @@ void main() {
     }
   });
 
+  test('a failure with a way out (the CORS proxy) carries it, masked, and the next send clears it', () async {
+    final vm = await viewModelFor('https://api.example.com/users');
+    client.failWith = const NetworkException(
+      'XMLHttpRequest error.',
+      kind: NetworkErrorKind.connectionError,
+      summary: 'The browser blocked this call (CORS) or the server is unreachable. https://api.example.com/users?api_key=s3cret-key',
+      help: NetworkHelp.corsBlocked,
+    );
+
+    await vm.send();
+
+    expect(vm.errorHelp, NetworkHelp.corsBlocked);
+    expect(vm.errorMessage, startsWith('The browser blocked this call (CORS) or the server is unreachable.'));
+    expect(vm.errorMessage, isNot(contains('s3cret-key')));
+
+    client.failWith = null;
+    await vm.send();
+
+    expect(vm.errorMessage, isNull);
+    expect(vm.errorHelp, isNull);
+  });
+
+  test('a failure without one has none', () async {
+    final vm = await viewModelFor('https://api.example.com/users');
+    client.failWith = const NetworkException('boom', kind: NetworkErrorKind.connectionError, summary: 'The server refused the connection.');
+
+    await vm.send();
+
+    expect(vm.errorHelp, isNull);
+  });
+
   test('an undefined variable is named inline, with nothing to expand', () async {
     final vm = await viewModelFor('{{baseUrl}}/users');
 

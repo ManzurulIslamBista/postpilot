@@ -7,6 +7,7 @@ import '../../features/git_sync/domain/services/secret_names.dart';
 import '../errors/app_exception.dart';
 import 'api_client.dart';
 import 'api_http_response.dart';
+import 'cors_proxy_adapter.dart';
 import 'http_adapter_config.dart';
 import 'lenient_cookie_manager.dart';
 import 'network_failure.dart';
@@ -30,6 +31,8 @@ final class DioApiClient implements ApiClient {
     CookieJar? cookieJar,
     NetworkAdapterFactory adapterFactory = createNetworkAdapter,
     UploadFileSource? uploads,
+    // The web version only: sends every call through the CORS proxy while it names one.
+    CorsProxyRouteProvider? corsProxy,
   })  : cookieJar = cookieJar ?? CookieJar(),
         _uploads = uploads ?? createUploadFileSource(),
         _dio = Dio(BaseOptions(
@@ -39,7 +42,8 @@ final class DioApiClient implements ApiClient {
           // Followed by hand, see _sendFollowingRedirects.
           followRedirects: false,
         )) {
-    _dio.httpClientAdapter = _ConfiguredAdapter(adapterFactory);
+    final configured = _ConfiguredAdapter(adapterFactory);
+    _dio.httpClientAdapter = corsProxy == null ? configured : CorsProxyAdapter(configured, corsProxy);
     if (!kIsWeb) {
       _dio.interceptors.add(LenientCookieManager(this.cookieJar));
     }
@@ -59,6 +63,7 @@ final class DioApiClient implements ApiClient {
         NetworkFailure.isCertificateProblem(e) ? '$message\n\n${NetworkFailure.certificateHint}' : message,
         kind: _kindOf(e.type),
         summary: _withoutProxyCredentials(NetworkFailure.summarize(e, spec.options), proxy),
+        help: NetworkFailure.helpFor(e),
       );
     }
   }

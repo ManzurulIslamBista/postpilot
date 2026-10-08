@@ -77,11 +77,16 @@ final class CiSetupViewModel with ChangeNotifier {
   /// A secret variable that cannot become an environment variable, with why (see `CiSecretMapper`).
   List<String> skippedSecrets = const [];
 
+  /// Whether this platform can write into a repository folder; a browser cannot, and offers a download instead.
+  bool get canWriteFiles => _writer.canWrite;
+
   bool get canSaveToRepository => _writer.canWrite && repositoryRoot != null && !isSaving && problems.isEmpty;
 
   /// Why the file cannot be saved to the repository, for the footer; null when it can.
   String? get saveBlocker {
-    if (!_writer.canWrite) return 'A browser cannot write files: copy the YAML into .github/workflows/postpilot.yml of your repository.';
+    if (!_writer.canWrite) {
+      return 'A browser cannot write files: copy or download the YAML and put it in .github/workflows/postpilot.yml of your repository.';
+    }
     if (project.folderPath == null) return 'This workplace has no folder on disk: copy the YAML into .github/workflows/postpilot.yml of your repository.';
     if (repositoryRoot == null) {
       return 'The workplace folder is not inside a Git repository: copy the YAML into .github/workflows/postpilot.yml of the repository that holds your workspace.json.';

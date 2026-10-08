@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/di/injector.dart';
+import '../../../core/platform/platform_support.dart';
 import '../../../core/theme/context_theme_extensions.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/info_banner.dart';
@@ -119,10 +120,10 @@ class _TrafficRecorderDialogState extends State<TrafficRecorderDialog> {
               ),
           ],
           child: !_vm.isSupported
-              ? const EmptyHint(
+              ? EmptyHint(
                   icon: Icons.web_asset_off,
                   title: 'Not available in the browser',
-                  message: 'A browser cannot listen on a port, so it cannot record. Use the desktop app for the traffic recorder.',
+                  message: PlatformFeature.trafficRecorder.reason(web: true)!,
                 )
               : _layout(context, controls: _controls(context, running), body: _panel(context, running)),
         );

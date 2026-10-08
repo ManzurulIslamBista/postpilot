@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../domain/entities/storage_usage.dart';
 import '../../domain/entities/workplace_exception.dart';
 import 'workplace_storage.dart';
 
@@ -8,13 +11,16 @@ import 'workplace_storage.dart';
 ///
 /// Browsers allow roughly 5 MB per origin, so an unusually large workspace is
 /// refused with a message instead of being silently dropped.
-final class BrowserWorkplaceStorage implements WorkplaceStorage {
+final class BrowserWorkplaceStorage implements WorkplaceStorage, CappedWorkplaceStorage {
   static const _registryKey = 'postpilot.workplaces.registry';
   static const _filePrefix = 'postpilot.workplaces.file:';
   static const _secretsPrefix = 'postpilot.workplaces.secrets:';
   static const _dirtyPrefix = 'postpilot.workplaces.unsaved:';
   static const _registryBackupPrefix = 'postpilot.workplaces.registry.bak:';
   static const _maxBytes = 4 * 1024 * 1024;
+
+  /// The largest `workspace.json` this storage accepts.
+  static const maxWorkspaceBytes = _maxBytes;
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -51,6 +57,12 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
 
   @override
   Future<void> writeWorkspace(String folderPath, String json) => _write(_fileKey(folderPath), json);
+
+  @override
+  Future<StorageUsage?> workspaceUsage(String folderPath) async {
+    final text = (await _prefs).getString(_fileKey(folderPath));
+    return text == null ? null : StorageUsage(usedBytes: _storedLength(text), limitBytes: _maxBytes);
+  }
 
   @override
   Future<String?> readLocalSecrets(String folderPath) async => (await _prefs).getString(_secretsKey(folderPath));
@@ -90,7 +102,7 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
   String _fileKey(String folderPath) => '$_filePrefix${p.normalize(folderPath.trim()).toLowerCase()}';
 
   Future<void> _write(String key, String json) async {
-    if (json.length > _maxBytes) {
+    if (_storedLength(json) > _maxBytes) {
       throw const WorkplaceException(
         'This workspace is too large for browser storage (about 4 MB). '
         'Use the desktop app, which saves it as a file on disk.',
@@ -101,4 +113,8 @@ final class BrowserWorkplaceStorage implements WorkplaceStorage {
       throw const WorkplaceException('The browser refused to store the workplace (storage may be full or blocked).');
     }
   }
+
+  /// What the browser really stores for [text]: the web `shared_preferences` writes each string JSON-encoded, so every quote and
+  /// newline of a workspace takes two characters.
+  static int _storedLength(String text) => jsonEncode(text).length;
 }

@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
+import '../../../../core/utils/file_download.dart';
 import '../../../../core/utils/generated_files_writer.dart';
+import '../../../../core/utils/zip_writer.dart';
 import '../../../../core/widgets/code_block.dart';
 import '../../../../core/widgets/info_banner.dart';
 import '../../../workplace/presentation/view_models/workplace_view_model.dart';
@@ -10,7 +13,8 @@ import '../../domain/entities/generated_file.dart';
 import 'generated_files_save.dart';
 
 /// A generated project as a file list beside the selected file's code, with
-/// "Copy all" and (on desktop) "Save to folder". Used by every generator that
+/// "Copy all" and "Save to folder" on desktop or a download (the file, or a .zip of
+/// them) in the browser, which cannot write a folder. Used by every generator that
 /// produces more than one file.
 class GeneratedFilesView extends StatefulWidget {
   final List<GeneratedFile> files;
@@ -20,12 +24,16 @@ class GeneratedFilesView extends StatefulWidget {
   /// Called after files were written to a folder (by either save button), e.g. to remember what was generated.
   final Future<void> Function()? onSaved;
 
+  /// Name of the .zip (and of the folder inside it) the browser's download makes, without the extension.
+  final String downloadName;
+
   const GeneratedFilesView({
     super.key,
     required this.files,
     this.emptyTitle = 'Nothing generated yet',
     this.emptyMessage = '',
     this.onSaved,
+    this.downloadName = 'postpilot-generated',
   });
 
   @override
@@ -47,6 +55,28 @@ class _GeneratedFilesViewState extends State<GeneratedFilesView> {
     await Clipboard.setData(ClipboardData(text: _everything));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied ${widget.files.length} files')));
+    }
+  }
+
+  /// The browser cannot write a folder: one file is downloaded as it is, several as a .zip that keeps the folder layout.
+  Future<void> _download() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final files = widget.files;
+    try {
+      final String saved;
+      if (files.length == 1) {
+        final file = files.single;
+        await downloadFile(fileName: file.name, bytes: Uint8List.fromList(utf8.encode(file.content)), mimeType: 'text/plain');
+        saved = 'Downloaded ${file.name}';
+      } else {
+        final zip = buildZip({for (final f in files) '${widget.downloadName}/${f.path}': utf8.encode(f.content)});
+        await downloadFile(fileName: '${widget.downloadName}.zip', bytes: zip, mimeType: 'application/zip');
+        saved = 'Downloaded ${widget.downloadName}.zip: ${files.length} files, laid out as they go in your project, inside a '
+            '${widget.downloadName} folder';
+      }
+      messenger.showSnackBar(SnackBar(content: Text(saved)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text("Couldn't make the download: $e")));
     }
   }
 
@@ -145,6 +175,12 @@ class _GeneratedFilesViewState extends State<GeneratedFilesView> {
                 runSpacing: 4,
                 children: [
                   TextButton.icon(onPressed: _copyAll, icon: const Icon(Icons.copy_all_outlined, size: 16), label: const Text('Copy all')),
+                  if (!canWriteFilesToFolder)
+                    FilledButton.icon(
+                      onPressed: _download,
+                      icon: const Icon(Icons.download_outlined, size: 16),
+                      label: Text(files.length == 1 ? 'Download file' : 'Download .zip'),
+                    ),
                   if (canSave)
                     OutlinedButton.icon(
                       onPressed: _saveChanged,

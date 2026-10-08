@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../../../../core/platform/platform_support.dart';
 
 enum PaletteCategory {
   tools('Developer tools'),
@@ -28,6 +30,10 @@ final class PaletteItem {
   final String? badge;
   final String? shortcut;
 
+  /// What the entry needs from the platform (the desktop app, for a local server). Where that is missing the palette still
+  /// lists it, greyed out and saying why, instead of opening a dialog that cannot work.
+  final PlatformFeature? requires;
+
   /// Called with the context of the screen the palette was opened from, after the palette closed.
   final void Function(BuildContext context) run;
 
@@ -42,5 +48,9 @@ final class PaletteItem {
     this.hiddenText = '',
     this.badge,
     this.shortcut,
+    this.requires,
   });
+
+  /// Why this entry cannot be used here, or null when it can. [web] is only passed in tests.
+  String? unavailableReason({bool web = kIsWeb}) => requires?.reason(web: web);
 }

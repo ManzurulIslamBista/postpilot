@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/context_theme_extensions.dart';
 import '../view_models/settings_view_model.dart';
+import '../../../cors_proxy/presentation/cors_proxy_settings_pane.dart';
 import '../../../safety/presentation/safety_settings_pane.dart';
 import 'appearance_settings_pane.dart';
 import 'data_settings_pane.dart';
@@ -14,6 +15,8 @@ enum _Section {
   general('General', Icons.tune),
   appearance('Appearance', Icons.palette_outlined),
   proxy('Proxy', Icons.lan_outlined),
+  // Only in the browser version: the desktop and mobile apps have no CORS limit to work around.
+  corsProxy('CORS proxy', Icons.swap_horiz),
   safety('Safety', Icons.shield_outlined),
   history('History', Icons.history),
   data('Data', Icons.storage_outlined);
@@ -38,13 +41,26 @@ class SettingsDialog extends StatefulWidget {
   /// redirect settings.
   final bool isWeb;
 
-  const SettingsDialog({super.key, this.onOpenBackup, this.onOpenShortcuts, this.isWeb = kIsWeb});
+  /// Opens on the CORS proxy section (browser version only), for the error help that points there.
+  final bool openCorsProxy;
 
-  static Future<void> show(BuildContext context, {VoidCallback? onOpenBackup, VoidCallback? onOpenShortcuts}) =>
-      showDialog(
-        context: context,
-        builder: (_) => SettingsDialog(onOpenBackup: onOpenBackup, onOpenShortcuts: onOpenShortcuts),
-      );
+  const SettingsDialog({
+    super.key,
+    this.onOpenBackup,
+    this.onOpenShortcuts,
+    this.isWeb = kIsWeb,
+    this.openCorsProxy = false,
+  });
+
+  static Future<void> show(
+    BuildContext context, {
+    VoidCallback? onOpenBackup,
+    VoidCallback? onOpenShortcuts,
+    bool corsProxy = false,
+  }) => showDialog(
+    context: context,
+    builder: (_) => SettingsDialog(onOpenBackup: onOpenBackup, onOpenShortcuts: onOpenShortcuts, openCorsProxy: corsProxy),
+  );
 
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
@@ -52,7 +68,13 @@ class SettingsDialog extends StatefulWidget {
 
 class _SettingsDialogState extends State<SettingsDialog> {
   late SettingsViewModel _viewModel;
-  _Section _section = _Section.general;
+  late _Section _section = widget.isWeb && widget.openCorsProxy ? _Section.corsProxy : _Section.general;
+
+  /// The sections this build offers: the CORS proxy one exists in the browser only.
+  List<_Section> get _sections => [
+    for (final section in _Section.values)
+      if (section != _Section.corsProxy || widget.isWeb) section,
+  ];
 
   @override
   void didChangeDependencies() {
@@ -97,14 +119,14 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 builder: (context, constraints) => constraints.maxWidth < _narrowWidth
                     ? Column(
                         children: [
-                          _SectionChips(selected: _section, onSelect: _select),
+                          _SectionChips(sections: _sections, selected: _section, onSelect: _select),
                           const Divider(),
                           Expanded(child: _content(viewModel)),
                         ],
                       )
                     : Row(
                         children: [
-                          SizedBox(width: 180, child: _SectionList(selected: _section, onSelect: _select)),
+                          SizedBox(width: 180, child: _SectionList(sections: _sections, selected: _section, onSelect: _select)),
                           const VerticalDivider(),
                           Expanded(child: _content(viewModel)),
                         ],
@@ -129,6 +151,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
               _Section.general => GeneralSettingsPane(viewModel: viewModel, isWeb: widget.isWeb),
               _Section.appearance => AppearanceSettingsPane(viewModel: viewModel),
               _Section.proxy => ProxySettingsPane(viewModel: viewModel, isWeb: widget.isWeb),
+              _Section.corsProxy => const CorsProxySettingsPane(),
               _Section.safety => const SafetySettingsPane(),
               _Section.history => const HistorySettingsPane(),
               _Section.data => DataSettingsPane(
@@ -156,15 +179,16 @@ class _SettingsDialogState extends State<SettingsDialog> {
 }
 
 class _SectionList extends StatelessWidget {
+  final List<_Section> sections;
   final _Section selected;
   final ValueChanged<_Section> onSelect;
-  const _SectionList({required this.selected, required this.onSelect});
+  const _SectionList({required this.sections, required this.selected, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       children: [
-        for (final section in _Section.values)
+        for (final section in sections)
           ListTile(
             dense: true,
             selected: section == selected,
@@ -178,9 +202,10 @@ class _SectionList extends StatelessWidget {
 }
 
 class _SectionChips extends StatelessWidget {
+  final List<_Section> sections;
   final _Section selected;
   final ValueChanged<_Section> onSelect;
-  const _SectionChips({required this.selected, required this.onSelect});
+  const _SectionChips({required this.sections, required this.selected, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +214,7 @@ class _SectionChips extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          for (final section in _Section.values)
+          for (final section in sections)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(

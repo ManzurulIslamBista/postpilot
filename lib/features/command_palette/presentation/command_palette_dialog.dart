@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/theme/context_theme_extensions.dart';
@@ -17,7 +18,10 @@ class CommandPaletteDialog extends StatefulWidget {
   /// Context of the screen that opened the palette: where chosen actions run.
   final BuildContext hostContext;
 
-  const CommandPaletteDialog({super.key, required this.items, required this.hostContext, this.loadMore});
+  /// Whether the app runs in a browser, which decides what each entry can do; only a test passes it.
+  final bool web;
+
+  const CommandPaletteDialog({super.key, required this.items, required this.hostContext, this.loadMore, this.web = kIsWeb});
 
   static Future<void> show(
     BuildContext context, {
@@ -91,6 +95,8 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
   }
 
   void _run(PaletteItem item) {
+    // An entry this platform cannot do stays listed with its reason (see `_row`); running it would only fail.
+    if (item.unavailableReason(web: widget.web) != null) return;
     final host = widget.hostContext;
     Navigator.of(context).pop();
     if (host.mounted) item.run(host);
@@ -204,9 +210,11 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
     final item = hit.item;
     final selected = i == _selected;
     final showHeader = empty && (i == 0 || _hits[i - 1].item.category != item.category);
-    final base = context.textStyles.body.copyWith(fontWeight: FontWeight.w600);
+    final unavailable = item.unavailableReason(web: widget.web);
+    final base = context.textStyles.body.copyWith(fontWeight: FontWeight.w600, color: unavailable == null ? null : colors.secondaryText);
+    final subtitle = unavailable ?? item.subtitle;
     return InkWell(
-      onTap: () => _run(item),
+      onTap: unavailable == null ? () => _run(item) : null,
       onHover: (h) {
         if (h && _selected != i) setState(() => _selected = i);
       },
@@ -223,7 +231,7 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(color: colors.mainAccent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
-                      child: Icon(item.icon, size: 16, color: colors.mainAccent),
+                      child: Icon(unavailable == null ? item.icon : Icons.lock_outline, size: 16, color: unavailable == null ? colors.mainAccent : colors.secondaryText),
                     ),
             ),
             const SizedBox(width: 10),
@@ -237,8 +245,8 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (item.subtitle.isNotEmpty)
-                    Text(item.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.textStyles.caption.copyWith(color: colors.secondaryText)),
+                  if (subtitle.isNotEmpty)
+                    Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.textStyles.caption.copyWith(color: colors.secondaryText)),
                 ],
               ),
             ),

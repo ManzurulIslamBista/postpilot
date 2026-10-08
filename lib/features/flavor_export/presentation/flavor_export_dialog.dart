@@ -417,7 +417,7 @@ class _Result extends StatelessWidget {
               message: [...export.warnings.take(6), if (export.warnings.length > 6) '…and ${export.warnings.length - 6} more'].join('\n'),
               margin: const EdgeInsets.only(bottom: 8),
             ),
-          Expanded(child: GeneratedFilesView(files: export.files)),
+          Expanded(child: GeneratedFilesView(files: export.files, downloadName: 'flavor-export')),
         ],
       ),
     );

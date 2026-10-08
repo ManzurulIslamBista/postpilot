@@ -1,3 +1,5 @@
+import '../../domain/entities/storage_usage.dart';
+
 /// Where a workplace physically lives, so the repository holds no platform code.
 ///
 /// Desktop and mobile keep a registry file in the app-support directory plus
@@ -59,4 +61,11 @@ abstract interface class WorkplaceStorage {
 
   /// Opens [folderPath] in the system file manager. A no-op where unsupported.
   Future<void> revealFolder(String folderPath);
+}
+
+/// A [WorkplaceStorage] whose space is capped, so that it can say how much of it a workspace takes. Only the browser's
+/// storage is capped.
+abstract interface class CappedWorkplaceStorage {
+  /// The size of the `workspace.json` of [folderPath] against the cap; null when there is none yet.
+  Future<StorageUsage?> workspaceUsage(String folderPath);
 }

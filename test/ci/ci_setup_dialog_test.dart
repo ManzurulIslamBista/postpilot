@@ -13,14 +13,14 @@ import 'package:postpilot/features/environments/domain/entities/global_variable_
 import '../support/in_memory_import_export_fakes.dart';
 
 final class _Writer implements CiWorkflowWriter {
-  _Writer({this.root = '/work/repo', this.results = const [WorkflowSaved('.github/workflows/postpilot.yml')]});
+  _Writer({this.root = '/work/repo', this.results = const [WorkflowSaved('.github/workflows/postpilot.yml')], this.canWrite = true});
 
   final String? root;
   final List<WorkflowSaveResult> results;
   final saves = <bool>[];
 
   @override
-  bool get canWrite => true;
+  final bool canWrite;
 
   @override
   Future<String?> findRepositoryRoot(String folderPath) async => root;
@@ -237,6 +237,24 @@ void main() {
     expect(save.onPressed, isNull);
     // The workflow is still there to copy.
     expect(find.textContaining('name: PostPilot API tests'), findsOneWidget);
+  });
+
+  testWidgets('in a browser the Save button is replaced by a download of the file being shown', (tester) async {
+    final vm = makeVm(_Writer(canWrite: false), folder: null);
+    await launch(tester, vm, size: const Size(1200, 900), dark: false);
+
+    expect(find.text('Save to .github/workflows/'), findsNothing);
+    expect(find.text('Download postpilot.yml'), findsOneWidget);
+    // A FilledButton.icon is a subclass, which `find.byType` does not match.
+    final button = find.ancestor(of: find.text('Download postpilot.yml'), matching: find.byWidgetPredicate((w) => w is FilledButton));
+    expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
+    expect(find.textContaining('copy or download the YAML'), findsOneWidget);
+    expect(find.textContaining('name: PostPilot API tests'), findsOneWidget, reason: 'the YAML is still there to copy');
+
+    await tapText(tester, 'GitLab CI');
+    expect(find.text('Download .gitlab-ci.yml'), findsOneWidget);
+    await tapText(tester, 'Shell script');
+    expect(find.text('Download postpilot-ci.sh'), findsOneWidget);
   });
 
   testWidgets('the shell script and the GitLab job have no Save button, only Copy', (tester) async {

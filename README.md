@@ -131,6 +131,20 @@ PostPilot has the request builder, collections, environments and tests you expec
 
 - Run a workspace in **CI** with JUnit, JSON or Markdown reports, data files and iterations; exit codes say what happened.
 - Expose it to AI agents over **MCP**. Output is secret-masked and an agent can neither redirect a request to another host nor lift the production lock.
+- Use the **web version** with APIs that send no CORS headers: `dart run bin/postpilot.dart proxy` starts a small local CORS proxy (`--port`, `--allow-origin`, `--token`, `--allow-lan`, `--insecure`; `--help` lists them). It listens on this computer only, prints a random token that the web app must send, and logs `METHOD host/path status time` without headers or bodies. In the web app: Settings > CORS proxy. The desktop app can start the same proxy from the command palette.
+- On the **hosted web app** nobody can be asked to run a program, and a public proxy would be open to abuse, so deploy your own free Cloudflare Worker (same protocol, one file, no dependencies, logs nothing). **Deploy your own CORS proxy (2 minutes):** make a free Cloudflare account, install Node.js, press *Generate a token* in Settings > CORS proxy, then run:
+
+  ```
+  npm install -g wrangler
+  wrangler login
+  mkdir postpilot-cors-proxy
+  cd postpilot-cors-proxy
+  curl -L -o cors_proxy_worker.js https://raw.githubusercontent.com/ManzurulIslamBista/postpilot/HEAD/tool/cors_proxy_worker.js
+  wrangler deploy cors_proxy_worker.js --name postpilot-cors-proxy --compatibility-date 2025-01-01
+  wrangler secret put POSTPILOT_TOKEN --name postpilot-cors-proxy
+  ```
+
+  Paste the `https://postpilot-cors-proxy.<your-name>.workers.dev` address and the token into Settings > CORS proxy and press *Test connection*. Only your token opens it; `ALLOWED_ORIGINS` (a Worker variable, add `--var ALLOWED_ORIGINS:https://your-host` when you host PostPilot yourself) names the pages that may use it, by default the hosted app and localhost.
 - Details, flags and exit codes: [docs/cli.md](docs/cli.md)
 
 </td>
@@ -205,6 +219,12 @@ PostPilot has the request builder, collections, environments and tests you expec
 
 **Platforms**
 - Windows, macOS, Linux, Android and the web from one Flutter codebase: resizable panels on desktop, a stacked layout on phones, light and dark themes.
+
+**Web version**
+- Everything that only needs a browser works: requests (to APIs that allow web pages, see CORS above), environments, history, response tools, Dart Studio, Odoo Studio, Git sync through the GitHub API, import and export. The data lives in the browser's storage (a database plus a workspace file of up to about 4 MB: the sidebar warns when it gets close and links to Backup and restore).
+- Where a desktop app writes a folder, the browser downloads: Dart Studio, Odoo Studio and the environment export give one file or a `.zip` that keeps the folder layout, and *Set up CI* downloads the workflow.
+- These need the desktop app, and the command palette lists them greyed out with the reason: the mock server and the traffic recorder (a browser cannot open server sockets), finding emulators and phones, a proxy, certificate and redirect settings, the persistent cookie jar and Server-Sent Events. Files chosen for an upload stay in the page only until it is reloaded.
+- A browser keeps Ctrl+N, Ctrl+W and Ctrl+T for itself, so the web version uses Alt for the shortcuts that would clash (the command palette is Alt+Shift+P).
 
 <table>
 <tr>

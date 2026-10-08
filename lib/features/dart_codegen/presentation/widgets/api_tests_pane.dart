@@ -193,6 +193,7 @@ class _ApiTestsPaneState extends State<ApiTestsPane> {
                 flex: 3,
                 child: GeneratedFilesView(
                   files: _vm.files,
+                  downloadName: 'api-tests',
                   emptyTitle: 'Pick a collection and press Generate tests',
                   emptyMessage: 'Tip: send a request, then use "Save as example" on a good and on a failing response, so the tests cover both.',
                 ),

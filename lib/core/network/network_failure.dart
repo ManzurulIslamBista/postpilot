@@ -1,7 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import '../errors/unreachable_message.dart';
+import '../errors/app_exception.dart';
 import 'api_http_response.dart';
+import 'cors_proxy_adapter.dart';
 
 /// Tells a failed send in one line, by what the failure says: Dio and `dart:io`
 /// report a refused connection, a missing host, a TLS problem or a dropped
@@ -10,6 +11,20 @@ import 'api_http_response.dart';
 /// web build compiles this file too), so they are told apart by that text.
 abstract final class NetworkFailure {
   static const certificateHint = 'If you trust this server, turn off "Verify SSL certificates" in Settings.';
+
+  /// What a browser's opaque network error means: it hides whether the server refused the page (CORS) or never answered.
+  static const corsBlockedSummary =
+      'The browser blocked this call (CORS) or the server is unreachable — a web page can only call servers that allow it, '
+      'and the browser does not say which of the two happened. Check the URL, or send the call through the CORS proxy.';
+
+  /// The action that fits [e], when it has one: the browser's opaque error (the proxy is off, or the call would have been
+  /// proxied) and a failure of the CORS proxy itself.
+  static NetworkHelp? helpFor(DioException e, {bool web = kIsWeb}) {
+    final cause = e.error;
+    if (cause is CorsProxyFailure) return cause.help;
+    if (!web || e.type != DioExceptionType.connectionError) return null;
+    return summarize(e, const ApiRequestOptions(), web: true) == corsBlockedSummary ? NetworkHelp.corsBlocked : null;
+  }
 
   static const _timeoutHint =
       'Raise the "Request timeout" in Settings (or in this request\'s Settings tab) if the server is just slow.';
@@ -30,6 +45,8 @@ abstract final class NetworkFailure {
     final host = proxied ? options.proxy.host : uri.host;
     final authority = proxied ? '${options.proxy.host}:${options.proxy.port}' : _authority(uri);
     final cause = '${e.error ?? e.message ?? ''}';
+    // A failure of the CORS proxy already says what to do.
+    if (e.error case final CorsProxyFailure failure) return failure.message;
 
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
@@ -85,7 +102,7 @@ abstract final class NetworkFailure {
     }
     if (cause.toLowerCase().contains('formatexception')) return 'The URL could not be read — ${_firstLine(cause)}';
     if (e.type == DioExceptionType.connectionError) {
-      return web ? unreachableServerMessage(web: true) : 'Couldn\'t reach the $role at $authority — ${_firstLine(cause)}';
+      return web ? corsBlockedSummary : 'Couldn\'t reach the $role at $authority — ${_firstLine(cause)}';
     }
     return 'The request failed: ${_firstLine(cause.isEmpty ? 'unknown error' : cause)}';
   }

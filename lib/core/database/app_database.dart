@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'connection/app_connection.dart';
+import 'migrations/create_missing_schema.dart';
 import 'migrations/rebuild_table_keeping_rows.dart';
 import 'tables/collections_table.dart';
 import 'tables/requests_table.dart';
@@ -202,8 +203,17 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(requestBaselines);
       }
     },
-    // SQLite skips every ON DELETE CASCADE / SET NULL unless this is set on each connection.
-    beforeOpen: (details) => customStatement('PRAGMA foreign_keys = ON'),
+    // A database in the browser whose version number was lost (see beforeOpen) comes back as "new" with its tables in
+    // place: createAll would fail on the first index that exists, and every query after that with it.
+    onCreate: (m) async => await hasAppTables(this) ? createMissingSchema(this, m) : m.createAll(),
+    beforeOpen: (details) async {
+      // SQLite skips every ON DELETE CASCADE / SET NULL unless this is set on each connection.
+      await customStatement('PRAGMA foreign_keys = ON');
+      // Drift writes the new version itself after this callback, but the browser's IndexedDB file system only saves
+      // after a statement that goes through the executor: a visit with no write left the database "unversioned", and
+      // the next start tried to create every table again. Writing it here saves it with the schema it belongs to.
+      if (details.wasCreated || details.hadUpgrade) await customStatement('PRAGMA user_version = $schemaVersion');
+    },
   );
 
   // The platform's connection lives in connection/: a SQLite file natively, and on

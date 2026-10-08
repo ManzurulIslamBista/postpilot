@@ -240,6 +240,7 @@ class _OdooFlutterClientTabState extends State<OdooFlutterClientTab> {
             Expanded(
               child: GeneratedFilesView(
                 files: _gen.files,
+                downloadName: 'odoo-client',
                 emptyTitle: 'Tick models and press Generate',
                 emptyMessage: 'You get model classes, a Dio client for Odoo, a Domain builder, x2many Command helpers, exceptions '
                     'and a repository per model. The API key stays out of the code: it is a constructor argument.',

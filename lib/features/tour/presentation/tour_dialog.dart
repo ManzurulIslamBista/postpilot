@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -63,6 +64,14 @@ class TourDialog extends StatefulWidget {
   State<TourDialog> createState() => _TourDialogState();
 }
 
+// The browser keeps the workspace in its own storage and cannot run a mock server or listen for server-sent events.
+const _autosaveNote = kIsWeb
+    ? 'Everything you save is autosaved in this browser; Backup and restore (Settings, Data) keeps a copy.'
+    : 'Everything you save is autosaved to your workspace folder.';
+const _toolsNote = kIsWeb
+    ? 'Odoo Studio, Realtime (WebSocket), GraphQL explorer, Device helper. The Mock server needs the desktop app.'
+    : 'Odoo Studio, Mock server, Realtime (WebSocket / SSE), GraphQL explorer, Device helper.';
+
 class _TourDialogState extends State<TourDialog> {
   final _controller = PageController();
   int _page = 0;
@@ -72,7 +81,7 @@ class _TourDialogState extends State<TourDialog> {
     const _Step(Icons.rocket_launch_outlined, 'Welcome to PostPilot', 'Design, send and test APIs, and keep them in a Git repository with your team.', [
       'Collections hold your requests; folders keep them tidy.',
       'Press New request, import from Postman, Insomnia, OpenAPI or cURL, or add a starter template.',
-      'Everything you save is autosaved to your workspace folder.',
+      _autosaveNote,
     ], action: _StepAction.addSample),
     const _Step(Icons.send_rounded, 'Send a request', 'Pick a method, type a URL and press Send.', [
       'Paste a cURL command into the URL field: it fills the whole request.',
@@ -92,7 +101,7 @@ class _TourDialogState extends State<TourDialog> {
     ]),
     _Step(Icons.manage_search, 'Everything is one shortcut away', 'Press ${AppShortcut.commandPalette.keyLabel} to search requests, tools and environments.', const [
       'Dart Studio: models and a whole API layer for Flutter.',
-      'Odoo Studio, Mock server, Realtime (WebSocket / SSE), GraphQL explorer, Device helper.',
+      _toolsNote,
       'Starter templates and an optional AI helper that uses your own key.',
     ], action: _StepAction.openPalette),
     const _Step(Icons.cloud_sync_outlined, 'Teams with Git', 'Connect a workplace to a GitHub repository and push and pull with your team.', [

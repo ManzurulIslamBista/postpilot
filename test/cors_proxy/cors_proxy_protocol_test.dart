@@ -57,6 +57,18 @@ void main() {
     });
   });
 
+  group('the hosted app', () {
+    test('may use the proxy without being named, with its own origin only', () {
+      final origins = CorsProxyOrigins();
+      expect(origins.allows('https://manzurulislambista.github.io'), isTrue);
+      expect(origins.allows('https://MANZURULISLAMBISTA.github.io/'), isTrue);
+      expect(origins.allows('http://manzurulislambista.github.io'), isFalse, reason: 'another scheme is another origin');
+      expect(origins.allows('https://evil.github.io'), isFalse);
+      expect(origins.allows('https://manzurulislambista.github.io.evil.example'), isFalse);
+      expect(origins.describe(), contains('https://manzurulislambista.github.io'));
+    });
+  });
+
   group('wrong tokens', () {
     final t0 = DateTime(2026, 1, 1, 12);
 

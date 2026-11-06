@@ -11,7 +11,7 @@ Usage:
   postpilot proxy [options]
 
   --port <n>                 Port to listen on (default ${CorsProxyProtocol.defaultPort}, 0 picks a free one)
-  --allow-origin <origin>    A web page that may use the proxy, besides http(s)://localhost:* and 127.0.0.1:*
+  --allow-origin <origin>    A web page that may use the proxy, besides http(s)://localhost:*, 127.0.0.1:* and the hosted app
                              (repeatable, or comma separated), e.g. https://app.example.com. A wildcard is refused.
   --token <t>                Use this token instead of a random one (8+ visible ASCII characters).
                              Also read from POSTPILOT_PROXY_TOKEN, which keeps it out of the process list.
@@ -162,16 +162,9 @@ Future<int> runProxyCommand(
       if (!stop.isCompleted) stop.complete();
     }));
   } else {
-    void interrupted(ProcessSignal _) {
+    signals.addAll(watchStopSignals(() {
       if (!stop.isCompleted) stop.complete();
-    }
-
-    signals.add(ProcessSignal.sigint.watch().listen(interrupted));
-    try {
-      signals.add(ProcessSignal.sigterm.watch().listen(interrupted));
-    } on SignalException {
-      // Windows has no SIGTERM; Ctrl+C is enough there.
-    }
+    }));
   }
   await stop.future;
   for (final signal in signals) {
@@ -197,4 +190,18 @@ Future<List<String>> _addresses(CorsProxyConfig config, int port) async {
     // Only the local address is shown when the interfaces cannot be listed.
   }
   return urls;
+}
+
+/// Calls [onStop] on Ctrl+C or SIGTERM. The error of a signal the platform cannot watch (SIGTERM on Windows: "The request is not
+/// supported") is delivered to the stream, not thrown by `listen`, so it is swallowed there: left alone it ended the proxy
+/// right after it printed its address. [watch] is for tests.
+List<StreamSubscription<ProcessSignal>> watchStopSignals(
+  void Function() onStop, {
+  Stream<ProcessSignal> Function(ProcessSignal signal)? watch,
+}) {
+  final watcher = watch ?? (ProcessSignal signal) => signal.watch();
+  void unsupported(Object _) {}
+  return [
+    for (final signal in [ProcessSignal.sigint, ProcessSignal.sigterm]) watcher(signal).listen((_) => onStop(), onError: unsupported),
+  ];
 }

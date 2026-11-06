@@ -163,14 +163,19 @@ final class CorsProxyOrigins {
     return host == 'localhost' || host == '::1' || RegExp(r'^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$').hasMatch(host);
   }
 
-  /// Whether a call carrying [origin] in its `Origin` header may be answered: a page on this computer, or one that was named.
+  /// The hosted PostPilot web app. Its own page may always use the proxy (the token is still needed), as it may use the Cloudflare
+  /// Worker, so starting the proxy is all it takes to make the hosted app work.
+  static const hosted = 'https://manzurulislambista.github.io';
+
+  /// Whether a call carrying [origin] in its `Origin` header may be answered: a page on this computer, the hosted app, or one
+  /// that was named.
   bool allows(String origin) {
     final normalized = normalize(origin);
-    return normalized != null && (isLoopback(normalized) || _extra.contains(normalized));
+    return normalized != null && (isLoopback(normalized) || normalized == hosted || _extra.contains(normalized));
   }
 
   /// The origins in words, for the start message.
-  String describe() => ['http(s)://localhost:*', 'http(s)://127.0.0.1:*', ..._extra].join(', ');
+  String describe() => ['http(s)://localhost:*', 'http(s)://127.0.0.1:*', hosted, ..._extra.where((o) => o != hosted)].join(', ');
 }
 
 /// A refused call: the status, a code a program can read and a sentence that says what to do.

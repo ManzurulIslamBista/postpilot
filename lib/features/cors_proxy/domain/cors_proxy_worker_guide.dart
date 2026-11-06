@@ -9,7 +9,7 @@ abstract final class CorsProxyWorkerGuide {
   static const workerName = 'postpilot-cors-proxy';
 
   /// The origin of the hosted web app, which the Worker allows unless told otherwise.
-  static const hostedOrigin = 'https://manzurulislambista.github.io';
+  static const hostedOrigin = CorsProxyOrigins.hosted;
 
   static const workerSourceUrl = 'https://raw.githubusercontent.com/ManzurulIslamBista/postpilot/HEAD/tool/cors_proxy_worker.js';
 

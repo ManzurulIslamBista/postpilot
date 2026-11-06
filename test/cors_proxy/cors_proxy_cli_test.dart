@@ -83,6 +83,27 @@ void main() {
     });
   });
 
+  group('stop signals', () {
+    test('a signal the platform cannot watch (SIGTERM on Windows) is ignored instead of ending the proxy', () async {
+      final interrupt = StreamController<ProcessSignal>();
+      var stops = 0;
+      final subscriptions = watchStopSignals(
+        () => stops++,
+        watch: (signal) => signal == ProcessSignal.sigterm ? Stream.error(const SignalException('SIGTERM', OSError('The request is not supported', 50))) : interrupt.stream,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(stops, 0, reason: 'the unsupported signal did not stop it, and raised no uncaught error');
+      interrupt.add(ProcessSignal.sigint);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(stops, 1);
+      for (final s in subscriptions) {
+        await s.cancel();
+      }
+      await interrupt.close();
+    });
+  });
+
   group('running', () {
     Future<({Future<int> exit, CorsProxyEngine engine, StringBuffer out, Completer<void> stop})> start(List<String> args) async {
       final out = StringBuffer();
